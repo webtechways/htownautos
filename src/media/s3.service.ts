@@ -34,6 +34,7 @@ export class S3Service {
   async uploadFile(
     file: Express.Multer.File,
     folder: string = 'uploads',
+    isPrivate: boolean = false,
   ): Promise<UploadResult> {
     try {
       const fileExtension = file.originalname.split('.').pop();
@@ -45,14 +46,14 @@ export class S3Service {
         Key: key,
         Body: file.buffer,
         ContentType: file.mimetype,
-        ACL: 'public-read', // Change based on your needs
+        ACL: isPrivate ? 'private' : 'public-read',
       });
 
       await this.s3Client.send(command);
 
       const url = `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
 
-      this.logger.log(`File uploaded successfully: ${key}`);
+      this.logger.log(`File uploaded successfully: ${key} (${isPrivate ? 'private' : 'public'})`);
 
       return {
         url,

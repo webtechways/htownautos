@@ -693,8 +693,9 @@ model Buyer {
   metaValue Json? // Metadata flexible en formato JSON
 
   // Relaciones
-  dealsAsBuyer   Deal[] @relation("BuyerDeals")
-  dealsAsCoBuyer Deal[] @relation("CoBuyerDeals")
+  dealsAsBuyer   Deal[]  @relation("BuyerDeals")
+  dealsAsCoBuyer Deal[]  @relation("CoBuyerDeals")
+  media          Media[] @relation("BuyerMedia")
 
   @@index([email])
   @@index([lastName, firstName])
@@ -1115,6 +1116,10 @@ model Media {
 
   vehicleAsMain Vehicle? @relation("VehicleMainImage")
 
+  // Relaciones con Buyer (documentos privados del comprador)
+  buyerId String?
+  buyer   Buyer?  @relation("BuyerMedia", fields: [buyerId], references: [id], onDelete: Cascade)
+
   // Relaciones con Title (documentos del título)
   titleAsFile                  Title[] @relation("TitleFile")
   titleAsLienReleaseFile       Title[] @relation("TitleLienReleaseFile")
@@ -1131,6 +1136,7 @@ model Media {
   updatedAt DateTime @updatedAt
 
   @@index([vehicleId])
+  @@index([buyerId])
   @@index([mediaType])
   @@index([category])
   @@index([isActive])

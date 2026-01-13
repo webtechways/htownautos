@@ -33,9 +33,30 @@ export class MediaService {
       }
     }
 
-    // Upload file to S3
-    const folder = createMediaDto.vehicleId ? `vehicles/${createMediaDto.vehicleId}` : 'uploads';
-    const uploadResult: UploadResult = await this.s3Service.uploadFile(file, folder);
+    // Verify buyerId exists if provided
+    if (createMediaDto.buyerId) {
+      const buyerExists = await this.prisma.getModel('buyer').findUnique({
+        where: { id: createMediaDto.buyerId },
+      });
+
+      if (!buyerExists) {
+        throw new NotFoundException(`Buyer with ID ${createMediaDto.buyerId} not found`);
+      }
+    }
+
+    // IMPORTANT: If buyerId is provided, ALWAYS set isPublic to false (buyer media is private)
+    const isPrivate = !!createMediaDto.buyerId || !(createMediaDto.isPublic ?? true);
+
+    // Determine folder based on association
+    let folder = 'uploads';
+    if (createMediaDto.buyerId) {
+      folder = `buyers/${createMediaDto.buyerId}`;
+    } else if (createMediaDto.vehicleId) {
+      folder = `vehicles/${createMediaDto.vehicleId}`;
+    }
+
+    // Upload file to S3 with appropriate ACL
+    const uploadResult: UploadResult = await this.s3Service.uploadFile(file, folder, isPrivate);
 
     // Create media record in database
     const media = await this.prisma.getModel('media').create({
@@ -53,9 +74,10 @@ export class MediaService {
         storageProvider: 's3',
         storageBucket: uploadResult.bucket,
         storageKey: uploadResult.key,
-        isPublic: createMediaDto.isPublic ?? true,
+        isPublic: !isPrivate, // Set based on privacy determination
         isActive: true,
         ...(createMediaDto.vehicleId && { vehicleId: createMediaDto.vehicleId }),
+        ...(createMediaDto.buyerId && { buyerId: createMediaDto.buyerId }),
       },
     });
 
@@ -63,7 +85,7 @@ export class MediaService {
   }
 
   async findAll(query: QueryMediaDto): Promise<PaginatedResponseDto<MediaEntity>> {
-    const { page = 1, limit = 10, vehicleId, mediaType, category, isActive } = query;
+    const { page = 1, limit = 10, vehicleId, buyerId, mediaType, category, isActive } = query;
 
     const skip = (page - 1) * limit;
 
@@ -79,6 +101,18 @@ export class MediaService {
       }
 
       where.vehicleId = vehicleId;
+    }
+
+    if (buyerId !== undefined) {
+      const buyerExists = await this.prisma.getModel('buyer').findUnique({
+        where: { id: buyerId },
+      });
+
+      if (!buyerExists) {
+        throw new NotFoundException(`Buyer with ID ${buyerId} not found`);
+      }
+
+      where.buyerId = buyerId;
     }
 
     if (mediaType !== undefined) {
@@ -150,6 +184,21 @@ export class MediaService {
       }
     }
 
+    // If buyerId is being changed, verify it exists
+    if (updateMediaDto.buyerId && updateMediaDto.buyerId !== existingMedia.buyerId) {
+      const buyerExists = await this.prisma.getModel('buyer').findUnique({
+        where: { id: updateMediaDto.buyerId },
+      });
+
+      if (!buyerExists) {
+        throw new NotFoundException(`Buyer with ID ${updateMediaDto.buyerId} not found`);
+      }
+    }
+
+    // IMPORTANT: If buyerId is provided or exists, media must be private
+    const forcePrivate = updateMediaDto.buyerId || existingMedia.buyerId;
+    const finalIsPublic = forcePrivate ? false : (updateMediaDto.isPublic ?? existingMedia.isPublic);
+
     const updated = await this.prisma.getModel('media').update({
       where: { id },
       data: {
@@ -158,7 +207,8 @@ export class MediaService {
         ...(updateMediaDto.alt !== undefined && { alt: updateMediaDto.alt }),
         ...(updateMediaDto.category !== undefined && { category: updateMediaDto.category }),
         ...(updateMediaDto.vehicleId !== undefined && { vehicleId: updateMediaDto.vehicleId }),
-        ...(updateMediaDto.isPublic !== undefined && { isPublic: updateMediaDto.isPublic }),
+        ...(updateMediaDto.buyerId !== undefined && { buyerId: updateMediaDto.buyerId }),
+        isPublic: finalIsPublic,
       },
     });
 

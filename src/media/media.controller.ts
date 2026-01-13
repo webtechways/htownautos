@@ -79,9 +79,14 @@ export class MediaController {
           format: 'uuid',
           description: 'Vehicle UUID to associate with',
         },
+        buyerId: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Buyer UUID to associate with (PRIVATE - automatically sets isPublic to false)',
+        },
         isPublic: {
           type: 'boolean',
-          description: 'Whether the media is public',
+          description: 'Whether the media is public (ignored if buyerId is provided)',
           default: true,
         },
       },
@@ -132,6 +137,13 @@ export class MediaController {
     required: false,
     type: String,
     description: 'Filter by vehicle UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiQuery({
+    name: 'buyerId',
+    required: false,
+    type: String,
+    description: 'Filter by buyer UUID (private media)',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @ApiQuery({

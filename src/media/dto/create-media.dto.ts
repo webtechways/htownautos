@@ -76,7 +76,15 @@ export class CreateMediaDto {
   vehicleId?: string;
 
   @ApiPropertyOptional({
-    description: 'Whether the media is public',
+    description: 'Buyer UUID to associate with (PRIVATE - automatically sets isPublic to false)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsOptional()
+  @IsUUID()
+  buyerId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Whether the media is public (ignored if buyerId is provided - buyer media is always private)',
     example: true,
     default: true,
   })

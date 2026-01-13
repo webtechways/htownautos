@@ -6,6 +6,9 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "kill:port": "./scripts/kill-port.sh",
+    "kill:3000": "./scripts/kill-port.sh 3000",
+    "kill:5000": "./scripts/kill-port.sh 5000",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -19,7 +22,10 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed": "tsx prisma/seeds/index.ts",
-    "seed:prod": "node dist/prisma/seeds/index.js"
+    "seed:prod": "node dist/prisma/seeds/index.js",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.967.0",
@@ -48,6 +54,7 @@
     "@nestjs/testing": "^11.0.1",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
+    "@types/multer": "^2.0.0",
     "@types/node": "^22.10.7",
     "@types/pg": "^8.16.0",
     "@types/supertest": "^6.0.2",

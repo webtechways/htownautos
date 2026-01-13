@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { VehicleTrim } from '@prisma/client';
 
 export class VehicleTrimEntity implements VehicleTrim {
@@ -43,6 +43,11 @@ export class VehicleTrimEntity implements VehicleTrim {
     example: '2024-01-12T10:30:00.000Z',
   })
   updatedAt: Date;
+
+  @ApiPropertyOptional({
+    description: 'Metadata in JSON format',
+  })
+  metaValue: any;
 
   constructor(partial: Partial<VehicleTrimEntity>) {
     Object.assign(this, partial);

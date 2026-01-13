@@ -9,10 +9,12 @@ import { VehicleTrimModule } from './vehicle-trim/vehicle-trim.module';
 import { NomenclatorsModule } from './nomenclators/nomenclators.module';
 import { ExtraExpenseModule } from './extra-expense/extra-expense.module';
 import { MediaModule } from './media/media.module';
+import { AuditModule } from './common/audit.module';
 
 @Module({
   imports: [
     PrismaModule,
+    AuditModule, // Global audit logging for RouteOne/DealerTrack compliance
     VehicleYearModule,
     VehicleMakeModule,
     VehicleModelModule,

@@ -15,6 +15,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { AuditLog } from '../common/decorators/audit-log.decorator';
 import {
   ApiTags,
   ApiOperation,
@@ -37,6 +38,13 @@ export class MediaController {
   constructor(private readonly mediaService: MediaService) {}
 
   @Post('upload')
+  @AuditLog({
+    action: 'create',
+    resource: 'media',
+    level: 'medium',
+    pii: true, // Puede contener documentos con PII (licencias, recibos)
+    compliance: ['dealertrack', 'glba'],
+  })
   @ApiOperation({
     summary: 'Upload a file and create media record',
     description: `
@@ -243,6 +251,13 @@ export class MediaController {
   }
 
   @Get()
+  @AuditLog({
+    action: 'read',
+    resource: 'media',
+    level: 'low',
+    pii: false,
+    compliance: ['dealertrack'],
+  })
   @ApiOperation({
     summary: 'Get all media with pagination and filters',
     description: `
@@ -365,6 +380,13 @@ export class MediaController {
   }
 
   @Get(':id')
+  @AuditLog({
+    action: 'read',
+    resource: 'media',
+    level: 'medium',
+    pii: true, // Puede ser documento con PII
+    compliance: ['dealertrack', 'glba'],
+  })
   @ApiOperation({
     summary: 'Get a media file by ID',
     description: `
@@ -435,6 +457,13 @@ export class MediaController {
   }
 
   @Get(':id/signed-url')
+  @AuditLog({
+    action: 'access',
+    resource: 'media',
+    level: 'high', // Acceso a archivos privados
+    pii: true,
+    compliance: ['dealertrack', 'glba'],
+  })
   @ApiOperation({
     summary: 'Get a signed URL for private media',
     description: `
@@ -548,6 +577,13 @@ export class MediaController {
   }
 
   @Patch(':id')
+  @AuditLog({
+    action: 'update',
+    resource: 'media',
+    level: 'medium',
+    pii: true,
+    compliance: ['dealertrack', 'glba'],
+  })
   @ApiOperation({
     summary: 'Update a media record',
     description: `
@@ -647,6 +683,13 @@ export class MediaController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
+  @AuditLog({
+    action: 'delete',
+    resource: 'media',
+    level: 'high', // Eliminación permanente
+    pii: true,
+    compliance: ['dealertrack', 'glba'],
+  })
   @ApiOperation({
     summary: 'Delete a media file',
     description: `

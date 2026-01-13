@@ -45,6 +45,11 @@ export class ExtraExpenseEntity implements Omit<ExtraExpense, 'price'> {
   })
   updatedAt: Date;
 
+  @ApiPropertyOptional({
+    description: 'Metadata in JSON format',
+  })
+  metaValue: any;
+
   constructor(partial: Partial<ExtraExpenseEntity> & { price?: any }) {
     Object.assign(this, partial);
     if (partial.price !== undefined) {

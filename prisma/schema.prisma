@@ -1261,3 +1261,62 @@ model ExtraExpense {
   @@index([receiptId])
   @@map("extra_expenses")
 }
+
+// ============================================
+// AUDIT LOG - Registro de auditoría para compliance
+// RouteOne, DealerTrack, GLBA, OFAC
+// ============================================
+model AuditLog {
+  id String @id @default(uuid())
+
+  // Usuario que realizó la acción
+  userId    String?
+  userEmail String
+
+  // Acción realizada
+  action   String // create, read, update, delete, export, access
+  resource String // buyer, deal, vehicle, media, title, etc.
+
+  // IDs de recursos afectados
+  resourceId String? // ID del recurso principal
+  buyerId    String? // ID del buyer (si aplica)
+  vehicleId  String? // ID del vehículo (si aplica)
+  dealId     String? // ID del deal (si aplica)
+
+  // Detalles de la request
+  method    String // GET, POST, PUT, DELETE, PATCH
+  url       String
+  ipAddress String
+  userAgent String?
+
+  // Resultado
+  status       String // success, failure
+  duration     Int? // Duración en ms
+  errorMessage String?
+  errorCode    Int?
+
+  // Clasificación de seguridad
+  level      String // low, medium, high, critical
+  pii        Boolean // Personally Identifiable Information
+  compliance String[] // ['routeone', 'dealertrack', 'glba', 'ofac']
+
+  // Metadata adicional (JSON)
+  metadata Json?
+
+  // Timestamp
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userEmail])
+  @@index([action])
+  @@index([resource])
+  @@index([buyerId])
+  @@index([vehicleId])
+  @@index([dealId])
+  @@index([status])
+  @@index([level])
+  @@index([pii])
+  @@index([createdAt])
+  @@index([ipAddress])
+  @@map("audit_logs")
+}

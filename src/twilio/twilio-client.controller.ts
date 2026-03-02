@@ -211,13 +211,14 @@ export class TwilioClientController {
 
         // Build callback URLs
         const baseUrl = process.env.API_BASE_URL || 'https://api.htownautos.com';
-        const statusCallback = `${baseUrl}/api/v1/twilio/client/outgoing-status?tenantId=${encodeURIComponent(tenantId)}`;
+        const dialActionCallback = `${baseUrl}/api/v1/twilio/client/outgoing-status?tenantId=${encodeURIComponent(tenantId)}`;
+        const numberStatusCallback = `${baseUrl}/api/v1/twilio/client/outgoing-number-status?tenantId=${encodeURIComponent(tenantId)}&parentCallSid=${encodeURIComponent(callSid)}`;
         const recordingCallback = `${baseUrl}/api/v1/twilio/voice/recording/${tenantId}/${callSid}`;
 
         // Dial with recording enabled
         const dial = response.dial({
           callerId,
-          action: statusCallback,
+          action: dialActionCallback,
           method: 'POST',
           // Recording options - record both sides when answered
           record: 'record-from-answer-dual',
@@ -225,7 +226,12 @@ export class TwilioClientController {
           recordingStatusCallbackMethod: 'POST',
           recordingStatusCallbackEvent: ['completed'],
         });
-        dial.number(to);
+        // Add status callback on the dialed number to get real-time status updates
+        dial.number({
+          statusCallback: numberStatusCallback,
+          statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+          statusCallbackMethod: 'POST',
+        }, to);
 
         this.logger.log(`Outbound call configured with recording callback: ${recordingCallback}`);
       }
@@ -288,6 +294,60 @@ export class TwilioClientController {
     const response = new VoiceResponse();
     res.type('text/xml');
     res.send(response.toString());
+  }
+
+  /**
+   * Real-time status callback for the dialed number in outbound calls
+   * Receives: initiated, ringing, answered, completed events
+   */
+  @Post('outgoing-number-status')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiExcludeEndpoint()
+  async handleOutgoingNumberStatus(
+    @Body() body: Record<string, string>,
+    @Query('tenantId') tenantId: string,
+    @Query('parentCallSid') parentCallSid: string,
+  ) {
+    const callStatus = body.CallStatus;
+    const childCallSid = body.CallSid;
+
+    this.logger.log(`Outgoing number status - ParentCallSid: ${parentCallSid}, ChildCallSid: ${childCallSid}, Status: ${callStatus}`);
+
+    if (!parentCallSid || !callStatus) {
+      return { success: true };
+    }
+
+    try {
+      // Map Twilio status to our status
+      const statusMap: Record<string, string> = {
+        'initiated': 'initiated',
+        'ringing': 'ringing',
+        'answered': 'in-progress',
+        'in-progress': 'in-progress',
+        'completed': 'completed',
+        'busy': 'busy',
+        'no-answer': 'no-answer',
+        'failed': 'failed',
+        'canceled': 'canceled',
+      };
+
+      const mappedStatus = statusMap[callStatus] || callStatus;
+
+      const updateData: any = { status: mappedStatus };
+
+      // Set answeredAt when call is answered
+      if (callStatus === 'answered' || callStatus === 'in-progress') {
+        updateData.answeredAt = new Date();
+      }
+
+      await this.phoneCallService.updateCallByTwilioSid(parentCallSid, updateData);
+      this.logger.log(`Updated outbound call ${parentCallSid} to ${mappedStatus} (from child ${childCallSid})`);
+    } catch (err) {
+      this.logger.error(`Failed to update outbound call number status: ${err.message}`);
+    }
+
+    return { success: true };
   }
 
   /**

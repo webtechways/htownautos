@@ -126,7 +126,7 @@ export class TenantService {
     });
 
     // Return tenant with owner info
-    return this.prisma.tenant.findUnique({
+    const record = await this.prisma.tenant.findUnique({
       where: { id: tenant.id },
       include: {
         users: {
@@ -152,6 +152,8 @@ export class TenantService {
         },
       },
     });
+
+    return record;
   }
 
   async findAll(query: QueryTenantDto) {
@@ -687,7 +689,7 @@ export class TenantService {
     const tenantEmail = `${addUserDto.username}@${tenantForSubdomain.subdomain}.htownautos.com`;
 
     // Add user to tenant
-    return this.prisma.tenantUser.create({
+    const record = await this.prisma.tenantUser.create({
       data: {
         tenantId,
         userId: addUserDto.userId,
@@ -717,6 +719,8 @@ export class TenantService {
         },
       },
     });
+
+    return record;
   }
 
   /**
@@ -766,7 +770,7 @@ export class TenantService {
       }
 
       // Only update extension for owner
-      return this.prisma.tenantUser.update({
+      const ownerRecord = await this.prisma.tenantUser.update({
         where: {
           tenantId_userId: { tenantId, userId },
         },
@@ -778,6 +782,8 @@ export class TenantService {
           role: true,
         },
       });
+
+      return ownerRecord;
     }
 
     // If updating role, verify it exists and is valid
@@ -837,7 +843,7 @@ export class TenantService {
       updateData.tenantEmail = `${updateDto.username}@${tenantForSubdomain.subdomain}.htownautos.com`;
     }
 
-    return this.prisma.tenantUser.update({
+    const record = await this.prisma.tenantUser.update({
       where: {
         tenantId_userId: { tenantId, userId },
       },
@@ -862,6 +868,8 @@ export class TenantService {
         },
       },
     });
+
+    return record;
   }
 
   /**
@@ -901,7 +909,7 @@ export class TenantService {
     }
 
     // Soft delete: update status to removed and deactivate
-    await this.prisma.tenantUser.update({
+    const removedRecord = await this.prisma.tenantUser.update({
       where: {
         tenantId_userId: { tenantId, userId },
       },
@@ -1918,7 +1926,7 @@ export class TenantService {
     }
 
     // Save to database with the pre-generated ID
-    return this.prisma.twilioPhoneNumber.create({
+    const record = await this.prisma.twilioPhoneNumber.create({
       data: {
         id: phoneId,
         tenantId,
@@ -1932,6 +1940,8 @@ export class TenantService {
         isActive: true,
       },
     });
+
+    return record;
   }
 
   async updatePhoneNumber(tenantId: string, phoneNumberId: string, dto: UpdatePhoneNumberDto) {
@@ -1958,7 +1968,7 @@ export class TenantService {
       });
     }
 
-    return this.prisma.twilioPhoneNumber.update({
+    const record = await this.prisma.twilioPhoneNumber.update({
       where: { id: phoneNumberId },
       data: {
         friendlyName: dto.friendlyName,
@@ -1966,6 +1976,8 @@ export class TenantService {
         isActive: dto.isActive,
       },
     });
+
+    return record;
   }
 
   async deletePhoneNumber(tenantId: string, phoneNumberId: string) {

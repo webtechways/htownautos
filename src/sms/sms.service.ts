@@ -516,8 +516,9 @@ export class SmsService {
   }
 
   async remove(tenantId: string, id: string) {
-    await this.findOne(tenantId, id);
+    const existing = await this.findOne(tenantId, id);
     await this.prisma.smsMessage.delete({ where: { id } });
+
     return { message: 'SMS message deleted successfully' };
   }
 

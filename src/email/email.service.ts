@@ -50,7 +50,7 @@ export class EmailService {
   /**
    * Generic send email method
    */
-  private async sendEmail(params: {
+  async sendEmail(params: {
     to: string;
     subject: string;
     htmlBody: string;

@@ -32,7 +32,9 @@ export interface CreatePartAndAssociateDto {
 
 @Injectable()
 export class VehiclePartsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+  ) {}
 
   /**
    * Get all parts associated with a vehicle

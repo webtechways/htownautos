@@ -36,7 +36,9 @@ const BUYER_INCLUDE = {
 export class BuyersService {
   private readonly buyer: ReturnType<PrismaService['getModel']>;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+  ) {
     this.buyer = prisma.getModel('buyer');
   }
 

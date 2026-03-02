@@ -8,7 +8,9 @@ import { Prisma } from '@prisma/client';
 export class PhoneCallsService {
   private readonly logger = new Logger(PhoneCallsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+  ) {}
 
   /**
    * Check if a user can access call recordings (all roles except salesperson)
@@ -111,7 +113,7 @@ export class PhoneCallsService {
       throw new NotFoundException('Buyer not found in this tenant');
     }
 
-    return this.prisma.phoneCall.create({
+    const record = await this.prisma.phoneCall.create({
       data: {
         tenantId,
         callerId,
@@ -137,6 +139,8 @@ export class PhoneCallsService {
       },
       include: this.includeRelations,
     });
+
+    return record;
   }
 
   async findAll(tenantId: string, query: QueryPhoneCallDto, canAccessRecordings = true) {
@@ -236,15 +240,17 @@ export class PhoneCallsService {
     if (updatePhoneCallDto.aiKeyPoints !== undefined) data.aiKeyPoints = updatePhoneCallDto.aiKeyPoints;
     if (updatePhoneCallDto.aiNextSteps !== undefined) data.aiNextSteps = updatePhoneCallDto.aiNextSteps;
 
-    return this.prisma.phoneCall.update({
+    const record = await this.prisma.phoneCall.update({
       where: { id },
       data,
       include: this.includeRelations,
     });
+
+    return record;
   }
 
   async remove(tenantId: string, id: string) {
-    await this.findOne(tenantId, id);
+    const existing = await this.findOne(tenantId, id);
 
     await this.prisma.phoneCall.delete({ where: { id } });
 

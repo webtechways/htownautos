@@ -506,11 +506,13 @@ export class VehicleService {
     // Sync legacy ↔ new pricing fields
     this.syncPricingFields(data);
 
-    return this.prisma.vehicle.update({
+    const record = await this.prisma.vehicle.update({
       where: { id },
       data,
       include: this.getIncludeRelations(),
     });
+
+    return record;
   }
 
   /**

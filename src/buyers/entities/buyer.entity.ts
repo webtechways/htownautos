@@ -411,6 +411,9 @@ export class BuyerEntity implements Omit<Buyer, 'monthlyHousingCost' | 'monthlyI
   @ApiPropertyOptional({ description: 'Assigned BDC agent TenantUser ID' })
   bdcAgentId: string | null;
 
+  @ApiPropertyOptional({ description: 'Stripe customer ID' })
+  stripeCustomerId: string | null;
+
   // Computed full name
   @ApiProperty({ example: 'John R. Doe Jr' })
   fullName: string;

@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
+import * as bodyParser from 'body-parser';
 import { AppModule } from './app.module';
 import { RedisIoAdapter } from './websocket/redis-io.adapter';
 
@@ -14,6 +15,17 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug'], // Logging completo para auditoría
   });
+
+  // Body parser: Stripe webhooks need raw body for signature verification,
+  // all other routes get parsed JSON as before
+  app.use((req: any, res: any, next: any) => {
+    if (req.originalUrl === '/api/v1/stripe/webhooks') {
+      bodyParser.raw({ type: 'application/json', limit: '5mb' })(req, res, next);
+    } else {
+      bodyParser.json({ limit: '5mb' })(req, res, next);
+    }
+  });
+  app.use(bodyParser.urlencoded({ limit: '5mb', extended: true }));
 
   // ===========================================
   // SECURITY HEADERS - RouteOne/DealerTrack Required
@@ -62,9 +74,22 @@ async function bootstrap() {
   });
 
   // ===========================================
+  // SHORT URL REWRITE (Cloudflare Tunnel: link.htownautos.com)
+  // ===========================================
+  app.use((req: any, _res: any, next: any) => {
+    const host = req.headers.host || '';
+    if (host.includes('link.htownautos.com') && !req.url.startsWith('/r/')) {
+      req.url = '/r' + req.url;
+    }
+    next();
+  });
+
+  // ===========================================
   // GLOBAL PREFIX
   // ===========================================
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix('api/v1', {
+    exclude: ['r/:code'],
+  });
 
   // ===========================================
   // GLOBAL VALIDATION PIPE - Máxima seguridad

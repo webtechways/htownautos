@@ -10,7 +10,9 @@ import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class TasksService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+  ) {}
 
   async create(
     tenantId: string,
@@ -30,7 +32,7 @@ export class TasksService {
       throw new NotFoundException('Assigned user not found in this tenant');
     }
 
-    return this.prisma.task.create({
+    const record = await this.prisma.task.create({
       data: {
         tenantId,
         title: createTaskDto.title,
@@ -83,6 +85,8 @@ export class TasksService {
         },
       },
     });
+
+    return record;
   }
 
   async findAll(tenantId: string, query: QueryTaskDto) {
@@ -286,7 +290,7 @@ export class TasksService {
     }
     if (updateTaskDto.notes !== undefined) data.notes = updateTaskDto.notes;
 
-    return this.prisma.task.update({
+    const record = await this.prisma.task.update({
       where: { id },
       data,
       include: {
@@ -326,6 +330,8 @@ export class TasksService {
         },
       },
     });
+
+    return record;
   }
 
   async remove(tenantId: string, id: string) {

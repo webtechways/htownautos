@@ -95,6 +95,9 @@ export class Vehicle {
   @ApiPropertyOptional({ description: 'Features' })
   features?: string;
 
+  @ApiPropertyOptional({ description: 'Internal notes (not visible to customers)' })
+  notes?: string;
+
   @ApiPropertyOptional({ description: 'Main image ID' })
   mainImageId?: string;
 

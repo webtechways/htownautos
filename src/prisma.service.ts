@@ -134,32 +134,12 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.uploadSession;
   }
 
-  get marketCheckPriceCache() {
-    return this.prisma.marketCheckPriceCache;
+  get auctionListing() {
+    return this.prisma.auctionListing;
   }
 
-  get marketCheckCompsCache() {
-    return this.prisma.marketCheckCompsCache;
-  }
-
-  get marketCheckAuctionCache() {
-    return this.prisma.marketCheckAuctionCache;
-  }
-
-  get copartListing() {
-    return this.prisma.copartListing;
-  }
-
-  get marketCheckAuctionListing() {
-    return this.prisma.marketCheckAuctionListing;
-  }
-
-  get copartFavorite() {
-    return this.prisma.copartFavorite;
-  }
-
-  get scaAuctionFavorite() {
-    return this.prisma.scaAuctionFavorite;
+  get auctionFavorite() {
+    return this.prisma.auctionFavorite;
   }
 
   get task() {
@@ -192,6 +172,38 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
 
   get ttsCache() {
     return this.prisma.ttsCache;
+  }
+
+  get damageAi() {
+    return this.prisma.damageAi;
+  }
+
+  get auctionVehicleAnalysis() {
+    return this.prisma.auctionVehicleAnalysis;
+  }
+
+  get auctionPartsPrice() {
+    return this.prisma.auctionPartsPrice;
+  }
+
+  get similarAuctionCar() {
+    return this.prisma.similarAuctionCar;
+  }
+
+  get vehicleMarketPart() {
+    return this.prisma.vehicleMarketPart;
+  }
+
+  get carfaxReport() {
+    return this.prisma.carfaxReport;
+  }
+
+  get maxBidRecommendation() {
+    return this.prisma.maxBidRecommendation;
+  }
+
+  get shortUrl() {
+    return this.prisma.shortUrl;
   }
 
   get $transaction() {

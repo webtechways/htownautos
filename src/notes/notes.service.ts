@@ -6,14 +6,16 @@ import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class NotesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+  ) {}
 
   async create(
     tenantId: string,
     createNoteDto: CreateNoteDto,
     createdById: string,
   ) {
-    return this.prisma.note.create({
+    const record = await this.prisma.note.create({
       data: {
         tenantId,
         content: createNoteDto.content,
@@ -46,6 +48,8 @@ export class NotesService {
         },
       },
     });
+
+    return record;
   }
 
   async findAll(tenantId: string, query: QueryNoteDto) {
@@ -141,7 +145,7 @@ export class NotesService {
   async update(tenantId: string, id: string, updateNoteDto: UpdateNoteDto) {
     await this.findOne(tenantId, id);
 
-    return this.prisma.note.update({
+    const record = await this.prisma.note.update({
       where: { id },
       data: {
         content: updateNoteDto.content,
@@ -170,6 +174,8 @@ export class NotesService {
         },
       },
     });
+
+    return record;
   }
 
   async remove(tenantId: string, id: string) {

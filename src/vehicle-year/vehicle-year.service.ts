@@ -21,7 +21,9 @@ import { VehicleYearEntity } from './entities/vehicle-year.entity';
 export class VehicleYearService {
   private readonly logger = new Logger(VehicleYearService.name);
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+  ) { }
 
   /**
    * Runs every January 1st at 00:05 — adds next year to the DB

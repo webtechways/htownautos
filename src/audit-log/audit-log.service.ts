@@ -5,7 +5,9 @@ import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class AuditLogService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+  ) {}
 
   async findAll(query: QueryAuditLogDto) {
     const { page = 1, limit = 20, vehicleId, buyerId, dealId, resource, action, userId, search } = query;
@@ -84,7 +86,7 @@ export class AuditLogService {
     piiAccessed?: boolean;
     details?: any;
   }) {
-    return this.prisma.auditLog.create({
+    const record = await this.prisma.auditLog.create({
       data: {
         action: data.action,
         resource: data.resource,
@@ -104,5 +106,7 @@ export class AuditLogService {
         metadata: data.details,
       },
     });
+
+    return record;
   }
 }

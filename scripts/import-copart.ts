@@ -368,7 +368,7 @@ async function insertBatch(batch: any[]): Promise<{ imported: number; errors: nu
 
   for (const record of batch) {
     try {
-      await prisma.copartListing.upsert({
+      await prisma.auctionListing.upsert({
         where: { lotNumber: record.lotNumber },
         update: record,
         create: record,

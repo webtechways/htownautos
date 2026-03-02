@@ -6,7 +6,9 @@ import { QueryMetaDto } from './dto/query-meta.dto';
 
 @Injectable()
 export class MetaService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+  ) {}
 
   /**
    * Create a new meta entry

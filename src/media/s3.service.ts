@@ -39,7 +39,7 @@ export class S3Service {
 
   constructor() {
     this.region = process.env.AWS_REGION || 'us-east-1';
-    this.bucket = process.env.AWS_S3_BUCKET || '';
+    this.bucket = process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_PUBLIC || '';
     this.cdnBaseUrl = process.env.CDN_BASE_URL?.replace(/\/+$/, '') || null;
 
     this.s3Client = new S3Client({
@@ -51,7 +51,7 @@ export class S3Service {
     });
   }
 
-  /** Build public URL — uses CDN if configured, otherwise falls back to direct S3 */
+  /** Build public URL — uses CDN if configured, otherwise standard S3 */
   buildPublicUrl(key: string): string {
     if (this.cdnBaseUrl) {
       return `${this.cdnBaseUrl}/${key}`;
@@ -59,7 +59,7 @@ export class S3Service {
     return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
   }
 
-  /** Generate a Lambda-ready S3 key: {folder}/{year}/{uuid}/original.{ext} */
+  /** Generate an S3 key: {folder}/{year}/{uuid}/original.{ext} */
   generateKey(folder: string, fileExtension: string): string {
     const uuid = randomUUID();
     const year = new Date().getFullYear();
@@ -111,7 +111,7 @@ export class S3Service {
     }
   }
 
-  /** Legacy: upload file buffer from backend (backward compat) */
+  /** Upload file buffer from backend */
   async uploadFile(
     file: Express.Multer.File,
     folder: string = 'uploads',
@@ -194,6 +194,43 @@ export class S3Service {
       this.logger.log(`File deleted successfully: ${key}`);
     } catch (error) {
       this.logger.error('Error deleting file from S3', error);
+      throw error;
+    }
+  }
+
+  /** Download an external URL and upload to S3 with a specific key */
+  async uploadFromUrl(url: string, key: string, contentType: string = 'image/jpeg'): Promise<void> {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ${url}: ${response.status}`);
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+    });
+
+    await this.s3Client.send(command);
+  }
+
+  /** Download a file from S3 as a Buffer */
+  async downloadBuffer(key: string): Promise<Buffer> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      });
+      const response = await this.s3Client.send(command);
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of response.Body as any) {
+        chunks.push(chunk);
+      }
+      return Buffer.concat(chunks);
+    } catch (error) {
+      this.logger.error(`Error downloading file from S3: ${key}`, error);
       throw error;
     }
   }

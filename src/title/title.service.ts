@@ -5,7 +5,9 @@ import { UpdateTitleDto } from './dto/update-title.dto';
 
 @Injectable()
 export class TitleService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+  ) {}
 
   private readonly includeRelations = {
     titleStatus: true,
@@ -70,15 +72,17 @@ export class TitleService {
     if (dto.backImageId !== undefined) data.backImageId = dto.backImageId || null;
 
     if (existing) {
-      return this.prisma.title.update({
+      const record = await this.prisma.title.update({
         where: { id: existing.id },
         data,
         include: this.includeRelations,
       });
+
+      return record;
     }
 
     // Create new
-    return this.prisma.title.create({
+    const record = await this.prisma.title.create({
       data: {
         vehicleId,
         titleNumber: dto.titleNumber || undefined,
@@ -95,6 +99,8 @@ export class TitleService {
       },
       include: this.includeRelations,
     });
+
+    return record;
   }
 
   /**
@@ -119,6 +125,7 @@ export class TitleService {
   async update(id: string, dto: UpdateTitleDto) {
     const existing = await this.prisma.title.findUnique({
       where: { id },
+      include: { vehicle: { select: { tenantId: true } } },
     });
 
     if (!existing) {
@@ -139,10 +146,12 @@ export class TitleService {
     if (dto.frontImageId !== undefined) data.frontImageId = dto.frontImageId || null;
     if (dto.backImageId !== undefined) data.backImageId = dto.backImageId || null;
 
-    return this.prisma.title.update({
+    const record = await this.prisma.title.update({
       where: { id },
       data,
       include: this.includeRelations,
     });
+
+    return record;
   }
 }

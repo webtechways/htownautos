@@ -228,7 +228,7 @@ export class MediaService {
           description: dto.description,
           alt: dto.alt,
           storageProvider: 's3',
-          storageBucket: process.env.AWS_S3_BUCKET || '',
+          storageBucket: process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_PUBLIC || '',
           storageKey: dto.key,
           isPublic: !isPrivate,
           isActive: true,
@@ -416,10 +416,7 @@ export class MediaService {
       throw new BadRequestException('Media does not have a storage key');
     }
 
-    if (media.isPublic) {
-      return { url: media.url };
-    }
-
+    // Always generate signed URLs - S3 bucket does not allow public access
     const url = await this.s3Service.getSignedUrl(media.storageKey, expiresIn);
     return { url };
   }

@@ -404,6 +404,15 @@ export class CreateVehicleDto {
   features?: string;
 
   @ApiPropertyOptional({
+    description: 'Internal notes (not visible to customers)',
+    example: 'Customer requested specific inspection. Check brakes.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  notes?: string;
+
+  @ApiPropertyOptional({
     description: 'Main image ID',
   })
   @IsOptional()

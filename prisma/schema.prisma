@@ -518,9 +518,8 @@ model Tenant {
   vehicleSources      VehicleSource[]
   vehicleStatuses     VehicleStatus[]
   vehicles            Vehicle[]
-  copartFavorites     CopartFavorite[]
-  scaAuctionFavorites ScaAuctionFavorite[]
-  invitations         TenantInvitation[]
+  auctionFavorites AuctionFavorite[]
+  invitations      TenantInvitation[]
   tasks               Task[]
   notes               Note[]
   phoneCalls          PhoneCall[]
@@ -528,6 +527,7 @@ model Tenant {
   emailMessages       EmailMessage[]
   twilioPhoneNumbers  TwilioPhoneNumber[]
   callFlows           CallFlow[]
+  shortUrls           ShortUrl[]
 
   @@index([slug])
   @@index([subdomain])
@@ -812,6 +812,7 @@ model Buyer {
   tenantId                 String?
   salesPersonId            String?
   bdcAgentId               String?
+  stripeCustomerId         String?            @unique
   activities               Activity[]
   employmentStatus         EmploymentStatus?  @relation(fields: [employmentStatusId], references: [id])
   gender                   Gender?            @relation(fields: [genderId], references: [id])
@@ -1162,6 +1163,7 @@ model Vehicle {
   passengers            Int?
   description           String?
   features              String?
+  notes                 String?
   mainImageId           String?           @unique
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
@@ -1723,10 +1725,9 @@ model MarketCheckAuctionCache {
   @@map("marketcheck_auction_cache")
 }
 
-model CopartListing {
-  id                String    @id @default(uuid())
-  auctionName       String    @default("Copart")
-  copartId          Int
+model AuctionListing {
+  auctionName       String?   @default("Copart")
+  copartId          Int?
   yardNumber        Int?
   yardName          String?
   saleDate          Int?
@@ -1734,7 +1735,7 @@ model CopartListing {
   saleTime          String?
   timeZone          String?
   itemNumber        Int?
-  lotNumber         BigInt    @unique
+  lotNumber         BigInt    @id
   vehicleType       String?
   year              Int?
   make              String?
@@ -1767,7 +1768,9 @@ model CopartListing {
   locationZip       String?
   locationCountry   String?
   currencyCode      String?
-  images            String[]  @default([])
+  images            String?
+  galleryCache      String?   @db.Text
+  galleryCachedAt   DateTime?
   createDateTime    String?
   gridRow           String?
   makeOfferEligible String?
@@ -1786,11 +1789,12 @@ model CopartListing {
   announcements     String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
-
-  favorites CopartFavorite[]
+  analyses          AuctionVehicleAnalysis[]
+  marketParts       VehicleMarketPart[]
+  carfaxReports     CarfaxReport[]
+  maxBidRecommendations MaxBidRecommendation[]
 
   @@index([auctionName])
-  @@index([lotNumber])
   @@index([vin])
   @@index([year])
   @@index([make])
@@ -1799,7 +1803,7 @@ model CopartListing {
   @@index([locationState])
   @@index([damageDescription])
   @@index([createdAt])
-  @@map("copart_listings")
+  @@map("auction_listings")
 }
 
 model MarketCheckAuctionListing {
@@ -1886,8 +1890,6 @@ model MarketCheckAuctionListing {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  favorites ScaAuctionFavorite[]
-
   @@index([vin])
   @@index([year])
   @@index([make])
@@ -1899,36 +1901,19 @@ model MarketCheckAuctionListing {
   @@map("marketcheck_auction_listings")
 }
 
-model CopartFavorite {
-  id              String   @id @default(uuid())
-  tenantId        String
-  userId          String
-  copartListingId String
-  createdAt       DateTime @default(now())
+model AuctionFavorite {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String
+  lotNumber BigInt
+  createdAt DateTime @default(now())
 
-  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  copartListing CopartListing @relation(fields: [copartListingId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, userId, copartListingId])
+  @@unique([tenantId, userId, lotNumber])
   @@index([tenantId, userId])
-  @@index([copartListingId])
-  @@map("copart_favorites")
-}
-
-model ScaAuctionFavorite {
-  id                  String   @id @default(uuid())
-  tenantId            String
-  userId              String
-  scaAuctionListingId String
-  createdAt           DateTime @default(now())
-
-  tenant            Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  scaAuctionListing MarketCheckAuctionListing @relation(fields: [scaAuctionListingId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, userId, scaAuctionListingId])
-  @@index([tenantId, userId])
-  @@index([scaAuctionListingId])
-  @@map("sca_auction_favorites")
+  @@index([lotNumber])
+  @@map("auction_favorites")
 }
 
 model Task {
@@ -2302,4 +2287,201 @@ model CallFlow {
   @@index([tenantId])
   @@index([isActive])
   @@map("call_flows")
+}
+
+model DamageAi {
+  id                       String                  @id @default(uuid())
+  auctionVehicleAnalysisId String
+  part                     String
+  description              String?
+  level                    Int
+  partCost                 Decimal                 @db.Decimal(10, 2)
+  laborCost                Decimal                 @db.Decimal(10, 2)
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  partsPrices              AuctionPartsPrice[]
+  analysis                 AuctionVehicleAnalysis  @relation(fields: [auctionVehicleAnalysisId], references: [id], onDelete: Cascade)
+
+  @@index([auctionVehicleAnalysisId])
+  @@map("damage_ai")
+}
+
+model AuctionPartsPrice {
+  id           String   @id @default(uuid())
+  damageAiId   String
+  name         String
+  description  String?
+  image        String?
+  url          String?
+  source       String?
+  price        Decimal  @db.Decimal(10, 2)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  damageAi     DamageAi @relation(fields: [damageAiId], references: [id], onDelete: Cascade)
+
+  @@index([damageAiId])
+  @@map("auction_parts_prices")
+}
+
+model SimilarAuctionCar {
+  id                       String                 @id @default(uuid())
+  auctionVehicleAnalysisId String
+  name                     String
+  description              String?
+  image                    String?
+  price                    Decimal?               @db.Decimal(10, 2)
+  url                      String?
+  source                   String?
+  posted                   DateTime?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  analysis                 AuctionVehicleAnalysis @relation(fields: [auctionVehicleAnalysisId], references: [id], onDelete: Cascade)
+
+  @@index([auctionVehicleAnalysisId])
+  @@map("similar_auction_cars")
+}
+
+model AuctionVehicleAnalysis {
+  id                 String              @id @default(uuid())
+  auctionListingId   BigInt
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  auctionListing     AuctionListing      @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
+  damages            DamageAi[]
+  similarCars        SimilarAuctionCar[]
+
+  @@index([auctionListingId])
+  @@map("auction_vehicle_analyses")
+}
+
+model VehicleMarketPart {
+  id                 String         @id @default(uuid())
+  auctionListingId   BigInt
+  part               String
+  description        String?
+  priceMin           Decimal        @db.Decimal(10, 2)
+  priceMax           Decimal        @db.Decimal(10, 2)
+  priceAvg           Decimal        @db.Decimal(10, 2)
+  source             String         @default("openai")
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  auctionListing     AuctionListing @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
+
+  @@index([auctionListingId])
+  @@map("vehicle_market_parts")
+}
+
+model CarfaxReport {
+  id                 String         @id @default(uuid())
+  auctionListingId   BigInt
+  s3Key              String
+  analysis           String         @db.Text
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  auctionListing     AuctionListing @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
+
+  @@index([auctionListingId])
+  @@map("carfax_reports")
+}
+
+model MaxBidRecommendation {
+  id                 String         @id @default(uuid())
+  auctionListingId   BigInt
+  maxBid             Decimal        @db.Decimal(12, 2)
+  analysis           String         @db.Text
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  auctionListing     AuctionListing @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
+
+  @@index([auctionListingId])
+  @@map("max_bid_recommendations")
+}
+
+// Staging table for bulk import via PostgreSQL COPY
+// All fields are Text to avoid type errors during import — conversion happens in a separate step
+model CopartStaging {
+  id                  Int      @id @default(autoincrement())
+  copartId            String?  // "Id"
+  yardNumber          String?  // "Yard number"
+  yardName            String?  // "Yard name"
+  saleDate            String?  // "Sale Date M/D/CY"
+  dayOfWeek           String?  // "Day of Week"
+  saleTime            String?  // "Sale time (HHMM)"
+  timeZone            String?  // "Time Zone"
+  itemNumber          String?  // "Item#"
+  lotNumber           String?  // "Lot number"
+  vehicleType         String?  // "Vehicle Type"
+  year                String?  // "Year"
+  make                String?  // "Make"
+  modelGroup          String?  // "Model Group"
+  modelDetail         String?  // "Model Detail"
+  bodyStyle           String?  // "Body Style"
+  color               String?  // "Color"
+  damageDescription   String?  // "Damage Description"
+  secondaryDamage     String?  // "Secondary Damage"
+  saleTitleState      String?  // "Sale Title State"
+  saleTitleType       String?  // "Sale Title Type"
+  hasKeys             String?  // "Has Keys-Yes or No"
+  lotCondCode         String?  // "Lot Cond. Code"
+  vin                 String?  // "VIN"
+  odometer            String?  // "Odometer"
+  odometerBrand       String?  // "Odometer Brand"
+  estRetailValue      String?  // "Est. Retail Value"
+  repairCost          String?  // "Repair cost"
+  engine              String?  // "Engine"
+  drive               String?  // "Drive"
+  transmission        String?  // "Transmission"
+  fuelType            String?  // "Fuel Type"
+  cylinders           String?  // "Cylinders"
+  runsDrives          String?  // "Runs/Drives"
+  saleStatus          String?  // "Sale Status"
+  highBid             String?  // "High Bid =non-vix,Sealed=Vix"
+  specialNote         String?  // "Special Note"
+  locationCity        String?  // "Location city"
+  locationState       String?  // "Location state"
+  locationZip         String?  // "Location ZIP"
+  locationCountry     String?  // "Location country"
+  currencyCode        String?  // "Currency Code"
+  imageThumbnail      String?  // "Image Thumbnail"
+  createDateTime      String?  // "Create Date/Time"
+  gridRow             String?  // "Grid/Row"
+  makeOfferEligible   String?  // "Make-an-Offer Eligible"
+  buyItNowPrice       String?  // "Buy-It-Now Price"
+  imageUrl            String?  // "Image URL"
+  trim                String?  // "Trim"
+  lastUpdatedTime     String?  // "Last Updated Time"
+  rentals             String?  // "Rentals"
+  wholesale           String?  // "Wholesale"
+  sellerName          String?  // "Seller Name"
+  offsiteAddress1     String?  // "Offsite Address1"
+  offsiteState        String?  // "Offsite State"
+  offsiteCity         String?  // "Offsite City"
+  offsiteZip          String?  // "Offsite Zip"
+  saleLight           String?  // "Sale Light"
+  autoGrade           String?  // "AutoGrade"
+  announcements       String?  // "Announcements"
+  importedAt          DateTime @default(now())
+
+  @@map("copart_staging")
+}
+
+model ShortUrl {
+  id          String    @id @default(uuid())
+  code        String    @unique
+  originalUrl String
+  tenantId    String
+  createdBy   String?
+  clicks      Int       @default(0)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("short_urls")
 }

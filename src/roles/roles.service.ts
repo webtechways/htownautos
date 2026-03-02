@@ -6,7 +6,9 @@ import { UpdateRoleDto } from './dto/update-role.dto';
 
 @Injectable()
 export class RolesService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+    ) { }
 
     private generateSlug(name: string): string {
         return name
@@ -158,7 +160,7 @@ export class RolesService {
             });
         }
 
-        return this.prisma.role.update({
+        const record = await this.prisma.role.update({
             where: { id },
             data: {
                 ...data,
@@ -169,6 +171,8 @@ export class RolesService {
                 }
             }
         });
+
+        return record;
     }
 
     async remove(id: string, tenantId: string) {
@@ -191,8 +195,10 @@ export class RolesService {
             throw new BadRequestException('Cannot delete role that is assigned to users. Reassign them first.');
         }
 
-        return this.prisma.role.delete({
+        const record = await this.prisma.role.delete({
             where: { id },
         });
+
+        return record;
     }
 }

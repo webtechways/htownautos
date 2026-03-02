@@ -20,7 +20,9 @@ import {
 
 @Injectable()
 export class PartsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+  ) {}
 
   /**
    * Generate a unique SKU with HTW-P- prefix
@@ -109,7 +111,7 @@ export class PartsService {
     // Destructure to exclude sku from spread (to avoid undefined override)
     const { sku: _sku, purchaseDate, ...restDto } = createPartDto;
 
-    return this.prisma.part.create({
+    const record = await this.prisma.part.create({
       data: {
         tenantId,
         ...restDto,
@@ -118,6 +120,8 @@ export class PartsService {
       },
       include: this.getPartIncludes(),
     });
+
+    return record;
   }
 
   async findAll(tenantId: string, query: QueryPartDto) {
@@ -298,7 +302,7 @@ export class PartsService {
       }
     }
 
-    return this.prisma.part.update({
+    const record = await this.prisma.part.update({
       where: { id },
       data: {
         ...updatePartDto,
@@ -308,6 +312,8 @@ export class PartsService {
       },
       include: this.getPartIncludes(),
     });
+
+    return record;
   }
 
   async remove(tenantId: string, id: string) {
@@ -473,9 +479,11 @@ export class PartsService {
       );
     }
 
-    return this.prisma.partCondition.create({
+    const record = await this.prisma.partCondition.create({
       data: { ...dto, tenantId },
     });
+
+    return record;
   }
 
   async findAllConditions(tenantId: string) {
@@ -513,10 +521,12 @@ export class PartsService {
       }
     }
 
-    return this.prisma.partCondition.update({
+    const record = await this.prisma.partCondition.update({
       where: { id },
       data: dto,
     });
+
+    return record;
   }
 
   async removeCondition(tenantId: string, id: string) {
@@ -559,9 +569,11 @@ export class PartsService {
       );
     }
 
-    return this.prisma.partStatus.create({
+    const record = await this.prisma.partStatus.create({
       data: { ...dto, tenantId },
     });
+
+    return record;
   }
 
   async findAllStatuses(tenantId: string) {
@@ -594,10 +606,12 @@ export class PartsService {
       }
     }
 
-    return this.prisma.partStatus.update({
+    const record = await this.prisma.partStatus.update({
       where: { id },
       data: dto,
     });
+
+    return record;
   }
 
   async removeStatus(tenantId: string, id: string) {
@@ -651,13 +665,15 @@ export class PartsService {
       }
     }
 
-    return this.prisma.partCategory.create({
+    const record = await this.prisma.partCategory.create({
       data: { ...dto, tenantId },
       include: {
         parent: { select: { id: true, slug: true, title: true } },
         children: { select: { id: true, slug: true, title: true } },
       },
     });
+
+    return record;
   }
 
   async findAllCategories(tenantId: string, includeChildren = true) {
@@ -714,7 +730,7 @@ export class PartsService {
       throw new BadRequestException('A category cannot be its own parent');
     }
 
-    return this.prisma.partCategory.update({
+    const record = await this.prisma.partCategory.update({
       where: { id },
       data: dto,
       include: {
@@ -722,6 +738,8 @@ export class PartsService {
         children: { select: { id: true, slug: true, title: true } },
       },
     });
+
+    return record;
   }
 
   async removeCategory(tenantId: string, id: string) {

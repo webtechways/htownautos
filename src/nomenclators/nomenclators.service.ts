@@ -47,7 +47,9 @@ const NOMENCLATOR_MODELS: Record<string, string> = {
 
 @Injectable()
 export class NomenclatorsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+  ) {}
 
   private getModel(type: string) {
     const modelName = NOMENCLATOR_MODELS[type];

@@ -37,10 +37,10 @@ export class CopartService {
     const idList = ids ? ids.split(',').filter((id) => id.trim()) : null;
 
     // Build where clause
-    const where: Prisma.CopartListingWhereInput = {
+    const where: Prisma.AuctionListingWhereInput = {
       AND: [
         // IDs filter (for favorites)
-        idList && idList.length > 0 ? { id: { in: idList } } : {},
+        idList && idList.length > 0 ? { lotNumber: { in: idList.map((id) => BigInt(id.trim())) } } : {},
         // Search across VIN, make, model
         search
           ? {
@@ -120,7 +120,7 @@ export class CopartService {
     };
 
     // Build orderBy
-    const orderBy: Prisma.CopartListingOrderByWithRelationInput = {};
+    const orderBy: Prisma.AuctionListingOrderByWithRelationInput = {};
     const validSortFields = [
       'createdAt',
       'year',
@@ -138,13 +138,13 @@ export class CopartService {
 
     // Execute queries in parallel
     const [listings, total] = await Promise.all([
-      this.prisma.copartListing.findMany({
+      this.prisma.auctionListing.findMany({
         where,
         skip,
         take: limit,
         orderBy,
       }),
-      this.prisma.copartListing.count({ where }),
+      this.prisma.auctionListing.count({ where }),
     ]);
 
     // Convert BigInt to string for JSON serialization
@@ -167,8 +167,8 @@ export class CopartService {
   }
 
   async findOne(id: string) {
-    const listing = await this.prisma.copartListing.findUnique({
-      where: { id },
+    const listing = await this.prisma.auctionListing.findUnique({
+      where: { lotNumber: BigInt(id) },
     });
 
     if (!listing) {
@@ -182,7 +182,7 @@ export class CopartService {
   }
 
   async findByLotNumber(lotNumber: string) {
-    const listing = await this.prisma.copartListing.findUnique({
+    const listing = await this.prisma.auctionListing.findUnique({
       where: { lotNumber: BigInt(lotNumber) },
     });
 
@@ -200,22 +200,22 @@ export class CopartService {
     // Get distinct values for filters
     const [makes, damageTypes, saleStatuses, states, years, titleTypes] = await Promise.all([
       this.prisma.$queryRaw<{ make: string }[]>`
-        SELECT DISTINCT make FROM copart_listings WHERE make IS NOT NULL ORDER BY make
+        SELECT DISTINCT make FROM auction_listings WHERE make IS NOT NULL ORDER BY make
       `,
       this.prisma.$queryRaw<{ damageDescription: string }[]>`
-        SELECT DISTINCT "damageDescription" FROM copart_listings WHERE "damageDescription" IS NOT NULL ORDER BY "damageDescription"
+        SELECT DISTINCT "damageDescription" FROM auction_listings WHERE "damageDescription" IS NOT NULL ORDER BY "damageDescription"
       `,
       this.prisma.$queryRaw<{ saleStatus: string }[]>`
-        SELECT DISTINCT "saleStatus" FROM copart_listings WHERE "saleStatus" IS NOT NULL ORDER BY "saleStatus"
+        SELECT DISTINCT "saleStatus" FROM auction_listings WHERE "saleStatus" IS NOT NULL ORDER BY "saleStatus"
       `,
       this.prisma.$queryRaw<{ locationState: string }[]>`
-        SELECT DISTINCT "locationState" FROM copart_listings WHERE "locationState" IS NOT NULL ORDER BY "locationState"
+        SELECT DISTINCT "locationState" FROM auction_listings WHERE "locationState" IS NOT NULL ORDER BY "locationState"
       `,
       this.prisma.$queryRaw<{ year: number }[]>`
-        SELECT DISTINCT year FROM copart_listings WHERE year IS NOT NULL ORDER BY year DESC
+        SELECT DISTINCT year FROM auction_listings WHERE year IS NOT NULL ORDER BY year DESC
       `,
       this.prisma.$queryRaw<{ saleTitleType: string }[]>`
-        SELECT DISTINCT "saleTitleType" FROM copart_listings WHERE "saleTitleType" IS NOT NULL ORDER BY "saleTitleType"
+        SELECT DISTINCT "saleTitleType" FROM auction_listings WHERE "saleTitleType" IS NOT NULL ORDER BY "saleTitleType"
       `,
     ]);
 
@@ -231,14 +231,14 @@ export class CopartService {
 
   async getStats() {
     const [total, byDamage, byState] = await Promise.all([
-      this.prisma.copartListing.count(),
-      this.prisma.copartListing.groupBy({
+      this.prisma.auctionListing.count(),
+      this.prisma.auctionListing.groupBy({
         by: ['damageDescription'],
         _count: true,
         orderBy: { _count: { damageDescription: 'desc' } },
         take: 10,
       }),
-      this.prisma.copartListing.groupBy({
+      this.prisma.auctionListing.groupBy({
         by: ['locationState'],
         _count: true,
         orderBy: { _count: { locationState: 'desc' } },

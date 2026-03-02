@@ -13,6 +13,7 @@ import { Logger } from '@nestjs/common';
 import { PresenceService } from './presence.service';
 import { PhoneCallEventsService } from './phone-call-events.service';
 import { SmsEventsService } from './sms-events.service';
+import { StripeEventsService } from './stripe-events.service';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 
 interface AuthenticatedSocket extends Socket {
@@ -42,6 +43,7 @@ export class PresenceGateway
     private readonly presenceService: PresenceService,
     private readonly phoneCallEventsService: PhoneCallEventsService,
     private readonly smsEventsService: SmsEventsService,
+    private readonly stripeEventsService: StripeEventsService,
   ) {
     this.verifier = CognitoJwtVerifier.create({
       userPoolId: process.env.COGNITO_USER_POOL_ID!,
@@ -55,6 +57,7 @@ export class PresenceGateway
     // Share the Socket.IO server with event services
     this.phoneCallEventsService.setServer(this.server);
     this.smsEventsService.setServer(this.server);
+    this.stripeEventsService.setServer(this.server);
   }
 
   async handleConnection(client: AuthenticatedSocket) {

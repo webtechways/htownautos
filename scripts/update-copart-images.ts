@@ -81,9 +81,16 @@ async function main() {
   await prisma.$connect();
   console.log('🔌 Connected to database');
 
-  // Get total count of records without images
-  const totalCount = await prisma.copartListing.count({
-    where: { images: { isEmpty: true } },
+  // Get total count of records without actual image URLs
+  // (images is null or contains API URL instead of actual images)
+  const totalCount = await prisma.auctionListing.count({
+    where: {
+      OR: [
+        { images: null },
+        { images: { startsWith: 'http://inventoryv2.copart.io' } },
+        { images: { startsWith: 'https://inventoryv2.copart.io' } },
+      ],
+    },
   });
 
   console.log(`📊 Found ${totalCount} records without images\n`);
@@ -94,10 +101,16 @@ async function main() {
   let skip = 0;
 
   while (true) {
-    // Get batch of records without images
-    const records = await prisma.copartListing.findMany({
-      where: { images: { isEmpty: true } },
-      select: { id: true, lotNumber: true },
+    // Get batch of records without actual image URLs
+    const records = await prisma.auctionListing.findMany({
+      where: {
+        OR: [
+          { images: null },
+          { images: { startsWith: 'http://inventoryv2.copart.io' } },
+          { images: { startsWith: 'https://inventoryv2.copart.io' } },
+        ],
+      },
+      select: { lotNumber: true },
       take: batchSize,
       skip: skip,
     });
@@ -111,9 +124,10 @@ async function main() {
         const images = await fetchCopartImages(record.lotNumber);
 
         if (images.length > 0) {
-          await prisma.copartListing.update({
-            where: { id: record.id },
-            data: { images },
+          // Store images as JSON string array
+          await prisma.auctionListing.update({
+            where: { lotNumber: record.lotNumber },
+            data: { images: JSON.stringify(images) },
           });
           updated++;
         }

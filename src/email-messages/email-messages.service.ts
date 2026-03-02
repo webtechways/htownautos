@@ -6,7 +6,9 @@ import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class EmailMessagesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+  ) {}
 
   private readonly includeRelations = {
     sender: {
@@ -51,7 +53,7 @@ export class EmailMessagesService {
       throw new NotFoundException('Buyer not found in this tenant');
     }
 
-    return this.prisma.emailMessage.create({
+    const record = await this.prisma.emailMessage.create({
       data: {
         tenantId,
         senderId,
@@ -88,6 +90,8 @@ export class EmailMessagesService {
       },
       include: this.includeRelations,
     });
+
+    return record;
   }
 
   async findAll(tenantId: string, query: QueryEmailMessageDto) {
@@ -208,15 +212,17 @@ export class EmailMessagesService {
       data.bouncedAt = updateEmailMessageDto.bouncedAt ? new Date(updateEmailMessageDto.bouncedAt) : null;
     }
 
-    return this.prisma.emailMessage.update({
+    const record = await this.prisma.emailMessage.update({
       where: { id },
       data,
       include: this.includeRelations,
     });
+
+    return record;
   }
 
   async remove(tenantId: string, id: string) {
-    await this.findOne(tenantId, id);
+    const existing = await this.findOne(tenantId, id);
 
     await this.prisma.emailMessage.delete({ where: { id } });
 

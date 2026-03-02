@@ -27,13 +27,21 @@ export class ExtraExpenseService {
   private readonly expense: ReturnType<PrismaService['getModel']>;
   private readonly vehicle: ReturnType<PrismaService['getModel']>;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+  ) {
     this.expense = prisma.getModel('extraExpense');
     this.vehicle = prisma.getModel('vehicle');
   }
 
   async create(dto: CreateExtraExpenseDto): Promise<ExtraExpenseEntity> {
-    await this.ensureVehicleExists(dto.vehicleId);
+    const vehicleRecord = await this.vehicle.findUnique({
+      where: { id: dto.vehicleId },
+      select: { id: true, tenantId: true },
+    });
+    if (!vehicleRecord) {
+      throw new NotFoundException(`Vehicle ${dto.vehicleId} not found`);
+    }
 
     const record = await this.expense.create({
       data: {
@@ -105,7 +113,13 @@ export class ExtraExpenseService {
     id: string,
     dto: UpdateExtraExpenseDto,
   ): Promise<ExtraExpenseEntity> {
-    await this.ensureExpenseExists(id);
+    const existing = await this.expense.findUnique({
+      where: { id },
+      include: { vehicle: { select: { tenantId: true } } },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Extra expense ${id} not found`);
+    }
 
     const record = await this.expense.update({
       where: { id },
@@ -124,8 +138,16 @@ export class ExtraExpenseService {
   }
 
   async remove(id: string): Promise<{ message: string }> {
-    await this.ensureExpenseExists(id);
+    const existing = await this.expense.findUnique({
+      where: { id },
+      include: { vehicle: { select: { tenantId: true } } },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Extra expense ${id} not found`);
+    }
+
     await this.expense.delete({ where: { id } });
+
     return { message: `Extra expense ${id} deleted` };
   }
 

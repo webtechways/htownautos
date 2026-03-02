@@ -22,6 +22,10 @@ import { PartsModule } from './parts/parts.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { TitleModule } from './title/title.module';
 import { MarketCheckModule } from './marketcheck/marketcheck.module';
+import { DamageDetectorModule } from './damage-detector/damage-detector.module';
+import { PartsPricingModule } from './parts-pricing/parts-pricing.module';
+import { CarfaxAnalyzerModule } from './carfax-analyzer/carfax-analyzer.module';
+import { MaxBidModule } from './max-bid/max-bid.module';
 import { UploadSessionModule } from './upload-session/upload-session.module';
 import { CopartModule } from './copart/copart.module';
 import { FavoritesModule } from './favorites/favorites.module';
@@ -37,6 +41,10 @@ import { PresenceModule } from './presence/presence.module';
 import { TwilioModule } from './twilio/twilio.module';
 import { CallFlowModule } from './call-flow/call-flow.module';
 import { TtsModule } from './tts/tts.module';
+import { OpenSearchModule } from './opensearch/opensearch.module';
+import { RabbitMQModule } from './rabbitmq/rabbitmq.module';
+import { StripeModule } from './stripe/stripe.module';
+import { ShortUrlModule } from './short-url/short-url.module';
 
 /**
  * App Module con seguridad RouteOne/DealerTrack
@@ -56,12 +64,12 @@ import { TtsModule } from './tts/tts.module';
       {
         name: 'medium', // Límite medio
         ttl: 60000, // 1 minuto
-        limit: 300, // 300 requests por minuto
+        limit: 1000, // 1000 requests por minuto
       },
       {
         name: 'long', // Límite largo
         ttl: 3600000, // 1 hora
-        limit: 5000, // 5000 requests por hora
+        limit: 20000, // 20000 requests por hora
       },
     ]),
 
@@ -95,6 +103,10 @@ import { TtsModule } from './tts/tts.module';
     TitleModule,
     AuditLogModule,
     MarketCheckModule,
+    DamageDetectorModule,
+    PartsPricingModule,
+    CarfaxAnalyzerModule,
+    MaxBidModule,
     UploadSessionModule,
     CopartModule,
     FavoritesModule,
@@ -104,6 +116,10 @@ import { TtsModule } from './tts/tts.module';
     PhoneCallsModule,
     SmsModule,
     EmailMessagesModule,
+    OpenSearchModule,
+    RabbitMQModule,
+    StripeModule,
+    ShortUrlModule,
   ],
   controllers: [AppController],
   providers: [

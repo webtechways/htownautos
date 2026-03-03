@@ -42,12 +42,15 @@ export class S3Service {
     this.bucket = process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_PUBLIC || '';
     this.cdnBaseUrl = process.env.CDN_BASE_URL?.replace(/\/+$/, '') || null;
 
+    const endpoint = process.env.AWS_S3_ENDPOINT;
+
     this.s3Client = new S3Client({
       region: this.region,
       credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
       },
+      ...(endpoint && { endpoint, forcePathStyle: false }),
     });
   }
 

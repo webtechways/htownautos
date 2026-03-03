@@ -42,4 +42,30 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
       return false;
     }
   }
+
+  async consume(queue: string, handler: (msg: Record<string, any>) => Promise<void>): Promise<void> {
+    if (!this.channel) {
+      this.logger.warn(`RabbitMQ not connected, cannot consume queue: ${queue}`);
+      return;
+    }
+
+    try {
+      await this.channel.assertQueue(queue, { durable: true });
+      this.channel.prefetch(1);
+      this.channel.consume(queue, async (msg) => {
+        if (!msg) return;
+        try {
+          const content = JSON.parse(msg.content.toString());
+          await handler(content);
+          this.channel.ack(msg);
+        } catch (err) {
+          this.logger.error(`[RabbitMQ] Error processing message from ${queue}: ${err.message}`);
+          this.channel.nack(msg, false, false);
+        }
+      });
+      this.logger.log(`[RabbitMQ] Consuming queue: ${queue}`);
+    } catch (err) {
+      this.logger.error(`[RabbitMQ] Failed to start consuming ${queue}: ${err.message}`);
+    }
+  }
 }

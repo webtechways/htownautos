@@ -1,0 +1,27 @@
+{
+  "name": "image-service",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/image-service/src",
+  "projectType": "application",
+  "tags": [
+    "scope:image-service",
+    "type:app"
+  ],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": [
+        "{workspaceRoot}/dist/apps/image-service"
+      ],
+      "options": {
+        "command": "tsc --project apps/image-service/tsconfig.app.json"
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "ts-node -r tsconfig-paths/register apps/image-service/src/main.ts"
+      }
+    }
+  }
+}

@@ -1,0 +1,274 @@
+import { Injectable, Logger } from '@nestjs/common';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  type ObjectCannedACL,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { randomUUID } from 'crypto';
+
+export interface UploadResult {
+  url: string;
+  key: string;
+  bucket: string;
+  size: number;
+  mimeType: string;
+}
+
+export interface PresignResult {
+  uploadUrl: string;
+  key: string;
+  publicUrl: string;
+}
+
+export interface HeadObjectResult {
+  exists: boolean;
+  contentLength: number;
+  contentType: string;
+}
+
+@Injectable()
+export class S3Service {
+  private readonly logger = new Logger(S3Service.name);
+  private readonly s3Client: S3Client;
+  private readonly bucket: string;
+  private readonly region: string;
+  private readonly cdnBaseUrl: string | null;
+
+  constructor() {
+    this.region = process.env.AWS_REGION || 'us-east-1';
+    this.bucket = process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_PUBLIC || '';
+    this.cdnBaseUrl = process.env.CDN_BASE_URL?.replace(/\/+$/, '') || null;
+
+    const endpoint = process.env.AWS_S3_ENDPOINT;
+
+    this.s3Client = new S3Client({
+      region: this.region,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+      },
+      ...(endpoint && { endpoint, forcePathStyle: false }),
+    });
+  }
+
+  /** Build public URL — uses CDN if configured, otherwise standard S3 */
+  buildPublicUrl(key: string): string {
+    if (this.cdnBaseUrl) {
+      return `${this.cdnBaseUrl}/${key}`;
+    }
+    return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+  }
+
+  /** Generate an S3 key: {folder}/{year}/{uuid}/original.{ext} */
+  generateKey(folder: string, fileExtension: string): string {
+    const uuid = randomUUID();
+    const year = new Date().getFullYear();
+    return `${folder}/${year}/${uuid}/original.${fileExtension}`;
+  }
+
+  /** Generate a presigned PUT URL for direct client-to-S3 upload */
+  async generatePresignedPutUrl(
+    folder: string,
+    fileExtension: string,
+    contentType: string,
+    isPrivate: boolean = false,
+    expiresIn: number = 300,
+  ): Promise<PresignResult> {
+    const key = this.generateKey(folder, fileExtension);
+
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ContentType: contentType,
+    });
+
+    const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
+    const publicUrl = this.buildPublicUrl(key);
+
+    this.logger.log(`Presigned PUT URL generated: ${key} (${isPrivate ? 'private' : 'public'})`);
+
+    return { uploadUrl, key, publicUrl };
+  }
+
+  /** Verify a file exists in S3 via HeadObject */
+  async headObject(key: string): Promise<HeadObjectResult> {
+    try {
+      const command = new HeadObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      });
+      const response = await this.s3Client.send(command);
+      return {
+        exists: true,
+        contentLength: response.ContentLength ?? 0,
+        contentType: response.ContentType ?? 'application/octet-stream',
+      };
+    } catch (error: any) {
+      if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
+        return { exists: false, contentLength: 0, contentType: '' };
+      }
+      throw error;
+    }
+  }
+
+  /** Upload file buffer from backend */
+  async uploadFile(
+    file: Express.Multer.File,
+    folder: string = 'uploads',
+    isPrivate: boolean = false,
+  ): Promise<UploadResult> {
+    try {
+      const fileExtension = file.originalname.split('.').pop() || 'bin';
+      const key = this.generateKey(folder, fileExtension);
+
+      const command = new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      });
+
+      await this.s3Client.send(command);
+
+      const url = this.buildPublicUrl(key);
+
+      this.logger.log(`File uploaded successfully: ${key} (${isPrivate ? 'private' : 'public'})`);
+
+      return {
+        url,
+        key,
+        bucket: this.bucket,
+        size: file.size,
+        mimeType: file.mimetype,
+      };
+    } catch (error) {
+      this.logger.error('Error uploading file to S3', error);
+      throw error;
+    }
+  }
+
+  /** Upload a buffer directly to S3 (for generated content like TTS audio) */
+  async uploadBuffer(
+    buffer: Buffer,
+    folder: string,
+    fileExtension: string,
+    contentType: string,
+  ): Promise<UploadResult> {
+    try {
+      const key = this.generateKey(folder, fileExtension);
+
+      const command = new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      });
+
+      await this.s3Client.send(command);
+
+      const url = this.buildPublicUrl(key);
+
+      this.logger.log(`Buffer uploaded successfully: ${key}`);
+
+      return {
+        url,
+        key,
+        bucket: this.bucket,
+        size: buffer.length,
+        mimeType: contentType,
+      };
+    } catch (error) {
+      this.logger.error('Error uploading buffer to S3', error);
+      throw error;
+    }
+  }
+
+  async deleteFile(key: string): Promise<void> {
+    try {
+      const command = new DeleteObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      });
+
+      await this.s3Client.send(command);
+      this.logger.log(`File deleted successfully: ${key}`);
+    } catch (error) {
+      this.logger.error('Error deleting file from S3', error);
+      throw error;
+    }
+  }
+
+  /** Upload a buffer to S3 with a specific key */
+  async uploadBufferToKey(
+    buffer: Buffer,
+    key: string,
+    contentType: string,
+    acl?: ObjectCannedACL,
+  ): Promise<void> {
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+      ...(acl && { ACL: acl }),
+    });
+    await this.s3Client.send(command);
+  }
+
+  /** Download an external URL and upload to S3 with a specific key */
+  async uploadFromUrl(url: string, key: string, contentType: string = 'image/jpeg', acl?: ObjectCannedACL): Promise<void> {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ${url}: ${response.status}`);
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+      ...(acl && { ACL: acl }),
+    });
+
+    await this.s3Client.send(command);
+  }
+
+  /** Download a file from S3 as a Buffer */
+  async downloadBuffer(key: string): Promise<Buffer> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      });
+      const response = await this.s3Client.send(command);
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of response.Body as any) {
+        chunks.push(chunk);
+      }
+      return Buffer.concat(chunks);
+    } catch (error) {
+      this.logger.error(`Error downloading file from S3: ${key}`, error);
+      throw error;
+    }
+  }
+
+  async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      });
+
+      const url = await getSignedUrl(this.s3Client, command, { expiresIn });
+      return url;
+    } catch (error) {
+      this.logger.error('Error generating signed URL', error);
+      throw error;
+    }
+  }
+}

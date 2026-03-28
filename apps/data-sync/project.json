@@ -1,0 +1,27 @@
+{
+  "name": "data-sync",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/data-sync/src",
+  "projectType": "application",
+  "tags": [
+    "scope:data-sync",
+    "type:app"
+  ],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": [
+        "{workspaceRoot}/dist/apps/data-sync"
+      ],
+      "options": {
+        "command": "tsc --project apps/data-sync/tsconfig.app.json"
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "ts-node -r tsconfig-paths/register apps/data-sync/src/main.ts"
+      }
+    }
+  }
+}

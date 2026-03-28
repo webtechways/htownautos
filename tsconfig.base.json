@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "resolvePackageJsonExports": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2023",
+    "sourceMap": true,
+    "baseUrl": ".",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "noFallthroughCasesInSwitch": false,
+    "paths": {
+      "@htownautos/prisma": ["libs/prisma/src/index.ts"],
+      "@htownautos/common": ["libs/common/src/index.ts"],
+      "@htownautos/rabbitmq": ["libs/rabbitmq/src/index.ts"],
+      "@htownautos/redis": ["libs/redis/src/index.ts"],
+      "@htownautos/auth": ["libs/auth/src/index.ts"],
+      "@htownautos/media": ["apps/image-service/src/media/index.ts"],
+      "@htownautos/tts": ["apps/ai-services/src/tts/index.ts"],
+      "@htownautos/carfax-analyzer": ["apps/ai-services/src/carfax-analyzer/index.ts"],
+      "@htownautos/opensearch": ["libs/opensearch/src/index.ts"],
+      "@htownautos/damage-detector": ["apps/ai-services/src/damage-detector/index.ts"]
+    }
+  },
+  "exclude": ["node_modules", "dist"]
+}

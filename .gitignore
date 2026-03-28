@@ -2,6 +2,9 @@
 /dist
 /node_modules
 
+# NX
+.nx
+
 # Logs
 logs
 *.log

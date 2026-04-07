@@ -91,11 +91,11 @@ export class AuditLogInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest();
     const { method, url, ip, headers } = request;
     const userAgent = headers['user-agent'] || 'unknown';
-    const tenantId = headers['x-tenant-id'] || null;
+    const tenantId = request.tenant?.id || headers['x-tenant-id'] || null;
     const startTime = Date.now();
 
     // Extract user info from JWT token
-    const { cognitoSub, tokenEmail } = this.extractUserFromToken(request);
+    const { clerkUserId, tokenEmail } = this.extractUserFromToken(request);
 
     // Extraer IDs de recursos desde params/body
     const resourceId = request.params?.id || request.body?.id || null;
@@ -140,7 +140,7 @@ export class AuditLogInterceptor implements NestInterceptor {
         const duration = Date.now() - startTime;
 
         // After handler, request.user should be populated by the guard
-        const userId = request.user?.id || cognitoSub || 'anonymous';
+        const userId = request.user?.id || clerkUserId || 'anonymous';
         const userEmail = request.user?.email || tokenEmail || 'unknown';
 
         // Resolve entity IDs from response data, previous record, or params
@@ -213,7 +213,7 @@ export class AuditLogInterceptor implements NestInterceptor {
         await this.createAuditLog({
           userId,
           userEmail,
-          cognitoSub,
+          clerkUserId,
           tenantId,
           action: metadata.action,
           resource: metadata.resource,
@@ -244,7 +244,7 @@ export class AuditLogInterceptor implements NestInterceptor {
         const duration = Date.now() - startTime;
 
         // After handler, request.user might be populated by the guard
-        const userId = request.user?.id || cognitoSub || 'anonymous';
+        const userId = request.user?.id || clerkUserId || 'anonymous';
         const userEmail = request.user?.email || tokenEmail || 'unknown';
 
         this.logger.log(
@@ -255,7 +255,7 @@ export class AuditLogInterceptor implements NestInterceptor {
         await this.createAuditLog({
           userId,
           userEmail,
-          cognitoSub,
+          clerkUserId,
           tenantId,
           action: metadata.action,
           resource: metadata.resource,
@@ -291,8 +291,8 @@ export class AuditLogInterceptor implements NestInterceptor {
    * - sub comes from access token (Authorization header)
    * - email comes from id token (X-Id-Token header)
    */
-  private extractUserFromToken(request: any): { cognitoSub: string | null; tokenEmail: string | null } {
-    let cognitoSub: string | null = null;
+  private extractUserFromToken(request: any): { clerkUserId: string | null; tokenEmail: string | null } {
+    let clerkUserId: string | null = null;
     let tokenEmail: string | null = null;
 
     try {
@@ -302,7 +302,7 @@ export class AuditLogInterceptor implements NestInterceptor {
         const accessToken = authHeader.substring(7);
         const accessPayload = this.decodeJwtPayload(accessToken);
         if (accessPayload) {
-          cognitoSub = accessPayload.sub || null;
+          clerkUserId = accessPayload.sub || null;
         }
       }
 
@@ -315,9 +315,9 @@ export class AuditLogInterceptor implements NestInterceptor {
         }
       }
 
-      return { cognitoSub, tokenEmail };
+      return { clerkUserId, tokenEmail };
     } catch {
-      return { cognitoSub: null, tokenEmail: null };
+      return { clerkUserId: null, tokenEmail: null };
     }
   }
 
@@ -608,7 +608,7 @@ export class AuditLogInterceptor implements NestInterceptor {
       if (data.level === 'critical' || data.pii) {
         this.logger.warn(
           `[CRITICAL-AUDIT] ${data.action.toUpperCase()} ${data.resource} - ` +
-          `User: ${data.userEmail} (${data.cognitoSub}) - Resource: ${data.resourceId} - ` +
+          `User: ${data.userEmail} (${data.clerkUserId}) - Resource: ${data.resourceId} - ` +
           `Status: ${data.status} - PII: ${data.pii} - ` +
           `Compliance: ${data.compliance.join(', ')}`,
         );

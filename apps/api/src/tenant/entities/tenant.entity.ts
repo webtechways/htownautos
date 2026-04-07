@@ -8,6 +8,12 @@ export class TenantEntity implements Tenant {
   })
   id: string;
 
+  @ApiPropertyOptional({
+    description: 'Clerk Organization ID',
+    example: 'org_abc123',
+  })
+  clerkOrgId: string | null;
+
   @ApiProperty({
     description: 'Tenant display name',
     example: 'HTown Autos Houston',

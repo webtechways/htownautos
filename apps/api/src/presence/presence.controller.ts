@@ -1,12 +1,12 @@
 import { Controller, Get, Param, UseGuards, ParseUUIDPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
-import { CognitoJwtGuard } from '@htownautos/auth';
+import { ClerkJwtGuard } from '@htownautos/auth';
 import { TenantGuard } from '@htownautos/auth';
 import { PresenceService, UserPresence } from './presence.service';
 
 @ApiTags('Presence')
 @ApiBearerAuth()
-@UseGuards(CognitoJwtGuard, TenantGuard)
+@UseGuards(ClerkJwtGuard, TenantGuard)
 @Controller('presence')
 export class PresenceController {
   constructor(private readonly presenceService: PresenceService) {}

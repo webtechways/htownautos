@@ -14,8 +14,24 @@ import { RedisIoAdapter } from './websocket/redis-io.adapter';
  */
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['https://app.htownautos.com'];
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug'], // Logging completo para auditoría
+    cors: {
+      origin: allowedOrigins,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Requested-With',
+        'X-API-Key',
+        'X-Clerk-User',
+        'X-Tenant-Id',
+      ],
+      exposedHeaders: ['X-Total-Count', 'X-Page-Count'],
+      maxAge: 3600,
+    },
   });
 
   // Body parser: Stripe webhooks need raw body for signature verification,
@@ -56,24 +72,7 @@ async function bootstrap() {
     }),
   );
 
-  // ===========================================
-  // CORS - Configuración segura
-  // ===========================================
-  app.enableCors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['https://app.htownautos.com'],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Requested-With',
-      'X-API-Key',
-      'X-Id-Token',
-      'X-Tenant-Id',
-    ],
-    exposedHeaders: ['X-Total-Count', 'X-Page-Count'],
-    maxAge: 3600, // Cache preflight 1 hora
-  });
+  // CORS configured in NestFactory.create() to ensure it runs before Helmet
 
   // ===========================================
   // SHORT URL REWRITE (Cloudflare Tunnel: link.htownautos.com)

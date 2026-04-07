@@ -3,11 +3,11 @@ export { AuthModule } from './auth.module';
 
 // Services
 export { AuthService } from './auth.service';
-export { CognitoService } from './cognito.service';
+export { ClerkService } from './clerk.service';
 
 // Guards
-export { CognitoJwtGuard } from './guards/cognito-jwt.guard';
-export type { CognitoPayload, IdTokenPayload, AuthenticatedUser } from './guards/cognito-jwt.guard';
+export { ClerkJwtGuard } from './guards/clerk-jwt.guard';
+export type { ClerkTokenPayload, AuthenticatedUser } from './guards/clerk-jwt.guard';
 export { TenantGuard, TENANT_OPTIONAL_KEY, TENANT_ERROR_CODE } from './guards/tenant.guard';
 export { RolesGuard } from './guards/roles.guard';
 export { PermissionsGuard } from './guards/permissions.guard';

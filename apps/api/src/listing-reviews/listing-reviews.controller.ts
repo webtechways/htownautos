@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ListingReviewsService } from './listing-reviews.service';
-import { CurrentUser, CurrentTenant, CognitoJwtGuard } from '@htownautos/auth';
+import { CurrentUser, CurrentTenant, ClerkJwtGuard } from '@htownautos/auth';
 import { IsOptional, IsString, IsBoolean } from 'class-validator';
 
 class UpsertReviewDto {
@@ -28,7 +28,7 @@ class UpsertReviewDto {
 
 @ApiTags('Listing Reviews')
 @Controller('listing-reviews')
-@UseGuards(CognitoJwtGuard)
+@UseGuards(ClerkJwtGuard)
 export class ListingReviewsController {
   private readonly logger = new Logger(ListingReviewsController.name);
 

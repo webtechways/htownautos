@@ -1,39 +1,40 @@
 # ---- Build Stage ----
-FROM node:22-alpine AS builder
+FROM node:20-bookworm AS builder
 
 WORKDIR /app
 
-# Install dependencies
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# Copy prisma schema and generate client
-COPY prisma ./prisma
-RUN npx prisma generate
+COPY tsconfig.base.json tsconfig.json nx.json prisma.config.ts ./
+COPY apps ./apps
+COPY libs ./libs
 
-# Copy source and build
-COPY tsconfig.json tsconfig.build.json nest-cli.json ./
-COPY src ./src
-RUN npm run build
+# Generate Prisma client
+RUN npx prisma generate --schema=libs/prisma/prisma/schema.prisma
+
+# Build all NX apps
+RUN npx nx run-many --target=build --parallel=4
 
 # ---- Production Stage ----
-FROM node:22-alpine AS production
+FROM node:20-bookworm-slim AS production
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Install production dependencies only
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# Copy prisma schema and generate client for production
-COPY prisma ./prisma
-RUN npx prisma generate
+COPY --from=builder /app/libs/prisma/prisma ./libs/prisma/prisma
+COPY prisma.config.ts ./
+RUN npx prisma generate --schema=libs/prisma/prisma/schema.prisma
 
-# Copy built application
 COPY --from=builder /app/dist ./dist
 
-EXPOSE 3000
+COPY scripts/start-prod.sh ./start-prod.sh
+RUN chmod +x start-prod.sh
 
-CMD ["node", "dist/main"]
+EXPOSE 3000 3002 3003 3004
+
+CMD ["./start-prod.sh"]

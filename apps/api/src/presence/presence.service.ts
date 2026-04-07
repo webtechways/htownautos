@@ -22,18 +22,17 @@ export class PresenceService {
 
   /**
    * Mark user as online (WebSocket connection)
-   * @param cognitoSub - The Cognito sub (user ID from JWT)
+   * @param clerkUserId - The Clerk user ID from JWT
    * @param tenantId - The tenant ID
    */
-  async setUserOnline(cognitoSub: string, tenantId: string): Promise<void> {
-    // Find the actual user by cognitoSub
+  async setUserOnline(clerkUserId: string, tenantId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
-      where: { cognitoSub },
+      where: { clerkUserId },
       select: { id: true },
     });
 
     if (!user) {
-      this.logger.warn(`User with cognitoSub ${cognitoSub} not found`);
+      this.logger.warn(`User with clerkUserId ${clerkUserId} not found`);
       return;
     }
 
@@ -156,18 +155,17 @@ export class PresenceService {
 
   /**
    * Mark user as offline (when they log out or disconnect)
-   * @param cognitoSub - The Cognito sub (user ID from JWT)
+   * @param clerkUserId - The Clerk user ID from JWT
    * @param tenantId - The tenant ID
    */
-  async setUserOffline(cognitoSub: string, tenantId: string): Promise<void> {
-    // Find the actual user by cognitoSub
+  async setUserOffline(clerkUserId: string, tenantId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
-      where: { cognitoSub },
+      where: { clerkUserId },
       select: { id: true },
     });
 
     if (!user) {
-      this.logger.warn(`User with cognitoSub ${cognitoSub} not found`);
+      this.logger.warn(`User with clerkUserId ${clerkUserId} not found`);
       return;
     }
 
@@ -189,11 +187,11 @@ export class PresenceService {
   }
 
   /**
-   * Get the real user ID from Cognito sub
+   * Get the real user ID from Clerk user ID
    */
-  async getUserIdFromCognitoSub(cognitoSub: string): Promise<string | null> {
+  async getUserIdFromClerkUserId(clerkUserId: string): Promise<string | null> {
     const user = await this.prisma.user.findUnique({
-      where: { cognitoSub },
+      where: { clerkUserId },
       select: { id: true },
     });
     return user?.id || null;

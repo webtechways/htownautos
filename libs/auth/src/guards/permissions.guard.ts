@@ -20,7 +20,7 @@ export class PermissionsGuard implements CanActivate {
 
         const request = context.switchToHttp().getRequest();
         const user = request.user;
-        const tenantId = request.headers['x-tenant-id'];
+        const tenantId = request.tenant?.id || request.headers['x-tenant-id'];
 
         if (!user) {
             throw new UnauthorizedException('User not authenticated');
@@ -36,7 +36,7 @@ export class PermissionsGuard implements CanActivate {
             where: {
                 tenantId_userId: {
                     tenantId: tenantId,
-                    userId: user.id || user.sub, // Adjust based on how user object is populated (Cognito sub or DB ID)
+                    userId: user.id || user.sub,
                 },
             },
             include: {

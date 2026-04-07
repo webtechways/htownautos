@@ -12,11 +12,11 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ListingGroupsService } from './listing-groups.service';
 import { CreateListingGroupDto, UpdateListingGroupDto } from './dto/create-listing-group.dto';
 import { AddItemsToGroupDto } from './dto/manage-group-items.dto';
-import { CurrentUser, CurrentTenant, CognitoJwtGuard } from '@htownautos/auth';
+import { CurrentUser, CurrentTenant, ClerkJwtGuard } from '@htownautos/auth';
 
 @ApiTags('Listing Groups')
 @Controller('listing-groups')
-@UseGuards(CognitoJwtGuard)
+@UseGuards(ClerkJwtGuard)
 export class ListingGroupsController {
   constructor(private readonly service: ListingGroupsService) {}
 

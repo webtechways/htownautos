@@ -1,0 +1,55 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build -t htownautos-backend:${{ github.sha }} -t htownautos-backend:latest .
+
+      - name: Save Docker image
+        run: docker save htownautos-backend:latest | gzip > backend.tar.gz
+
+      - name: Copy image to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "backend.tar.gz"
+          target: "/tmp"
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd ~/htownautos
+
+            # Load new image
+            docker load < /tmp/backend.tar.gz
+            rm /tmp/backend.tar.gz
+
+            # Restart backend service
+            docker compose -f docker-compose.prod.yml up -d backend
+
+            # Run migrations
+            docker compose -f docker-compose.prod.yml exec -T backend npx prisma migrate deploy --schema=libs/prisma/prisma/schema.prisma
+
+            # Cleanup old images
+            docker image prune -f
+
+            echo "Backend deployed successfully!"

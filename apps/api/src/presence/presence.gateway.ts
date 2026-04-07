@@ -14,11 +14,11 @@ import { PresenceService } from './presence.service';
 import { PhoneCallEventsService } from './phone-call-events.service';
 import { SmsEventsService } from './sms-events.service';
 import { StripeEventsService } from './stripe-events.service';
-import { CognitoJwtVerifier } from 'aws-jwt-verify';
+import { verifyToken } from '@clerk/backend';
 
 interface AuthenticatedSocket extends Socket {
-  cognitoSub?: string; // Cognito sub from JWT
-  dbUserId?: string; // Real database user ID
+  clerkUserId?: string;
+  dbUserId?: string;
   tenantId?: string;
 }
 
@@ -36,7 +36,6 @@ export class PresenceGateway
   server: Server;
 
   private readonly logger = new Logger(PresenceGateway.name);
-  private verifier: ReturnType<typeof CognitoJwtVerifier.create>;
   private socketUserMap = new Map<string, { userId: string; tenantId: string }>();
 
   constructor(
@@ -44,13 +43,7 @@ export class PresenceGateway
     private readonly phoneCallEventsService: PhoneCallEventsService,
     private readonly smsEventsService: SmsEventsService,
     private readonly stripeEventsService: StripeEventsService,
-  ) {
-    this.verifier = CognitoJwtVerifier.create({
-      userPoolId: process.env.COGNITO_USER_POOL_ID!,
-      tokenUse: 'access',
-      clientId: process.env.COGNITO_CLIENT_ID!,
-    });
-  }
+  ) {}
 
   afterInit() {
     this.logger.log('Presence WebSocket Gateway initialized');
@@ -71,13 +64,15 @@ export class PresenceGateway
         return;
       }
 
-      const payload = await this.verifier.verify(token);
-      client.cognitoSub = payload.sub;
+      const payload = await verifyToken(token, {
+        secretKey: process.env.CLERK_SECRET_KEY!,
+      });
+      client.clerkUserId = payload.sub;
 
       // Get the real database user ID
-      const dbUserId = await this.presenceService.getUserIdFromCognitoSub(payload.sub);
+      const dbUserId = await this.presenceService.getUserIdFromClerkUserId(payload.sub);
       if (!dbUserId) {
-        this.logger.warn(`User with cognitoSub ${payload.sub} not found in database`);
+        this.logger.warn(`User with clerkUserId ${payload.sub} not found in database`);
         client.emit('error', { message: 'User not found' });
         client.disconnect();
         return;
@@ -101,12 +96,10 @@ export class PresenceGateway
     if (mapping) {
       const { userId, tenantId } = mapping;
 
-      // Pass cognitoSub to setUserOffline
-      if (client.cognitoSub) {
-        await this.presenceService.setUserOffline(client.cognitoSub, tenantId);
+      if (client.clerkUserId) {
+        await this.presenceService.setUserOffline(client.clerkUserId, tenantId);
       }
 
-      // Notify others in the tenant with the database user ID
       this.server.to(`tenant:${tenantId}`).emit('user_offline', {
         userId,
         timestamp: new Date().toISOString(),
@@ -124,22 +117,18 @@ export class PresenceGateway
   ) {
     const { tenantId } = data;
 
-    if (!client.cognitoSub || !client.dbUserId) {
+    if (!client.clerkUserId || !client.dbUserId) {
       client.emit('error', { message: 'Not authenticated' });
       return { success: false };
     }
 
-    // Join the tenant room
     client.join(`tenant:${tenantId}`);
     client.tenantId = tenantId;
 
-    // Store mapping for cleanup (use database user ID)
     this.socketUserMap.set(client.id, { userId: client.dbUserId, tenantId });
 
-    // Mark user as online (pass cognitoSub)
-    await this.presenceService.setUserOnline(client.cognitoSub, tenantId);
+    await this.presenceService.setUserOnline(client.clerkUserId, tenantId);
 
-    // Notify ALL clients in the tenant room (including sender)
     const room = `tenant:${tenantId}`;
     const socketsInRoom = await this.server.in(room).fetchSockets();
     this.logger.log(`Broadcasting user_online to ${socketsInRoom.length} sockets in room ${room}`);
@@ -149,7 +138,6 @@ export class PresenceGateway
       timestamp: new Date().toISOString(),
     });
 
-    // Send current online users to the joining client
     const onlineUsers = await this.presenceService.getOnlineUsers(tenantId);
     client.emit('presence_sync', { users: onlineUsers });
 
@@ -159,14 +147,14 @@ export class PresenceGateway
 
   @SubscribeMessage('leave_tenant')
   async handleLeaveTenant(@ConnectedSocket() client: AuthenticatedSocket) {
-    if (!client.tenantId || !client.cognitoSub || !client.dbUserId) {
+    if (!client.tenantId || !client.clerkUserId || !client.dbUserId) {
       return { success: false };
     }
 
-    const { tenantId, dbUserId, cognitoSub } = client;
+    const { tenantId, dbUserId, clerkUserId } = client;
 
     client.leave(`tenant:${tenantId}`);
-    await this.presenceService.setUserOffline(cognitoSub, tenantId);
+    await this.presenceService.setUserOffline(clerkUserId, tenantId);
 
     this.server.to(`tenant:${tenantId}`).emit('user_offline', {
       userId: dbUserId,
@@ -186,7 +174,6 @@ export class PresenceGateway
       return { success: false };
     }
 
-    // updateActivity uses database user ID directly
     await this.presenceService.updateActivity(client.dbUserId, client.tenantId);
     return { success: true, timestamp: new Date().toISOString() };
   }

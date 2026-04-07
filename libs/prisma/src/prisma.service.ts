@@ -238,6 +238,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.$queryRaw.bind(this.prisma);
   }
 
+  get $queryRawUnsafe() {
+    return this.prisma.$queryRawUnsafe.bind(this.prisma);
+  }
+
   // Allow dynamic access to Prisma models
   getModel(modelName: string) {
     return this.prisma[modelName];

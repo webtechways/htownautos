@@ -19,7 +19,7 @@ import {
   RegisterWithInvitationDto,
 } from './dto/add-user-to-tenant.dto';
 import { Prisma } from '@prisma/client';
-import { CognitoService } from '@htownautos/auth';
+import { ClerkService } from '@htownautos/auth';
 import { EmailService } from '../email/email.service';
 import { TwilioService } from '../twilio/twilio.service';
 import { SearchType, PurchasePhoneNumberDto, UpdatePhoneNumberDto } from './dto/phone-number.dto';
@@ -38,7 +38,7 @@ export class TenantService {
 
   constructor(
     private prisma: PrismaService,
-    private cognitoService: CognitoService,
+    private clerkService: ClerkService,
     private emailService: EmailService,
     private twilioService: TwilioService,
   ) {}
@@ -124,6 +124,28 @@ export class TenantService {
 
       return newTenant;
     });
+
+    // Create Clerk Organization so the tenant appears in the frontend
+    try {
+      const org = await this.clerkService.createOrganization({
+        name: tenant.name,
+        createdBy: creatorUser.clerkUserId!,
+        publicMetadata: {
+          tenantId: tenant.id,
+          slug: tenant.slug,
+          businessName: tenant.businessName || tenant.name,
+        },
+      });
+
+      // Store the Clerk org ID on the tenant
+      await this.prisma.tenant.update({
+        where: { id: tenant.id },
+        data: { clerkOrgId: org.id },
+      });
+    } catch (error) {
+      this.logger.error(`Failed to create Clerk organization for tenant ${tenant.id}:`, error);
+      // Don't throw — the tenant was created in DB, Clerk org can be synced later
+    }
 
     // Return tenant with owner info
     const record = await this.prisma.tenant.findUnique({
@@ -221,6 +243,25 @@ export class TenantService {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id },
     });
+
+    if (!tenant || tenant.deletedAt) {
+      throw new NotFoundException(`Tenant with ID '${id}' not found`);
+    }
+
+    return tenant;
+  }
+
+  /**
+   * Find a tenant by DB UUID or Clerk organization ID
+   */
+  async findByIdOrClerkOrgId(id: string) {
+    // Try by UUID first
+    let tenant = await this.prisma.tenant.findUnique({ where: { id } });
+
+    // If not found, try by clerkOrgId
+    if (!tenant) {
+      tenant = await this.prisma.tenant.findFirst({ where: { clerkOrgId: id } });
+    }
 
     if (!tenant || tenant.deletedAt) {
       throw new NotFoundException(`Tenant with ID '${id}' not found`);
@@ -363,10 +404,10 @@ export class TenantService {
    * Only the tenant owner can perform this action
    */
   async remove(id: string, requestingUserId: string) {
-    const tenant = await this.findOne(id);
+    const tenant = await this.findByIdOrClerkOrgId(id);
 
-    // Verify the requesting user is the owner
-    await this.verifyOwnership(id, requestingUserId);
+    // Verify the requesting user is the owner (always use DB tenant ID)
+    await this.verifyOwnership(tenant.id, requestingUserId);
 
     // Prevent deleting an already-deleted tenant
     if (tenant.deletedAt) {
@@ -381,7 +422,7 @@ export class TenantService {
     await this.prisma.$transaction([
       // Mark the tenant as deleted and inactive
       this.prisma.tenant.update({
-        where: { id },
+        where: { id: tenant.id },
         data: {
           deletedAt: now,
           isActive: false,
@@ -389,7 +430,7 @@ export class TenantService {
       }),
       // Mark all tenant users as removed
       this.prisma.tenantUser.updateMany({
-        where: { tenantId: id },
+        where: { tenantId: tenant.id },
         data: {
           status: INVITATION_STATUS.REMOVED,
           isActive: false,
@@ -398,15 +439,24 @@ export class TenantService {
       }),
       // Revoke all pending invitations
       this.prisma.tenantInvitation.updateMany({
-        where: { tenantId: id, status: INVITATION_STATUS.PENDING },
+        where: { tenantId: tenant.id, status: INVITATION_STATUS.PENDING },
         data: {
           status: 'revoked',
         },
       }),
     ]);
 
+    // Delete the Clerk organization so it no longer appears in the frontend
+    if (tenant.clerkOrgId) {
+      try {
+        await this.clerkService.deleteOrganization(tenant.clerkOrgId);
+      } catch (error) {
+        this.logger.error(`Failed to delete Clerk organization ${tenant.clerkOrgId}:`, error);
+      }
+    }
+
     return {
-      message: `Tenant '${tenant.name}' has been successfully deleted`,
+      message: `Business '${tenant.name}' has been successfully deleted`,
     };
   }
 
@@ -608,9 +658,18 @@ export class TenantService {
    * Throws ForbiddenException if not
    */
   async verifyOwnership(tenantId: string, requestingUserId: string): Promise<void> {
+    this.logger.log(`verifyOwnership: tenantId=${tenantId}, userId=${requestingUserId}`);
     const isOwner = await this.isOwner(tenantId, requestingUserId);
+    this.logger.log(`verifyOwnership: isOwner=${isOwner}`);
 
     if (!isOwner) {
+      // Log all tenant users for debugging
+      const tenantUsers = await this.prisma.tenantUser.findMany({
+        where: { tenantId },
+        include: { role: true, user: { select: { id: true, email: true } } },
+      });
+      this.logger.warn(`verifyOwnership failed. Tenant users: ${JSON.stringify(tenantUsers.map(tu => ({ userId: tu.userId, email: tu.user.email, role: tu.role?.slug, status: tu.status })))}`);
+
       throw new ForbiddenException(
         'Only the tenant owner can perform this action',
       );
@@ -927,7 +986,7 @@ export class TenantService {
     }
 
     // Soft delete: update status to removed and deactivate
-    const removedRecord = await this.prisma.tenantUser.update({
+    await this.prisma.tenantUser.update({
       where: {
         tenantId_userId: { tenantId, userId },
       },
@@ -1273,12 +1332,12 @@ export class TenantService {
 
     // Create User, TenantUser, and TenantInvitation in a transaction
     const result = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Create user if doesn't exist (without cognitoSub - will be set when they register)
+      // Create user if doesn't exist (without clerkUserId - will be set when they register)
       if (!user) {
         user = await tx.user.create({
           data: {
             email: inviteDto.email.toLowerCase(),
-            cognitoSub: null, // Will be set when user registers/accepts
+            clerkUserId: null, // Will be set when user registers/accepts
             isActive: true,
             emailVerified: false,
           },
@@ -1390,8 +1449,6 @@ export class TenantService {
         id: result.user.id,
         email: result.user.email,
       },
-      // Include invitation code in response for testing purposes
-      // In production, this should only be sent via email
       _debug: {
         invitationCode,
         invitationUrl,
@@ -1409,7 +1466,7 @@ export class TenantService {
       where: { invitationCode: code },
       include: {
         tenant: { select: { id: true, name: true, slug: true } },
-        user: { select: { id: true, email: true, name: true, cognitoSub: true } },
+        user: { select: { id: true, email: true, name: true, clerkUserId: true } },
         role: { select: { id: true, name: true, slug: true } },
       },
     });
@@ -1422,9 +1479,9 @@ export class TenantService {
         throw new GoneException('This invitation has been revoked');
       }
 
-      // Check if user has Cognito account (cognitoSub set)
+      // Check if user has Clerk account (clerkUserId set)
       // If not, they need to register
-      const requiresRegistration = !tenantUser.user.cognitoSub;
+      const requiresRegistration = !tenantUser.user.clerkUserId;
 
       return {
         type: 'tenantUser',
@@ -1433,7 +1490,7 @@ export class TenantService {
         tenant: tenantUser.tenant,
         role: tenantUser.role,
         userExists: true, // User record exists (created during invitation)
-        requiresRegistration, // But may need to create Cognito account
+        requiresRegistration, // But may need to create Clerk account
       };
     }
 
@@ -1462,7 +1519,7 @@ export class TenantService {
         throw new GoneException('This invitation has expired');
       }
 
-      // Check if user exists and has Cognito account
+      // Check if user exists and has Clerk account
       const user = await this.prisma.user.findUnique({
         where: { email: invitation.email },
       });
@@ -1474,7 +1531,7 @@ export class TenantService {
         tenant: invitation.tenant,
         role: invitation.role,
         userExists: !!user,
-        requiresRegistration: !user || !user.cognitoSub,
+        requiresRegistration: !user || !user.clerkUserId,
       };
     }
 
@@ -1483,7 +1540,7 @@ export class TenantService {
 
   /**
    * Accept an invitation using the invitation code
-   * User must already have a Cognito account (cognitoSub set)
+   * User must already have a Clerk account (clerkUserId set)
    * Updates TenantUser status from pending to active
    */
   async acceptInvitation(code: string) {
@@ -1509,9 +1566,9 @@ export class TenantService {
       throw new GoneException('This invitation has been revoked');
     }
 
-    // Check if user has Cognito account (cognitoSub set)
+    // Check if user has Clerk account (clerkUserId set)
     // If not, they need to register first
-    if (!tenantUser.user.cognitoSub) {
+    if (!tenantUser.user.clerkUserId) {
       return {
         requiresRegistration: true,
         email: tenantUser.user.email,
@@ -1567,11 +1624,11 @@ export class TenantService {
 
   /**
    * Register a new user and accept invitation in one step
-   * User record already exists (created during invitation with cognitoSub: null)
+   * User record already exists (created during invitation with clerkUserId: null)
    * TenantUser record already exists with pending status
    * This method:
-   * 1. Creates user in Cognito
-   * 2. Updates existing User with cognitoSub and profile info
+   * 1. Creates user in Clerk
+   * 2. Updates existing User with clerkUserId and profile info
    * 3. Updates existing TenantUser status from pending to active
    */
   async registerAndAcceptInvitation(registerDto: RegisterWithInvitationDto) {
@@ -1612,30 +1669,30 @@ export class TenantService {
       );
     }
 
-    // Step 2: Check if user already has a Cognito account
-    if (tenantUser.user.cognitoSub) {
+    // Step 2: Check if user already has a Clerk account
+    if (tenantUser.user.clerkUserId) {
       throw new ConflictException(
         'This user already has an account. Please log in to accept the invitation.',
       );
     }
 
-    // Step 3: Create user in Cognito
-    const cognitoResult = await this.cognitoService.createUser({
+    // Step 3: Create user in Clerk
+    const clerkResult = await this.clerkService.createUser({
       email,
       password,
       firstName,
       lastName,
     });
 
-    this.logger.log(`Cognito user created with sub: ${cognitoResult.cognitoSub}`);
+    this.logger.log(`Clerk user created with ID: ${clerkResult.clerkUserId}`);
 
     // Step 4: Update existing User and TenantUser in a transaction
     const result = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Update existing user with Cognito sub and profile info
+      // Update existing user with Clerk ID and profile info
       const updatedUser = await tx.user.update({
         where: { id: tenantUser.user.id },
         data: {
-          cognitoSub: cognitoResult.cognitoSub,
+          clerkUserId: clerkResult.clerkUserId,
           firstName,
           lastName,
           name: `${firstName} ${lastName}`,

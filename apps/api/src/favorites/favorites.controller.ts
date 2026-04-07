@@ -12,10 +12,10 @@ import { FavoritesService } from './favorites.service';
 import { ToggleFavoriteDto, FavoriteType } from './dto/toggle-favorite.dto';
 import { CurrentUser } from '@htownautos/auth';
 import { CurrentTenant } from '@htownautos/auth';
-import { CognitoJwtGuard } from '@htownautos/auth';
+import { ClerkJwtGuard } from '@htownautos/auth';
 
 @Controller('favorites')
-@UseGuards(CognitoJwtGuard)
+@UseGuards(ClerkJwtGuard)
 export class FavoritesController {
   constructor(private readonly favoritesService: FavoritesService) {}
 

@@ -17,7 +17,7 @@ export class PresenceInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
-    const tenantId = request.headers['x-tenant-id'];
+    const tenantId = request.tenant?.id || request.headers['x-tenant-id'];
 
     // Update presence if user is authenticated and tenant is provided
     if (user?.id && tenantId) {

@@ -16,7 +16,7 @@ import * as twilio from 'twilio';
 import { TwilioService } from './twilio.service';
 import { Public } from '@htownautos/auth';
 import { PrismaService } from '@htownautos/prisma';
-import { CognitoJwtGuard } from '@htownautos/auth';
+import { ClerkJwtGuard } from '@htownautos/auth';
 import { CurrentUser } from '@htownautos/auth';
 import { CurrentTenant } from '@htownautos/auth';
 import { PhoneCallService } from '../phone-call/phone-call.service';
@@ -39,7 +39,7 @@ export class TwilioClientController {
    * This token allows the user to receive calls in their browser
    */
   @Get('token')
-  @UseGuards(CognitoJwtGuard)
+  @UseGuards(ClerkJwtGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get Twilio Voice token for browser calling' })
   @ApiResponse({ status: 200, description: 'Token generated successfully' })
@@ -378,7 +378,7 @@ export class TwilioClientController {
    * This is an admin endpoint to help with initial setup
    */
   @Get('setup-twiml-app')
-  @UseGuards(CognitoJwtGuard)
+  @UseGuards(ClerkJwtGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create or get TwiML App SID for voice client' })
   @ApiResponse({ status: 200, description: 'TwiML App SID' })

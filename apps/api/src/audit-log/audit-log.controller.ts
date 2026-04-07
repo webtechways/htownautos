@@ -31,9 +31,9 @@ export class AuditLogController {
   @ApiResponse({ status: HttpStatus.CREATED, description: 'Audit log created' })
   async create(@Body(ValidationPipe) dto: CreateAuditLogDto, @Req() req: any) {
     // Extract user info from request
-    const userId = req.user?.sub || req.user?.cognitoSub;
-    const userEmail = req.user?.email || req.user?.['cognito:username'];
-    const tenantId = req.headers['x-tenant-id'];
+    const userId = req.user?.sub || req.user?.clerkUserId;
+    const userEmail = req.user?.email;
+    const tenantId = req.tenant?.id || req.headers['x-tenant-id'];
     const ipAddress = req.ip || req.headers['x-forwarded-for']?.split(',')[0];
     const userAgent = req.headers['user-agent'];
 

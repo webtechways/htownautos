@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { RebuildService } from './rebuild.service';
-import { CurrentTenant, CognitoJwtGuard } from '@htownautos/auth';
+import { CurrentTenant, ClerkJwtGuard } from '@htownautos/auth';
 import { IsOptional, IsString, IsNumber, IsArray } from 'class-validator';
 
 class CreateRebuildItemDto {
@@ -38,7 +38,7 @@ class UpdateRebuildItemDto {
 
 @ApiTags('Rebuild')
 @Controller('rebuild-items')
-@UseGuards(CognitoJwtGuard)
+@UseGuards(ClerkJwtGuard)
 export class RebuildController {
   constructor(private readonly service: RebuildService) {}
 

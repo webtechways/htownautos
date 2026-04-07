@@ -53,6 +53,7 @@ import { ListingGroupsModule } from './listing-groups/listing-groups.module';
 import { ListingReviewsModule } from './listing-reviews/listing-reviews.module';
 import { RebuildModule } from './rebuild/rebuild.module';
 import { InventoryAssetsModule } from './inventory-assets/inventory-assets.module';
+import { ClerkWebhooksModule } from './clerk-webhooks/clerk-webhooks.module';
 
 /**
  * API Gateway Module
@@ -122,6 +123,7 @@ import { InventoryAssetsModule } from './inventory-assets/inventory-assets.modul
     ListingReviewsModule,
     RebuildModule,
     InventoryAssetsModule,
+    ClerkWebhooksModule,
   ],
   controllers: [AppController],
   providers: [

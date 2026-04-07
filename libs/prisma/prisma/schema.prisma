@@ -475,6 +475,7 @@ model VehicleEngine {
 
 model Tenant {
   id                  String               @id @default(uuid())
+  clerkOrgId          String?              @unique @map("clerk_org_id") // Clerk Organization ID
   name                String
   slug                String               @unique
   subdomain           String?              @unique // subdomain.htownautos.com (nullable for migration)
@@ -534,6 +535,7 @@ model Tenant {
   rebuildItems        RebuildItem[]
   inventoryAssets     InventoryAsset[]
 
+  @@index([clerkOrgId])
   @@index([slug])
   @@index([subdomain])
   @@index([isActive])
@@ -549,7 +551,7 @@ model User {
   updatedAt      DateTime     @updatedAt
   metaValue      Json?
   avatar         String?
-  cognitoSub     String?      @unique
+  clerkUserId    String?      @unique
   emailVerified  Boolean      @default(false)
   firstName      String?
   isActive       Boolean      @default(true)
@@ -564,7 +566,7 @@ model User {
   sentInvitations  TenantInvitation[]
   paidExpenses     ExtraExpense[] @relation("ExpensePaidBy")
 
-  @@index([cognitoSub])
+  @@index([clerkUserId])
   @@index([email])
   @@index([isActive])
   @@map("users")

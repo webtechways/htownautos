@@ -625,6 +625,7 @@ export class TenantController {
   }
 
   @Delete(':id')
+  @TenantOptional()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Delete tenant',
@@ -659,7 +660,7 @@ export class TenantController {
     description: 'Tenant not found',
   })
   remove(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @CurrentUser() user: { id: string },
   ) {
     return this.tenantService.remove(id, user.id);
@@ -1086,7 +1087,7 @@ export class InvitationController {
     summary: 'Register and accept invitation',
     description:
       'Creates a new user account and accepts the invitation in one step. ' +
-      'Creates user in Cognito, creates user in database, and associates with tenant.',
+      'Creates user in Clerk, creates user in database, and associates with tenant.',
   })
   @ApiResponse({
     status: 201,

@@ -35,32 +35,35 @@ export class TenantGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
-    const tenantId = request.headers['x-tenant-id'];
     const user = request.user;
 
-    // If no user (not authenticated), let CognitoJwtGuard handle it
+    // If no user (not authenticated), let ClerkJwtGuard handle it
     if (!user) {
       return true;
     }
 
-    // Check if tenant ID is provided
-    if (!tenantId) {
-      throw new ForbiddenException({
-        message: 'Tenant ID is required. Please select a business.',
-        error: 'Forbidden',
-        statusCode: 403,
-        code: TENANT_ERROR_CODE,
+    // Resolve tenant: prefer JWT org_id (Clerk Organizations), fall back to X-Tenant-Id header (legacy)
+    const clerkOrgId = request.clerkOrgId; // Set by ClerkJwtGuard from JWT
+    const legacyTenantId = request.headers['x-tenant-id'];
+
+    let tenant: any = null;
+
+    if (clerkOrgId) {
+      // New path: resolve tenant by Clerk Organization ID from JWT
+      tenant = await this.prisma.$queryRawUnsafe(
+        `SELECT * FROM tenants WHERE clerk_org_id = $1 LIMIT 1`,
+        clerkOrgId,
+      ).then((rows: any[]) => rows[0] || null);
+    } else if (legacyTenantId) {
+      // Legacy path: resolve tenant by UUID from X-Tenant-Id header
+      tenant = await this.prisma.tenant.findUnique({
+        where: { id: legacyTenantId },
       });
     }
 
-    // Verify tenant exists and is active
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
-    });
-
     if (!tenant) {
       throw new ForbiddenException({
-        message: 'Invalid tenant. Please select a valid business.',
+        message: 'Tenant ID is required. Please select a business.',
         error: 'Forbidden',
         statusCode: 403,
         code: TENANT_ERROR_CODE,
@@ -79,7 +82,7 @@ export class TenantGuard implements CanActivate {
     // Verify user has access to this tenant
     const tenantUser = await this.prisma.tenantUser.findUnique({
       where: {
-        tenantId_userId: { tenantId, userId: user.id },
+        tenantId_userId: { tenantId: tenant.id, userId: user.id },
       },
     });
 
@@ -92,7 +95,7 @@ export class TenantGuard implements CanActivate {
       });
     }
 
-    // Attach tenant to request for use in controllers
+    // Attach tenant to request for use in controllers and other guards
     request.tenant = tenant;
     request.tenantUser = tenantUser;
 

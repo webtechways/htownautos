@@ -23,6 +23,7 @@ import { ExtraExpenseService } from './extra-expense.service';
 import { CreateExtraExpenseDto } from './dto/create-extra-expense.dto';
 import { UpdateExtraExpenseDto } from './dto/update-extra-expense.dto';
 import { QueryExtraExpenseDto } from './dto/query-extra-expense.dto';
+import { AnalyzeReceiptsDto, AnalyzeReceiptsResult } from './dto/analyze-receipts.dto';
 import { ExtraExpenseEntity } from './entities/extra-expense.entity';
 import { PaginatedResponseDto } from '@htownautos/common';
 import { AuditLog } from '@htownautos/common';
@@ -68,6 +69,53 @@ export class ExtraExpenseController {
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Vehicle not found' })
   create(@Body() dto: CreateExtraExpenseDto): Promise<ExtraExpenseEntity> {
     return this.service.create(dto);
+  }
+
+  @Post('analyze-receipts')
+  @AuditLog({
+    action: 'read',
+    resource: 'extra-expense',
+    level: 'low',
+    pii: false,
+    compliance: ['routeone', 'dealertrack', 'glba'],
+  })
+  @ApiOperation({ summary: 'Analyze receipt images using AI to extract expense data' })
+  @ApiBody({
+    type: AnalyzeReceiptsDto,
+    examples: {
+      basic: {
+        summary: 'Analyze receipts',
+        value: {
+          receiptIds: ['123e4567-e89b-12d3-a456-426614174001'],
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Receipt analysis result',
+    schema: {
+      type: 'object',
+      properties: {
+        description: { type: 'string', example: 'Auto parts from AutoZone' },
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              item: { type: 'string', example: 'Oil Filter' },
+              amount: { type: 'number', example: 12.99 },
+            },
+          },
+        },
+        shippingCost: { type: 'number', example: 9.99 },
+        tax: { type: 'number', example: 3.50 },
+        total: { type: 'number', example: 45.99 },
+      },
+    },
+  })
+  analyzeReceipts(@Body() dto: AnalyzeReceiptsDto): Promise<AnalyzeReceiptsResult> {
+    return this.service.analyzeReceipts(dto);
   }
 
   @Get()

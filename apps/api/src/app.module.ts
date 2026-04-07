@@ -51,6 +51,8 @@ import { ShortUrlModule } from './short-url/short-url.module';
 import { ProxySyncModule } from './proxy-sync/proxy-sync.module';
 import { ListingGroupsModule } from './listing-groups/listing-groups.module';
 import { ListingReviewsModule } from './listing-reviews/listing-reviews.module';
+import { RebuildModule } from './rebuild/rebuild.module';
+import { InventoryAssetsModule } from './inventory-assets/inventory-assets.module';
 
 /**
  * API Gateway Module
@@ -118,6 +120,8 @@ import { ListingReviewsModule } from './listing-reviews/listing-reviews.module';
     ProxySyncModule,
     ListingGroupsModule,
     ListingReviewsModule,
+    RebuildModule,
+    InventoryAssetsModule,
   ],
   controllers: [AppController],
   providers: [

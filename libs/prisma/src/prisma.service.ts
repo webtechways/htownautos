@@ -222,6 +222,14 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.auctionListingReview;
   }
 
+  get rebuildItem() {
+    return this.prisma.rebuildItem;
+  }
+
+  get inventoryAsset() {
+    return this.prisma.inventoryAsset;
+  }
+
   get $transaction() {
     return this.prisma.$transaction.bind(this.prisma);
   }

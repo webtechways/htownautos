@@ -279,6 +279,10 @@ export class TenantService {
       }
     }
 
+    // Slug and subdomain are immutable after creation
+    delete updateTenantDto.slug;
+    delete updateTenantDto.subdomain;
+
     // Check if subdomain is being changed
     if (updateTenantDto.subdomain) {
       const existingSubdomain = await this.prisma.tenant.findFirst({

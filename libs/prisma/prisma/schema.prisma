@@ -531,6 +531,8 @@ model Tenant {
   twilioPhoneNumbers  TwilioPhoneNumber[]
   callFlows           CallFlow[]
   shortUrls           ShortUrl[]
+  rebuildItems        RebuildItem[]
+  inventoryAssets     InventoryAsset[]
 
   @@index([slug])
   @@index([subdomain])
@@ -1231,6 +1233,7 @@ model Vehicle {
   year                  VehicleYear       @relation(fields: [yearId], references: [id])
   usedParts             VehiclePart[]
   tasks                 Task[]
+  rebuildItems          RebuildItem[]
 
   @@index([tenantId])
   @@index([createdById])
@@ -1253,6 +1256,8 @@ model ExtraExpense {
   vehicleId     String
   description   String
   price         Decimal  @db.Decimal(10, 2)
+  shippingCost  Decimal  @default(0) @db.Decimal(10, 2)
+  tax           Decimal  @default(0) @db.Decimal(10, 2)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   metaValue     Json?
@@ -1267,6 +1272,26 @@ model ExtraExpense {
   @@index([vehicleId])
   @@index([paidByUserId])
   @@map("extra_expenses")
+}
+
+model RebuildItem {
+  id              String   @id @default(uuid()) @db.Uuid
+  vehicleId       String
+  tenantId        String?
+  side            String   // e.g. "Front Bumper", "Hood", "Left Fender", etc.
+  damageDescription String?
+  photosBefore    Json?    // Array of media IDs
+  photosAfter     Json?    // Array of media IDs
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId])
+  @@index([tenantId])
+  @@map("rebuild_items")
 }
 
 model Meta {
@@ -2566,4 +2591,44 @@ model AuctionListingReview {
   @@index([tenantId])
   @@index([lotNumber])
   @@map("auction_listing_reviews")
+}
+
+// ========================================
+// Inventory Assets (Tools & Fixed Assets)
+// ========================================
+
+model InventoryAsset {
+  id              String    @id @default(uuid())
+  tenantId        String
+  name            String
+  assetTag        String?
+  serialNumber    String?
+  description     String?
+  notes           String?
+  category        String?   // e.g. "tool", "equipment", "furniture", "electronics"
+  status          String    @default("available") // available, in_use, maintenance, retired, lost
+  condition       String    @default("good") // new, good, fair, poor
+  location        String?
+  assignedTo      String?   // Name or identifier of person using it
+  brand           String?
+  model           String?
+  purchaseDate    DateTime?
+  purchasePrice   Decimal?  @db.Decimal(12, 2)
+  currentValue    Decimal?  @db.Decimal(12, 2)
+  warrantyExpiry  DateTime?
+  supplier        String?
+  quantity        Int       @default(1)
+  shippingCost    Decimal?  @db.Decimal(12, 2)
+  tax             Decimal?  @db.Decimal(12, 2)
+  receiptIds      String[]  @default([])
+  imageUrl        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, category])
+  @@map("inventory_assets")
 }

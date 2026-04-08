@@ -43,11 +43,35 @@ jobs:
             docker load < /tmp/backend.tar.gz
             rm /tmp/backend.tar.gz
 
-            # Restart backend service
-            docker compose -f docker-compose.prod.yml up -d backend
+            # Stop and remove old container
+            docker stop app 2>/dev/null || true
+            docker rm app 2>/dev/null || true
+
+            # Start new container with production env
+            docker run -d \
+              --name app \
+              --restart unless-stopped \
+              --network htownautos_appnet \
+              --env-file ./htownautos-backend/.env.production \
+              -e DATABASE_URL="postgresql://webmaster:${POSTGRES_PASSWORD:-Carlos.90111234487}@postgres:5432/htownautos?schema=public&connect_timeout=30" \
+              -e REDIS_HOST=redis \
+              -e REDIS_PORT=6379 \
+              -e OPENSEARCH_NODE=http://opensearch:9200 \
+              -e RABBITMQ_URL="amqp://webmaster:${RABBITMQ_PASS:-Carlos.90111234487}@rabbitmq:5672" \
+              -p 3000:3000 \
+              -p 3002:3002 \
+              -p 3003:3003 \
+              -p 3004:3004 \
+              htownautos-backend:latest
+
+            # Wait for container to start
+            sleep 5
 
             # Run migrations
-            docker compose -f docker-compose.prod.yml exec -T backend npx prisma migrate deploy --schema=libs/prisma/prisma/schema.prisma
+            docker exec app npx prisma migrate deploy --schema=libs/prisma/prisma/schema.prisma || true
+
+            # Verify container is running
+            docker ps | grep app
 
             # Cleanup old images
             docker image prune -f

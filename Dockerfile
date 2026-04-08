@@ -3,6 +3,9 @@ FROM node:20-bookworm AS builder
 
 WORKDIR /app
 
+# Force development mode during build so devDependencies (nx, typescript, etc.) are installed
+ENV NODE_ENV=development
+
 COPY package.json package-lock.json ./
 RUN npm ci
 

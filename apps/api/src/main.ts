@@ -216,6 +216,7 @@ async function bootstrap() {
   logger.log(`🔒 Security: Helmet enabled, CORS configured, Rate limiting active`);
   logger.log(`✅ Compliance: RouteOne, DealerTrack, GLBA, OFAC`);
   logger.log(`📊 Audit logging: ENABLED`);
+  logger.log(`⚡ Deployed via CI/CD pipeline`);
 
   // Advertencia si no está en producción
   if (process.env.NODE_ENV !== 'production') {

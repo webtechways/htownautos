@@ -16,8 +16,8 @@ COPY libs ./libs
 # Generate Prisma client
 RUN npx prisma generate --schema=libs/prisma/prisma/schema.prisma
 
-# Build all NX apps
-RUN npx nx run-many --target=build --parallel=4
+# Build all NX apps (sequential to avoid OOM on limited memory servers)
+RUN npx nx run-many --target=build --parallel=1
 
 # ---- Production Stage ----
 FROM node:20-bookworm-slim AS production

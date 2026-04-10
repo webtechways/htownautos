@@ -179,6 +179,26 @@ export class BuyersController {
     return this.service.update(id, dto, tenantId);
   }
 
+  @Delete('bulk')
+  @HttpCode(HttpStatus.OK)
+  @AuditLog({
+    action: 'bulk-delete',
+    resource: 'buyer',
+    level: 'critical',
+    pii: true,
+    compliance: ['routeone', 'dealertrack', 'glba', 'fcra'],
+    trackChanges: true,
+  })
+  @ApiOperation({ summary: 'Bulk delete buyers' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Buyers deleted' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'One or more buyers not found' })
+  removeBulk(
+    @CurrentTenant() tenantId: string,
+    @Body() body: { ids: string[] },
+  ): Promise<{ message: string; count: number }> {
+    return this.service.removeBulk(body.ids, tenantId);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @AuditLog({

@@ -226,6 +226,39 @@ export class VehicleController {
     return this.vehicleService.update(id, updateVehicleDto, tenantId);
   }
 
+  @Delete('bulk')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Bulk delete vehicles',
+    description: 'Deletes multiple vehicles from the inventory by their IDs.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Vehicles successfully deleted',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string' },
+        count: { type: 'number' },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'One or more vehicles not found' })
+  @AuditLog({
+    action: 'bulk-delete',
+    resource: 'Vehicle',
+    level: 'high',
+    pii: false,
+    compliance: ['RouteOne', 'DealerTrack', 'GLBA'],
+    trackChanges: true,
+  })
+  removeBulk(
+    @CurrentTenant() tenantId: string,
+    @Body() body: { ids: string[] },
+  ) {
+    return this.vehicleService.removeBulk(body.ids, tenantId);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

@@ -299,6 +299,30 @@ export class BuyersService {
     return { message: `Buyer ${id} deleted` };
   }
 
+  async removeBulk(ids: string[], tenantId: string): Promise<{ message: string; count: number }> {
+    const buyers = await this.buyer.findMany({
+      where: { id: { in: ids }, tenantId: tenantId || undefined },
+      select: { id: true },
+    });
+
+    const foundIds = buyers.map((b) => b.id);
+    const notFound = ids.filter((id) => !foundIds.includes(id));
+    if (notFound.length > 0) {
+      throw new NotFoundException(
+        `Buyers not found or not accessible: ${notFound.join(', ')}`,
+      );
+    }
+
+    const result = await this.buyer.deleteMany({
+      where: { id: { in: foundIds }, tenantId: tenantId || undefined },
+    });
+
+    return {
+      message: `${result.count} customer(s) have been successfully deleted`,
+      count: result.count,
+    };
+  }
+
   // ── Private helpers ──────────────────────────────────────────
 
   private async ensureBuyerExists(id: string, tenantId: string): Promise<void> {

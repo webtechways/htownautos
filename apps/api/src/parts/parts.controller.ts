@@ -309,6 +309,21 @@ export class PartsController {
     return this.partsService.update(tenantId, id, updatePartDto);
   }
 
+  @Delete('bulk')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Bulk delete parts',
+    description: 'Deletes multiple parts by their UUIDs',
+  })
+  @ApiResponse({ status: 200, description: 'Parts deleted successfully' })
+  @ApiResponse({ status: 404, description: 'One or more parts not found' })
+  removeBulk(
+    @CurrentTenant() tenantId: string,
+    @Body() body: { ids: string[] },
+  ) {
+    return this.partsService.removeBulk(tenantId, body.ids);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

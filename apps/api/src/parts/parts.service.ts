@@ -326,6 +326,30 @@ export class PartsService {
     };
   }
 
+  async removeBulk(tenantId: string, ids: string[]) {
+    const parts = await this.prisma.part.findMany({
+      where: { id: { in: ids }, tenantId },
+      select: { id: true },
+    });
+
+    const foundIds = parts.map((p) => p.id);
+    const notFound = ids.filter((id) => !foundIds.includes(id));
+    if (notFound.length > 0) {
+      throw new NotFoundException(
+        `Parts not found or not accessible: ${notFound.join(', ')}`,
+      );
+    }
+
+    const result = await this.prisma.part.deleteMany({
+      where: { id: { in: foundIds }, tenantId },
+    });
+
+    return {
+      message: `${result.count} part(s) have been successfully deleted`,
+      count: result.count,
+    };
+  }
+
   async updateQuantity(
     tenantId: string,
     id: string,

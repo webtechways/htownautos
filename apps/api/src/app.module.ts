@@ -23,6 +23,7 @@ import { VehicleTrimModule } from './vehicle-trim/vehicle-trim.module';
 import { NomenclatorsModule } from './nomenclators/nomenclators.module';
 import { ExtraExpenseModule } from './extra-expense/extra-expense.module';
 import { VehicleModule } from './vehicle/vehicle.module';
+import { DealModule } from './deal/deal.module';
 import { MetaModule } from './meta/meta.module';
 import { RolesModule } from './roles/roles.module';
 import { TenantModule } from './tenant/tenant.module';
@@ -36,6 +37,7 @@ import { UploadSessionModule } from './upload-session/upload-session.module';
 import { CopartModule } from './copart/copart.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { BuyersModule } from './buyers/buyers.module';
+import { BuyerAuctionBidsModule } from './buyer-auction-bids/buyer-auction-bids.module';
 import { EmailModule } from './email/email.module';
 import { TasksModule } from './tasks/tasks.module';
 import { NotesModule } from './notes/notes.module';
@@ -53,7 +55,12 @@ import { ListingGroupsModule } from './listing-groups/listing-groups.module';
 import { ListingReviewsModule } from './listing-reviews/listing-reviews.module';
 import { RebuildModule } from './rebuild/rebuild.module';
 import { InventoryAssetsModule } from './inventory-assets/inventory-assets.module';
+import { SocialAccountsModule } from './social-accounts/social-accounts.module';
 import { ClerkWebhooksModule } from './clerk-webhooks/clerk-webhooks.module';
+import { ShippoModule } from './shippo/shippo.module';
+import { ParcelTemplatesModule } from './parcel-templates/parcel-templates.module';
+import { PartOrdersModule } from './part-orders/part-orders.module';
+import { ApiKeysModule } from './api-keys/api-keys.module';
 
 /**
  * API Gateway Module
@@ -91,6 +98,7 @@ import { ClerkWebhooksModule } from './clerk-webhooks/clerk-webhooks.module';
     VehicleModelModule,
     VehicleTrimModule,
     VehicleModule,
+    DealModule,
     NomenclatorsModule,
     ExtraExpenseModule,
     MetaModule,
@@ -106,6 +114,7 @@ import { ClerkWebhooksModule } from './clerk-webhooks/clerk-webhooks.module';
     CopartModule,
     FavoritesModule,
     BuyersModule,
+    BuyerAuctionBidsModule,
     EmailModule,
     TasksModule,
     NotesModule,
@@ -123,7 +132,12 @@ import { ClerkWebhooksModule } from './clerk-webhooks/clerk-webhooks.module';
     ListingReviewsModule,
     RebuildModule,
     InventoryAssetsModule,
+    SocialAccountsModule,
     ClerkWebhooksModule,
+    ShippoModule,
+    ParcelTemplatesModule,
+    PartOrdersModule,
+    ApiKeysModule,
   ],
   controllers: [AppController],
   providers: [

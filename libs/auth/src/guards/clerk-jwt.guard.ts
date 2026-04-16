@@ -69,6 +69,11 @@ export class ClerkJwtGuard implements CanActivate {
       return true;
     }
 
+    // If ApiKeyGuard already authenticated the request, don't re-auth via Clerk.
+    if (request.apiKey && request.user) {
+      return true;
+    }
+
     const token = this.extractToken(request);
 
     if (!token) {

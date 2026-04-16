@@ -2,7 +2,7 @@ import 'dotenv/config';
 // Enable JSON.stringify for BigInt (Prisma returns BigInt for Int8 columns)
 (BigInt.prototype as any).toJSON = function () { return this.toString(); };
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { BadRequestException, ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import * as bodyParser from 'body-parser';
@@ -37,7 +37,10 @@ async function bootstrap() {
   // Body parser: Stripe webhooks need raw body for signature verification,
   // all other routes get parsed JSON as before
   app.use((req: any, res: any, next: any) => {
-    if (req.originalUrl === '/api/v1/stripe/webhooks') {
+    if (
+      req.originalUrl === '/api/v1/stripe/webhooks' ||
+      req.originalUrl === '/api/v1/shippo/webhooks'
+    ) {
       bodyParser.raw({ type: 'application/json', limit: '5mb' })(req, res, next);
     } else {
       bodyParser.json({ limit: '5mb' })(req, res, next);
@@ -128,7 +131,12 @@ async function bootstrap() {
           field: error.property,
           errors: Object.values(error.constraints || {}),
         }));
-        return new Error(JSON.stringify(messages));
+        return new BadRequestException({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Validation failed',
+          details: messages,
+        });
       },
     }),
   );

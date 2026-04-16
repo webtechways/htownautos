@@ -474,66 +474,72 @@ model VehicleEngine {
 }
 
 model Tenant {
-  id                  String               @id @default(uuid())
-  clerkOrgId          String?              @unique @map("clerk_org_id") // Clerk Organization ID
-  name                String
-  slug                String               @unique
-  subdomain           String?              @unique // subdomain.htownautos.com (nullable for migration)
-  businessName        String?
-  taxId               String?
-  phone               String?
-  email               String?
-  website             String?
-  address             String?
-  city                String?
-  state               String?
-  zipCode             String?
-  country             String               @default("USA")
-  settings            Json?
+  id                        String                 @id @default(uuid())
+  clerkOrgId                String?                @unique @map("clerk_org_id") // Clerk Organization ID
+  name                      String
+  slug                      String                 @unique
+  subdomain                 String?                @unique // subdomain.htownautos.com (nullable for migration)
+  businessName              String?
+  taxId                     String?
+  phone                     String?
+  email                     String?
+  website                   String?
+  address                   String?
+  city                      String?
+  state                     String?
+  zipCode                   String?
+  country                   String                 @default("USA")
+  settings                  Json?
   twilioMessagingServiceSid String? // Twilio Messaging Service ID for SMS
-  logo                String?
-  isActive            Boolean              @default(true)
-  deletedAt           DateTime?
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  activities          Activity[]
-  activityStatuses    ActivityStatus[]
-  activityTypes       ActivityType[]
-  auditLogs           AuditLog[]
-  buyers              Buyer[]
-  dealStatuses        DealStatus[]
-  deals               Deal[]
-  extraExpenses       ExtraExpense[]
-  leadSources         LeadSource[]
-  leads               Lead[]
-  media               Media[]
-  metas               Meta[]
-  notifications       Notification[]
-  partCategories      PartCategory[]
-  partConditions      PartCondition[]
-  partStatuses        PartStatus[]
-  parts               Part[]
-  roles               Role[]
-  tenantIntegrations  TenantIntegration[]
-  users               TenantUser[]
-  titles              Title[]
-  vehicleSources      VehicleSource[]
-  vehicleStatuses     VehicleStatus[]
-  vehicles            Vehicle[]
-  auctionFavorites      AuctionFavorite[]
-  auctionListingGroups  AuctionListingGroup[]
-  auctionListingReviews AuctionListingReview[]
-  invitations           TenantInvitation[]
-  tasks               Task[]
-  notes               Note[]
-  phoneCalls          PhoneCall[]
-  smsMessages         SmsMessage[]
-  emailMessages       EmailMessage[]
-  twilioPhoneNumbers  TwilioPhoneNumber[]
-  callFlows           CallFlow[]
-  shortUrls           ShortUrl[]
-  rebuildItems        RebuildItem[]
-  inventoryAssets     InventoryAsset[]
+  logo                      String?
+  isActive                  Boolean                @default(true)
+  deletedAt                 DateTime?
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  activities                Activity[]
+  activityStatuses          ActivityStatus[]
+  activityTypes             ActivityType[]
+  auditLogs                 AuditLog[]
+  buyers                    Buyer[]
+  dealStatuses              DealStatus[]
+  deals                     Deal[]
+  extraExpenses             ExtraExpense[]
+  leadSources               LeadSource[]
+  leads                     Lead[]
+  media                     Media[]
+  metas                     Meta[]
+  notifications             Notification[]
+  partCategories            PartCategory[]
+  partConditions            PartCondition[]
+  partStatuses              PartStatus[]
+  parts                     Part[]
+  roles                     Role[]
+  tenantIntegrations        TenantIntegration[]
+  users                     TenantUser[]
+  titles                    Title[]
+  vehicleSources            VehicleSource[]
+  vehicleStatuses           VehicleStatus[]
+  vehicles                  Vehicle[]
+  auctionFavorites          AuctionFavorite[]
+  auctionListingGroups      AuctionListingGroup[]
+  auctionListingReviews     AuctionListingReview[]
+  buyerAuctionBids          BuyerAuctionBid[]
+  invitations               TenantInvitation[]
+  tasks                     Task[]
+  notes                     Note[]
+  phoneCalls                PhoneCall[]
+  smsMessages               SmsMessage[]
+  emailMessages             EmailMessage[]
+  twilioPhoneNumbers        TwilioPhoneNumber[]
+  callFlows                 CallFlow[]
+  shortUrls                 ShortUrl[]
+  rebuildItems              RebuildItem[]
+  inventoryAssets           InventoryAsset[]
+  socialAccounts            SocialAccount[]
+  socialGroups              SocialGroup[]
+  partOrders                PartOrder[]
+  parcelTemplates           ParcelTemplate[]
+  apiKeys                   ApiKey[]
 
   @@index([clerkOrgId])
   @@index([slug])
@@ -544,27 +550,27 @@ model Tenant {
 }
 
 model User {
-  id             String       @id @default(uuid())
-  email          String       @unique
-  name           String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  metaValue      Json?
-  avatar         String?
-  clerkUserId    String?      @unique
-  emailVerified  Boolean      @default(false)
-  firstName      String?
-  isActive       Boolean      @default(true)
-  lastActivityAt DateTime?
-  lastLoginAt    DateTime?
-  lastSeenAt     DateTime?
-  lastName       String?
-  phoneNumber    String?
-  isOnline       Boolean      @default(false)
-  tenants          TenantUser[]
-  vehiclesCreated  Vehicle[]    @relation("VehicleCreatedBy")
-  sentInvitations  TenantInvitation[]
-  paidExpenses     ExtraExpense[] @relation("ExpensePaidBy")
+  id              String             @id @default(uuid())
+  email           String             @unique
+  name            String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  metaValue       Json?
+  avatar          String?
+  clerkUserId     String?            @unique
+  emailVerified   Boolean            @default(false)
+  firstName       String?
+  isActive        Boolean            @default(true)
+  lastActivityAt  DateTime?
+  lastLoginAt     DateTime?
+  lastSeenAt      DateTime?
+  lastName        String?
+  phoneNumber     String?
+  isOnline        Boolean            @default(false)
+  tenants         TenantUser[]
+  vehiclesCreated Vehicle[]          @relation("VehicleCreatedBy")
+  sentInvitations TenantInvitation[]
+  paidExpenses    ExtraExpense[]     @relation("ExpensePaidBy")
 
   @@index([clerkUserId])
   @@index([email])
@@ -573,17 +579,17 @@ model User {
 }
 
 model Role {
-  id          String           @id @default(uuid())
+  id          String             @id @default(uuid())
   name        String
   slug        String
   description String?
-  isSystem    Boolean          @default(false)
+  isSystem    Boolean            @default(false)
   tenantId    String?
-  isActive    Boolean          @default(true)
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
   permissions RolePermission[]
-  tenant      Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   users       TenantUser[]
   invitations TenantInvitation[]
 
@@ -615,37 +621,37 @@ model RolePermission {
 }
 
 model TenantUser {
-  id               String    @id @default(uuid())
-  tenantId         String
-  userId           String
-  username         String?   // username for tenant email: username@subdomain.htownautos.com (nullable for migration)
-  tenantEmail      String?   // computed: username@subdomain.htownautos.com
-  extension        String?   // Phone extension number (e.g., "101", "102")
-  permissions      Json?
-  isActive         Boolean   @default(true)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  roleId           String
-  acceptedAt       DateTime?
-  invitationCode   String?   @unique
-  invitationSentAt DateTime?
-  invitedBy        String?
-  status           String    @default("pending")
-  removedAt        DateTime?
-  role             Role      @relation(fields: [roleId], references: [id])
-  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  buyersAsSalesperson Buyer[] @relation("BuyerSalesperson")
-  buyersAsBdc         Buyer[] @relation("BuyerBdcAgent")
-  tasksAssigned       Task[]  @relation("TaskAssignedTo")
-  tasksCreated        Task[]  @relation("TaskCreatedBy")
-  notesCreated        Note[]  @relation("NoteCreatedBy")
-  phoneCalls              PhoneCall[] @relation("PhoneCallCaller")
-  phoneCallsTransferredTo   PhoneCall[] @relation("PhoneCallTransferredTo")
-  phoneCallsTransferredFrom PhoneCall[] @relation("PhoneCallTransferredFrom")
-  smsMessages         SmsMessage[] @relation("SmsMessageSender")
-  emailMessages       EmailMessage[] @relation("EmailMessageSender")
-  twilioPhoneNumber   TwilioPhoneNumber?
+  id                        String             @id @default(uuid())
+  tenantId                  String
+  userId                    String
+  username                  String? // username for tenant email: username@subdomain.htownautos.com (nullable for migration)
+  tenantEmail               String? // computed: username@subdomain.htownautos.com
+  extension                 String? // Phone extension number (e.g., "101", "102")
+  permissions               Json?
+  isActive                  Boolean            @default(true)
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+  roleId                    String
+  acceptedAt                DateTime?
+  invitationCode            String?            @unique
+  invitationSentAt          DateTime?
+  invitedBy                 String?
+  status                    String             @default("pending")
+  removedAt                 DateTime?
+  role                      Role               @relation(fields: [roleId], references: [id])
+  tenant                    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  buyersAsSalesperson       Buyer[]            @relation("BuyerSalesperson")
+  buyersAsBdc               Buyer[]            @relation("BuyerBdcAgent")
+  tasksAssigned             Task[]             @relation("TaskAssignedTo")
+  tasksCreated              Task[]             @relation("TaskCreatedBy")
+  notesCreated              Note[]             @relation("NoteCreatedBy")
+  phoneCalls                PhoneCall[]        @relation("PhoneCallCaller")
+  phoneCallsTransferredTo   PhoneCall[]        @relation("PhoneCallTransferredTo")
+  phoneCallsTransferredFrom PhoneCall[]        @relation("PhoneCallTransferredFrom")
+  smsMessages               SmsMessage[]       @relation("SmsMessageSender")
+  emailMessages             EmailMessage[]     @relation("EmailMessageSender")
+  twilioPhoneNumber         TwilioPhoneNumber?
 
   @@unique([tenantId, userId])
   @@unique([tenantId, username])
@@ -677,9 +683,9 @@ model TenantInvitation {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  role             Role      @relation(fields: [roleId], references: [id])
-  inviter          User      @relation(fields: [invitedBy], references: [id])
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role    Role   @relation(fields: [roleId], references: [id])
+  inviter User   @relation(fields: [invitedBy], references: [id])
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -840,7 +846,10 @@ model Buyer {
   phoneCalls               PhoneCall[]
   smsMessages              SmsMessage[]
   emailMessages            EmailMessage[]
+  partOrders               PartOrder[]
+  auctionBids              BuyerAuctionBid[]
 
+  @@unique([tenantId, phoneMain])
   @@index([tenantId])
   @@index([email])
   @@index([lastName, firstName])
@@ -848,7 +857,6 @@ model Buyer {
   @@index([dateOfBirth])
   @@index([salesPersonId])
   @@index([bdcAgentId])
-  @@unique([tenantId, phoneMain])
   @@map("buyers")
 }
 
@@ -1253,22 +1261,22 @@ model Vehicle {
 }
 
 model ExtraExpense {
-  id            String   @id @default(uuid())
+  id           String   @id @default(uuid())
   /// Relación con el vehículo
-  vehicleId     String
-  description   String
-  price         Decimal  @db.Decimal(10, 2)
-  shippingCost  Decimal  @default(0) @db.Decimal(10, 2)
-  tax           Decimal  @default(0) @db.Decimal(10, 2)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  metaValue     Json?
-  tenantId      String?
-  paidByUserId  String?
-  tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  vehicle       Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  paidByUser    User?    @relation("ExpensePaidBy", fields: [paidByUserId], references: [id], onDelete: SetNull)
-  receipts      Media[]  @relation("ExtraExpenseReceipts")
+  vehicleId    String
+  description  String
+  price        Decimal  @db.Decimal(10, 2)
+  shippingCost Decimal  @default(0) @db.Decimal(10, 2)
+  tax          Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  metaValue    Json?
+  tenantId     String?
+  paidByUserId String?
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle      Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  paidByUser   User?    @relation("ExpensePaidBy", fields: [paidByUserId], references: [id], onDelete: SetNull)
+  receipts     Media[]  @relation("ExtraExpenseReceipts")
 
   @@index([tenantId])
   @@index([vehicleId])
@@ -1277,19 +1285,19 @@ model ExtraExpense {
 }
 
 model RebuildItem {
-  id              String   @id @default(uuid()) @db.Uuid
-  vehicleId       String
-  tenantId        String?
-  side            String   // e.g. "Front Bumper", "Hood", "Left Fender", etc.
+  id                String   @id @default(uuid()) @db.Uuid
+  vehicleId         String
+  tenantId          String?
+  side              String // e.g. "Front Bumper", "Hood", "Left Fender", etc.
   damageDescription String?
-  photosBefore    Json?    // Array of media IDs
-  photosAfter     Json?    // Array of media IDs
-  sortOrder       Int      @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  photosBefore      Json? // Array of media IDs
+  photosAfter       Json? // Array of media IDs
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  tenant  Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([vehicleId])
   @@index([tenantId])
@@ -1594,7 +1602,7 @@ model PartCategory {
 }
 
 model Part {
-  id                  String        @id @default(uuid())
+  id                  String          @id @default(uuid())
   tenantId            String
   name                String
   partNumber          String?
@@ -1604,10 +1612,10 @@ model Part {
   categoryId          String?
   conditionId         String
   statusId            String
-  cost                Decimal?      @db.Decimal(10, 2)
-  price               Decimal       @db.Decimal(10, 2)
-  quantity            Int           @default(1)
-  minQuantity         Int           @default(0)
+  cost                Decimal?        @db.Decimal(10, 2)
+  price               Decimal         @db.Decimal(10, 2)
+  quantity            Int             @default(1)
+  minQuantity         Int             @default(0)
   location            String?
   warehouseSection    String?
   yearId              String?
@@ -1617,11 +1625,11 @@ model Part {
   sourceVin           String?
   sourceMiles         Int?
   sourceVehicleId     String?
-  mainImageId         String?       @unique
-  weight              Decimal?      @db.Decimal(8, 2)
-  length              Decimal?      @db.Decimal(8, 2)
-  width               Decimal?      @db.Decimal(8, 2)
-  height              Decimal?      @db.Decimal(8, 2)
+  mainImageId         String?         @unique
+  weight              Decimal?        @db.Decimal(8, 2)
+  length              Decimal?        @db.Decimal(8, 2)
+  width               Decimal?        @db.Decimal(8, 2)
+  height              Decimal?        @db.Decimal(8, 2)
   warrantyDays        Int?
   warrantyNotes       String?
   supplier            String?
@@ -1631,28 +1639,29 @@ model Part {
   brand               String?
   manufacturer        String?
   countryOfOrigin     String?
-  isOem               Boolean       @default(false)
-  isAftermarket       Boolean       @default(false)
+  isOem               Boolean         @default(false)
+  isAftermarket       Boolean         @default(false)
   soldAt              DateTime?
   soldToId            String?
-  soldPrice           Decimal?      @db.Decimal(10, 2)
+  soldPrice           Decimal?        @db.Decimal(10, 2)
   soldDealId          String?
   metaValue           Json?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
-  activities          Activity[]    @relation("PartActivities")
-  media               Media[]       @relation("PartMedia")
-  category            PartCategory? @relation(fields: [categoryId], references: [id])
-  condition           PartCondition @relation(fields: [conditionId], references: [id])
-  mainImage           Media?        @relation("PartMainImage", fields: [mainImageId], references: [id])
-  make                VehicleMake?  @relation(fields: [makeId], references: [id])
-  model               VehicleModel? @relation(fields: [modelId], references: [id])
-  sourceVehicle       Vehicle?      @relation("PartSourceVehicle", fields: [sourceVehicleId], references: [id])
-  status              PartStatus    @relation(fields: [statusId], references: [id])
-  tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  trim                VehicleTrim?  @relation(fields: [trimId], references: [id])
-  year                VehicleYear?  @relation(fields: [yearId], references: [id])
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  activities          Activity[]      @relation("PartActivities")
+  media               Media[]         @relation("PartMedia")
+  category            PartCategory?   @relation(fields: [categoryId], references: [id])
+  condition           PartCondition   @relation(fields: [conditionId], references: [id])
+  mainImage           Media?          @relation("PartMainImage", fields: [mainImageId], references: [id])
+  make                VehicleMake?    @relation(fields: [makeId], references: [id])
+  model               VehicleModel?   @relation(fields: [modelId], references: [id])
+  sourceVehicle       Vehicle?        @relation("PartSourceVehicle", fields: [sourceVehicleId], references: [id])
+  status              PartStatus      @relation(fields: [statusId], references: [id])
+  tenant              Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trim                VehicleTrim?    @relation(fields: [trimId], references: [id])
+  year                VehicleYear?    @relation(fields: [yearId], references: [id])
   vehicleUsages       VehiclePart[]
+  orderItems          PartOrderItem[]
 
   @@index([tenantId])
   @@index([partNumber])
@@ -1682,8 +1691,8 @@ model VehiclePart {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  part        Part     @relation(fields: [partId], references: [id])
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  part    Part    @relation(fields: [partId], references: [id])
 
   @@index([vehicleId])
   @@index([partId])
@@ -1761,75 +1770,76 @@ model MarketCheckAuctionCache {
 }
 
 model AuctionListing {
-  auctionName       String?   @default("Copart")
-  copartId          Int?
-  yardNumber        Int?
-  yardName          String?
-  saleDate          Int?
-  dayOfWeek         String?
-  saleTime          String?
-  timeZone          String?
-  itemNumber        Int?
-  lotNumber         BigInt    @id
-  vehicleType       String?
-  year              Int?
-  make              String?
-  modelGroup        String?
-  modelDetail       String?
-  bodyStyle         String?
-  color             String?
-  damageDescription String?
-  secondaryDamage   String?
-  saleTitleState    String?
-  saleTitleType     String?
-  hasKeys           String?
-  lotCondCode       String?
-  vin               String?
-  odometer          Decimal?  @db.Decimal(12, 1)
-  odometerBrand     String?
-  estRetailValue    Decimal?  @db.Decimal(12, 2)
-  repairCost        Decimal?  @db.Decimal(12, 2)
-  engine            String?
-  drive             String?
-  transmission      String?
-  fuelType          String?
-  cylinders         String?
-  runsDrives        String?
-  saleStatus        String?
-  highBid           Decimal?  @db.Decimal(12, 2)
-  specialNote       String?
-  locationCity      String?
-  locationState     String?
-  locationZip       String?
-  locationCountry   String?
-  currencyCode      String?
-  images            String?
-  galleryCache      String?   @db.Text
-  galleryCachedAt   DateTime?
-  createDateTime    String?
-  gridRow           String?
-  makeOfferEligible String?
-  buyItNowPrice     Decimal?  @db.Decimal(12, 2)
-  trim              String?
-  lastUpdatedTime   DateTime?
-  rentals           String?
-  wholesale         String?
-  sellerName        String?
-  offsiteAddress1   String?
-  offsiteState      String?
-  offsiteCity       String?
-  offsiteZip        String?
-  saleLight         String?
-  autoGrade         String?
-  announcements     String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  analyses          AuctionVehicleAnalysis[]
-  marketParts       VehicleMarketPart[]
-  carfaxReports     CarfaxReport[]
+  auctionName           String?                   @default("Copart")
+  copartId              Int?
+  yardNumber            Int?
+  yardName              String?
+  saleDate              Int?
+  dayOfWeek             String?
+  saleTime              String?
+  timeZone              String?
+  itemNumber            Int?
+  lotNumber             BigInt                    @id
+  vehicleType           String?
+  year                  Int?
+  make                  String?
+  modelGroup            String?
+  modelDetail           String?
+  bodyStyle             String?
+  color                 String?
+  damageDescription     String?
+  secondaryDamage       String?
+  saleTitleState        String?
+  saleTitleType         String?
+  hasKeys               String?
+  lotCondCode           String?
+  vin                   String?
+  odometer              Decimal?                  @db.Decimal(12, 1)
+  odometerBrand         String?
+  estRetailValue        Decimal?                  @db.Decimal(12, 2)
+  repairCost            Decimal?                  @db.Decimal(12, 2)
+  engine                String?
+  drive                 String?
+  transmission          String?
+  fuelType              String?
+  cylinders             String?
+  runsDrives            String?
+  saleStatus            String?
+  highBid               Decimal?                  @db.Decimal(12, 2)
+  specialNote           String?
+  locationCity          String?
+  locationState         String?
+  locationZip           String?
+  locationCountry       String?
+  currencyCode          String?
+  images                String?
+  galleryCache          String?                   @db.Text
+  galleryCachedAt       DateTime?
+  createDateTime        String?
+  gridRow               String?
+  makeOfferEligible     String?
+  buyItNowPrice         Decimal?                  @db.Decimal(12, 2)
+  trim                  String?
+  lastUpdatedTime       DateTime?
+  rentals               String?
+  wholesale             String?
+  sellerName            String?
+  offsiteAddress1       String?
+  offsiteState          String?
+  offsiteCity           String?
+  offsiteZip            String?
+  saleLight             String?
+  autoGrade             String?
+  announcements         String?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  analyses              AuctionVehicleAnalysis[]
+  marketParts           VehicleMarketPart[]
+  carfaxReports         CarfaxReport[]
   maxBidRecommendations MaxBidRecommendation[]
-  listingGroupItems AuctionListingGroupItem[]
-  reviews           AuctionListingReview[]
+  listingGroupItems     AuctionListingGroupItem[]
+  reviews               AuctionListingReview[]
+  buyerBids             BuyerAuctionBid[]
 
   @@index([auctionName])
   @@index([vin])
@@ -1954,35 +1964,35 @@ model AuctionFavorite {
 }
 
 model Task {
-  id           String    @id @default(uuid())
-  tenantId     String
-  title        String
-  description  String?
-  status       String    @default("pending") // pending, in_progress, completed, cancelled
-  priority     String    @default("normal")  // low, normal, high, urgent
-  dueDate      DateTime?
-  dueTime      String?   // e.g., "14:30"
-  completedAt  DateTime?
+  id          String    @id @default(uuid())
+  tenantId    String
+  title       String
+  description String?
+  status      String    @default("pending") // pending, in_progress, completed, cancelled
+  priority    String    @default("normal") // low, normal, high, urgent
+  dueDate     DateTime?
+  dueTime     String? // e.g., "14:30"
+  completedAt DateTime?
 
   // Relationships
-  assignedToId String    // TenantUser ID - who the task is assigned to
-  createdById  String    // TenantUser ID - who created the task
+  assignedToId String // TenantUser ID - who the task is assigned to
+  createdById  String // TenantUser ID - who created the task
 
   // Optional entity associations
-  buyerId      String?
-  vehicleId    String?
-  dealId       String?
+  buyerId   String?
+  vehicleId String?
+  dealId    String?
 
-  notes        String?
-  metaValue    Json?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  notes     String?
+  metaValue Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assignedTo   TenantUser @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
-  createdBy    TenantUser @relation("TaskCreatedBy", fields: [createdById], references: [id])
-  buyer        Buyer?     @relation(fields: [buyerId], references: [id], onDelete: SetNull)
-  vehicle      Vehicle?   @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignedTo TenantUser @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+  createdBy  TenantUser @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  buyer      Buyer?     @relation(fields: [buyerId], references: [id], onDelete: SetNull)
+  vehicle    Vehicle?   @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([assignedToId])
@@ -1997,25 +2007,25 @@ model Task {
 }
 
 model Note {
-  id          String   @id @default(uuid())
-  tenantId    String
-  content     String   // HTML content from rich text editor
+  id       String @id @default(uuid())
+  tenantId String
+  content  String // HTML content from rich text editor
 
   // Relationships
-  createdById String   // TenantUser ID - who created the note
+  createdById String // TenantUser ID - who created the note
 
   // Optional entity associations
-  buyerId     String?
-  vehicleId   String?
-  dealId      String?
+  buyerId   String?
+  vehicleId String?
+  dealId    String?
 
-  metaValue   Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  metaValue Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdBy   TenantUser @relation("NoteCreatedBy", fields: [createdById], references: [id])
-  buyer       Buyer?     @relation(fields: [buyerId], references: [id], onDelete: SetNull)
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy TenantUser @relation("NoteCreatedBy", fields: [createdById], references: [id])
+  buyer     Buyer?     @relation(fields: [buyerId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([createdById])
@@ -2025,66 +2035,66 @@ model Note {
 }
 
 model PhoneCall {
-  id            String    @id @default(uuid())
-  tenantId      String
+  id       String @id @default(uuid())
+  tenantId String
 
   // Call participants (optional - may not always be known)
-  callerId      String?   // TenantUser who made/received the call
-  buyerId       String?   // Buyer involved in the call (matched by phone number)
+  callerId String? // TenantUser who made/received the call
+  buyerId  String? // Buyer involved in the call (matched by phone number)
 
   // Call details
-  direction     String    // inbound, outbound
-  status        String    @default("initiated") // initiated, ringing, in-progress, completed, no-answer, busy, failed, canceled
-  fromNumber    String    // Phone number that initiated the call
-  toNumber      String    // Phone number that received the call
+  direction  String // inbound, outbound
+  status     String @default("initiated") // initiated, ringing, in-progress, completed, no-answer, busy, failed, canceled
+  fromNumber String // Phone number that initiated the call
+  toNumber   String // Phone number that received the call
 
   // Timing
-  startedAt     DateTime  @default(now())
-  answeredAt    DateTime? // When the call was answered
-  endedAt       DateTime?
-  duration      Int?      // Duration in seconds (from answeredAt to endedAt)
+  startedAt  DateTime  @default(now())
+  answeredAt DateTime? // When the call was answered
+  endedAt    DateTime?
+  duration   Int? // Duration in seconds (from answeredAt to endedAt)
 
   // Call outcome
-  outcome       String?   // interested, not_interested, callback_requested, wrong_number, left_voicemail, etc.
-  notes         String?   // Call notes/summary
+  outcome String? // interested, not_interested, callback_requested, wrong_number, left_voicemail, etc.
+  notes   String? // Call notes/summary
 
   // Twilio integration
-  twilioCallSid      String?   @unique // Twilio Call SID for tracking
-  twilioRecordingSid String?   // Twilio Recording SID
-  conferenceSid      String?   // Twilio Conference SID (for conference-based calls)
-  conferenceName     String?   // Conference name (unique per segment)
-  segmentNumber      Int       @default(0) // Segment number in call chain (0=original, 1+=transfers)
-  recordingUrl       String?   // S3 URL to call recording
-  recordingDuration  Int?      // Recording duration in seconds
+  twilioCallSid      String? @unique // Twilio Call SID for tracking
+  twilioRecordingSid String? // Twilio Recording SID
+  conferenceSid      String? // Twilio Conference SID (for conference-based calls)
+  conferenceName     String? // Conference name (unique per segment)
+  segmentNumber      Int     @default(0) // Segment number in call chain (0=original, 1+=transfers)
+  recordingUrl       String? // S3 URL to call recording
+  recordingDuration  Int? // Recording duration in seconds
 
   // Transcription
-  transcription       String?   // Full transcription text
-  transcriptionStatus String?   // pending, processing, completed, failed
+  transcription       String? // Full transcription text
+  transcriptionStatus String? // pending, processing, completed, failed
 
   // AI analysis (for future use)
-  aiSummary     String?   // AI-generated summary of the call
-  aiSentiment   String?   // AI-detected sentiment: positive, neutral, negative
-  aiKeyPoints   Json?     // AI-extracted key points as JSON array
-  aiNextSteps   Json?     // AI-suggested next steps as JSON array
+  aiSummary   String? // AI-generated summary of the call
+  aiSentiment String? // AI-detected sentiment: positive, neutral, negative
+  aiKeyPoints Json? // AI-extracted key points as JSON array
+  aiNextSteps Json? // AI-suggested next steps as JSON array
 
   // Transfer tracking
-  transferredAt         DateTime?   // When the call was transferred
-  transferredToUserId   String?     // TenantUser ID the call was transferred to
-  transferredFromUserId String?     // TenantUser ID who transferred the call
-  transferReason        String?     // Optional reason for transfer
-  parentCallId          String?     // Reference to original call (for transfer segments)
+  transferredAt         DateTime? // When the call was transferred
+  transferredToUserId   String? // TenantUser ID the call was transferred to
+  transferredFromUserId String? // TenantUser ID who transferred the call
+  transferReason        String? // Optional reason for transfer
+  parentCallId          String? // Reference to original call (for transfer segments)
 
-  metaValue     Json?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  metaValue Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  tenant            Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  caller            TenantUser? @relation("PhoneCallCaller", fields: [callerId], references: [id])
-  buyer             Buyer?      @relation(fields: [buyerId], references: [id], onDelete: Cascade)
-  transferredTo     TenantUser? @relation("PhoneCallTransferredTo", fields: [transferredToUserId], references: [id])
-  transferredFrom   TenantUser? @relation("PhoneCallTransferredFrom", fields: [transferredFromUserId], references: [id])
-  parentCall        PhoneCall?  @relation("CallTransferChain", fields: [parentCallId], references: [id])
-  transferSegments  PhoneCall[] @relation("CallTransferChain")
+  tenant           Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  caller           TenantUser? @relation("PhoneCallCaller", fields: [callerId], references: [id])
+  buyer            Buyer?      @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  transferredTo    TenantUser? @relation("PhoneCallTransferredTo", fields: [transferredToUserId], references: [id])
+  transferredFrom  TenantUser? @relation("PhoneCallTransferredFrom", fields: [transferredFromUserId], references: [id])
+  parentCall       PhoneCall?  @relation("CallTransferChain", fields: [parentCallId], references: [id])
+  transferSegments PhoneCall[] @relation("CallTransferChain")
 
   @@index([tenantId])
   @@index([parentCallId])
@@ -2106,47 +2116,47 @@ model PhoneCall {
 
 // SMS Messages - tracks SMS messages between users and buyers
 model SmsMessage {
-  id            String    @id @default(uuid())
-  tenantId      String
+  id       String @id @default(uuid())
+  tenantId String
 
   // Participants
-  senderId      String?   // TenantUser who sent (null for inbound from buyer)
-  buyerId       String
+  senderId String? // TenantUser who sent (null for inbound from buyer)
+  buyerId  String
 
   // Message details
-  direction     String    // inbound, outbound
-  status        String    @default("sent") // sent, delivered, failed, received, queued
-  phoneNumber   String    // Phone number of the buyer
-  fromNumber    String    // Sender phone number (Twilio number for outbound)
-  toNumber      String    // Recipient phone number
-  body          String    // Message content
+  direction   String // inbound, outbound
+  status      String @default("sent") // sent, delivered, failed, received, queued
+  phoneNumber String // Phone number of the buyer
+  fromNumber  String // Sender phone number (Twilio number for outbound)
+  toNumber    String // Recipient phone number
+  body        String // Message content
 
   // Twilio integration
-  messageSid    String?   // Twilio Message SID
-  errorCode     String?   // Twilio error code if failed
-  errorMessage  String?   // Twilio error message if failed
+  messageSid   String? // Twilio Message SID
+  errorCode    String? // Twilio error code if failed
+  errorMessage String? // Twilio error message if failed
 
   // Media (MMS support)
-  mediaUrls     Json?     // Array of media URLs for MMS
-  numMedia      Int       @default(0) // Number of media attachments
+  mediaUrls Json? // Array of media URLs for MMS
+  numMedia  Int   @default(0) // Number of media attachments
 
   // Pricing
-  price         Decimal?  @db.Decimal(10, 4) // Cost of the message
-  priceUnit     String?   // Currency (e.g., "USD")
+  price     Decimal? @db.Decimal(10, 4) // Cost of the message
+  priceUnit String? // Currency (e.g., "USD")
 
   // Metadata
-  segmentCount  Int       @default(1) // Number of SMS segments
-  isRead        Boolean   @default(false) // Has the message been read
+  segmentCount Int     @default(1) // Number of SMS segments
+  isRead       Boolean @default(false) // Has the message been read
 
-  metaValue     Json?
-  sentAt        DateTime? // When the message was sent
-  deliveredAt   DateTime? // When the message was delivered
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  metaValue   Json?
+  sentAt      DateTime? // When the message was sent
+  deliveredAt DateTime? // When the message was delivered
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  tenant        Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sender        TenantUser? @relation("SmsMessageSender", fields: [senderId], references: [id])
-  buyer         Buyer      @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sender TenantUser? @relation("SmsMessageSender", fields: [senderId], references: [id])
+  buyer  Buyer       @relation(fields: [buyerId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([senderId])
@@ -2161,44 +2171,44 @@ model SmsMessage {
 
 // Email Messages - tracks emails between users and buyers
 model EmailMessage {
-  id            String    @id @default(uuid())
-  tenantId      String
+  id       String @id @default(uuid())
+  tenantId String
 
   // Participants
-  senderId      String?   // TenantUser who sent (null for inbound from buyer)
-  buyerId       String
+  senderId String? // TenantUser who sent (null for inbound from buyer)
+  buyerId  String
 
   // Email details
-  direction     String    // inbound, outbound
-  status        String    @default("sent") // draft, queued, sent, delivered, bounced, failed, opened, clicked
+  direction String // inbound, outbound
+  status    String @default("sent") // draft, queued, sent, delivered, bounced, failed, opened, clicked
 
   // Addresses
-  fromEmail     String    // Sender email address
-  toEmail       String    // Recipient email address
-  replyTo       String?   // Reply-to address
-  ccEmails      Json?     // Array of CC email addresses
-  bccEmails     Json?     // Array of BCC email addresses
+  fromEmail String // Sender email address
+  toEmail   String // Recipient email address
+  replyTo   String? // Reply-to address
+  ccEmails  Json? // Array of CC email addresses
+  bccEmails Json? // Array of BCC email addresses
 
   // Content
-  subject       String
-  bodyHtml      String?   // HTML body
-  bodyText      String?   // Plain text body
+  subject  String
+  bodyHtml String? // HTML body
+  bodyText String? // Plain text body
 
   // Threading
-  threadId      String?   // For grouping email threads
-  inReplyTo     String?   // Message-ID of the email being replied to
-  references    Json?     // Array of Message-IDs in the thread
+  threadId   String? // For grouping email threads
+  inReplyTo  String? // Message-ID of the email being replied to
+  references Json? // Array of Message-IDs in the thread
 
   // Attachments
-  attachments   Json?     // Array of attachment metadata [{name, url, size, mimeType}]
-  attachmentCount Int     @default(0)
+  attachments     Json? // Array of attachment metadata [{name, url, size, mimeType}]
+  attachmentCount Int   @default(0)
 
   // AWS SES integration
-  messageId     String?   // SES Message ID
-  sesStatus     String?   // SES delivery status
-  bounceType    String?   // hard, soft, transient
-  bounceSubType String?   // e.g., "General", "NoEmail", "Suppressed"
-  complaintType String?   // abuse, auth-failure, fraud, etc.
+  messageId     String? // SES Message ID
+  sesStatus     String? // SES delivery status
+  bounceType    String? // hard, soft, transient
+  bounceSubType String? // e.g., "General", "NoEmail", "Suppressed"
+  complaintType String? // abuse, auth-failure, fraud, etc.
 
   // Tracking
   isRead        Boolean   @default(false)
@@ -2209,21 +2219,21 @@ model EmailMessage {
   lastClickedAt DateTime?
 
   // Metadata
-  priority      String?   // high, normal, low
-  labels        Json?     // Array of labels/tags
-  metaValue     Json?
+  priority  String? // high, normal, low
+  labels    Json? // Array of labels/tags
+  metaValue Json?
 
   // Timestamps
-  scheduledAt   DateTime? // For scheduled emails
-  sentAt        DateTime?
-  deliveredAt   DateTime?
-  bouncedAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  scheduledAt DateTime? // For scheduled emails
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  bouncedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  tenant        Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sender        TenantUser? @relation("EmailMessageSender", fields: [senderId], references: [id])
-  buyer         Buyer      @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sender TenantUser? @relation("EmailMessageSender", fields: [senderId], references: [id])
+  buyer  Buyer       @relation(fields: [buyerId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([senderId])
@@ -2239,36 +2249,36 @@ model EmailMessage {
 
 // Twilio Phone Numbers - manages phone numbers purchased from Twilio
 model TwilioPhoneNumber {
-  id            String      @id @default(uuid())
-  tenantId      String
+  id       String @id @default(uuid())
+  tenantId String
 
   // Twilio data
-  phoneNumber   String      @unique  // E.164 format: +15551234567
-  twilioSid     String      @unique  // Twilio Phone Number SID (PN...)
-  friendlyName  String?              // "Main Sales Line", "Support", etc.
+  phoneNumber  String  @unique // E.164 format: +15551234567
+  twilioSid    String  @unique // Twilio Phone Number SID (PN...)
+  friendlyName String? // "Main Sales Line", "Support", etc.
 
   // Capabilities
-  canVoice      Boolean     @default(true)
-  canSms        Boolean     @default(true)
-  canMms        Boolean     @default(false)
+  canVoice Boolean @default(true)
+  canSms   Boolean @default(true)
+  canMms   Boolean @default(false)
 
   // Assignment (optional - a number can be unassigned)
-  assignedToId  String?     @unique  // TenantUser id - @unique ensures 1:1
+  assignedToId String? @unique // TenantUser id - @unique ensures 1:1
 
   // Call Flow association
-  callFlowId    String?              // CallFlow to use for incoming calls
+  callFlowId String? // CallFlow to use for incoming calls
 
   // Status
-  isActive      Boolean     @default(true)
-  isPrimary     Boolean     @default(false)  // Primary number for tenant
+  isActive  Boolean @default(true)
+  isPrimary Boolean @default(false) // Primary number for tenant
 
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assignedTo    TenantUser? @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
-  callFlow      CallFlow?   @relation(fields: [callFlowId], references: [id], onDelete: SetNull)
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignedTo TenantUser? @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  callFlow   CallFlow?   @relation(fields: [callFlowId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([phoneNumber])
@@ -2279,15 +2289,15 @@ model TwilioPhoneNumber {
 
 // TTS Audio Cache - caches generated TTS audio to avoid regenerating
 model TtsCache {
-  id          String   @id @default(uuid())
-  textHash    String   // SHA-256 hash of the text
-  voice       String   // OpenAI voice name (alloy, echo, etc.)
-  text        String   // Original text (for debugging)
-  audioUrl    String   // S3 URL of the generated audio
-  s3Key       String   // S3 key for potential cleanup
-  durationMs  Int?     // Audio duration in milliseconds
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(uuid())
+  textHash   String // SHA-256 hash of the text
+  voice      String // OpenAI voice name (alloy, echo, etc.)
+  text       String // Original text (for debugging)
+  audioUrl   String // S3 URL of the generated audio
+  s3Key      String // S3 key for potential cleanup
+  durationMs Int? // Audio duration in milliseconds
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@unique([textHash, voice])
   @@index([textHash])
@@ -2299,27 +2309,27 @@ model TtsCache {
 // Steps are stored as JSON array, processed sequentially
 // Menu and Schedule steps can have nested sub-flows (branches)
 model CallFlow {
-  id                 String      @id @default(uuid())
-  tenantId           String
+  id       String @id @default(uuid())
+  tenantId String
 
-  name               String                // "Main IVR", "After Hours", etc.
-  description        String?
+  name        String // "Main IVR", "After Hours", etc.
+  description String?
 
   // Flow configuration
-  isActive           Boolean     @default(true)
-  recordInboundCalls Boolean     @default(false)  // Record all calls using this flow
+  isActive           Boolean @default(true)
+  recordInboundCalls Boolean @default(false) // Record all calls using this flow
 
   // Steps stored as JSON array
   // Each step: { type, config, nextStepIndex?, branches? }
   // Step types: greeting, dial, simulcall, round_robin, menu, schedule, keypad_entry, tag, voicemail, hangup
-  steps              Json        @default("[]")
+  steps Json @default("[]")
 
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  tenant             Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  phoneNumbers       TwilioPhoneNumber[]
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  phoneNumbers TwilioPhoneNumber[]
 
   @@index([tenantId])
   @@index([isActive])
@@ -2327,35 +2337,35 @@ model CallFlow {
 }
 
 model DamageAi {
-  id                       String                  @id @default(uuid())
+  id                       String                 @id @default(uuid())
   auctionVehicleAnalysisId String
   part                     String
   description              String?
   level                    Int
-  partCost                 Decimal                 @db.Decimal(10, 2)
-  laborCost                Decimal                 @db.Decimal(10, 2)
-  createdAt                DateTime                @default(now())
-  updatedAt                DateTime                @updatedAt
+  partCost                 Decimal                @db.Decimal(10, 2)
+  laborCost                Decimal                @db.Decimal(10, 2)
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
   partsPrices              AuctionPartsPrice[]
-  analysis                 AuctionVehicleAnalysis  @relation(fields: [auctionVehicleAnalysisId], references: [id], onDelete: Cascade)
+  analysis                 AuctionVehicleAnalysis @relation(fields: [auctionVehicleAnalysisId], references: [id], onDelete: Cascade)
 
   @@index([auctionVehicleAnalysisId])
   @@map("damage_ai")
 }
 
 model AuctionPartsPrice {
-  id           String   @id @default(uuid())
-  damageAiId   String
-  name         String
-  description  String?
-  image        String?
-  url          String?
-  source       String?
-  price        Decimal  @db.Decimal(10, 2)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(uuid())
+  damageAiId  String
+  name        String
+  description String?
+  image       String?
+  url         String?
+  source      String?
+  price       Decimal  @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  damageAi     DamageAi @relation(fields: [damageAiId], references: [id], onDelete: Cascade)
+  damageAi DamageAi @relation(fields: [damageAiId], references: [id], onDelete: Cascade)
 
   @@index([damageAiId])
   @@map("auction_parts_prices")
@@ -2380,47 +2390,47 @@ model SimilarAuctionCar {
 }
 
 model AuctionVehicleAnalysis {
-  id                 String              @id @default(uuid())
-  auctionListingId   BigInt
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  id               String   @id @default(uuid())
+  auctionListingId BigInt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  auctionListing     AuctionListing      @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
-  damages            DamageAi[]
-  similarCars        SimilarAuctionCar[]
+  auctionListing AuctionListing      @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
+  damages        DamageAi[]
+  similarCars    SimilarAuctionCar[]
 
   @@index([auctionListingId])
   @@map("auction_vehicle_analyses")
 }
 
 model VehicleMarketPart {
-  id                 String         @id @default(uuid())
-  auctionListingId   BigInt
-  part               String
-  description        String?
-  priceMin           Decimal        @db.Decimal(10, 2)
-  priceMax           Decimal        @db.Decimal(10, 2)
-  priceAvg           Decimal        @db.Decimal(10, 2)
-  source             String         @default("openai")
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  id               String   @id @default(uuid())
+  auctionListingId BigInt
+  part             String
+  description      String?
+  priceMin         Decimal  @db.Decimal(10, 2)
+  priceMax         Decimal  @db.Decimal(10, 2)
+  priceAvg         Decimal  @db.Decimal(10, 2)
+  source           String   @default("openai")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  auctionListing     AuctionListing @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
+  auctionListing AuctionListing @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
 
   @@index([auctionListingId])
   @@map("vehicle_market_parts")
 }
 
 model CarfaxReport {
-  id                 String         @id @default(uuid())
-  auctionListingId   BigInt
-  vin                String?
-  s3Key              String
-  analysis           String?        @db.Text
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  id               String   @id @default(uuid())
+  auctionListingId BigInt
+  vin              String?
+  s3Key            String
+  analysis         String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  auctionListing     AuctionListing @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
+  auctionListing AuctionListing @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
 
   @@index([auctionListingId])
   @@index([vin])
@@ -2428,14 +2438,14 @@ model CarfaxReport {
 }
 
 model MaxBidRecommendation {
-  id                 String         @id @default(uuid())
-  auctionListingId   BigInt
-  maxBid             Decimal        @db.Decimal(12, 2)
-  analysis           String         @db.Text
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  id               String   @id @default(uuid())
+  auctionListingId BigInt
+  maxBid           Decimal  @db.Decimal(12, 2)
+  analysis         String   @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  auctionListing     AuctionListing @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
+  auctionListing AuctionListing @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
 
   @@index([auctionListingId])
   @@map("max_bid_recommendations")
@@ -2444,67 +2454,67 @@ model MaxBidRecommendation {
 // Staging table for bulk import via PostgreSQL COPY
 // All fields are Text to avoid type errors during import — conversion happens in a separate step
 model CopartStaging {
-  id                  Int      @id @default(autoincrement())
-  copartId            String?  // "Id"
-  yardNumber          String?  // "Yard number"
-  yardName            String?  // "Yard name"
-  saleDate            String?  // "Sale Date M/D/CY"
-  dayOfWeek           String?  // "Day of Week"
-  saleTime            String?  // "Sale time (HHMM)"
-  timeZone            String?  // "Time Zone"
-  itemNumber          String?  // "Item#"
-  lotNumber           String?  // "Lot number"
-  vehicleType         String?  // "Vehicle Type"
-  year                String?  // "Year"
-  make                String?  // "Make"
-  modelGroup          String?  // "Model Group"
-  modelDetail         String?  // "Model Detail"
-  bodyStyle           String?  // "Body Style"
-  color               String?  // "Color"
-  damageDescription   String?  // "Damage Description"
-  secondaryDamage     String?  // "Secondary Damage"
-  saleTitleState      String?  // "Sale Title State"
-  saleTitleType       String?  // "Sale Title Type"
-  hasKeys             String?  // "Has Keys-Yes or No"
-  lotCondCode         String?  // "Lot Cond. Code"
-  vin                 String?  // "VIN"
-  odometer            String?  // "Odometer"
-  odometerBrand       String?  // "Odometer Brand"
-  estRetailValue      String?  // "Est. Retail Value"
-  repairCost          String?  // "Repair cost"
-  engine              String?  // "Engine"
-  drive               String?  // "Drive"
-  transmission        String?  // "Transmission"
-  fuelType            String?  // "Fuel Type"
-  cylinders           String?  // "Cylinders"
-  runsDrives          String?  // "Runs/Drives"
-  saleStatus          String?  // "Sale Status"
-  highBid             String?  // "High Bid =non-vix,Sealed=Vix"
-  specialNote         String?  // "Special Note"
-  locationCity        String?  // "Location city"
-  locationState       String?  // "Location state"
-  locationZip         String?  // "Location ZIP"
-  locationCountry     String?  // "Location country"
-  currencyCode        String?  // "Currency Code"
-  imageThumbnail      String?  // "Image Thumbnail"
-  createDateTime      String?  // "Create Date/Time"
-  gridRow             String?  // "Grid/Row"
-  makeOfferEligible   String?  // "Make-an-Offer Eligible"
-  buyItNowPrice       String?  // "Buy-It-Now Price"
-  imageUrl            String?  // "Image URL"
-  trim                String?  // "Trim"
-  lastUpdatedTime     String?  // "Last Updated Time"
-  rentals             String?  // "Rentals"
-  wholesale           String?  // "Wholesale"
-  sellerName          String?  // "Seller Name"
-  offsiteAddress1     String?  // "Offsite Address1"
-  offsiteState        String?  // "Offsite State"
-  offsiteCity         String?  // "Offsite City"
-  offsiteZip          String?  // "Offsite Zip"
-  saleLight           String?  // "Sale Light"
-  autoGrade           String?  // "AutoGrade"
-  announcements       String?  // "Announcements"
-  importedAt          DateTime @default(now())
+  id                Int      @id @default(autoincrement())
+  copartId          String? // "Id"
+  yardNumber        String? // "Yard number"
+  yardName          String? // "Yard name"
+  saleDate          String? // "Sale Date M/D/CY"
+  dayOfWeek         String? // "Day of Week"
+  saleTime          String? // "Sale time (HHMM)"
+  timeZone          String? // "Time Zone"
+  itemNumber        String? // "Item#"
+  lotNumber         String? // "Lot number"
+  vehicleType       String? // "Vehicle Type"
+  year              String? // "Year"
+  make              String? // "Make"
+  modelGroup        String? // "Model Group"
+  modelDetail       String? // "Model Detail"
+  bodyStyle         String? // "Body Style"
+  color             String? // "Color"
+  damageDescription String? // "Damage Description"
+  secondaryDamage   String? // "Secondary Damage"
+  saleTitleState    String? // "Sale Title State"
+  saleTitleType     String? // "Sale Title Type"
+  hasKeys           String? // "Has Keys-Yes or No"
+  lotCondCode       String? // "Lot Cond. Code"
+  vin               String? // "VIN"
+  odometer          String? // "Odometer"
+  odometerBrand     String? // "Odometer Brand"
+  estRetailValue    String? // "Est. Retail Value"
+  repairCost        String? // "Repair cost"
+  engine            String? // "Engine"
+  drive             String? // "Drive"
+  transmission      String? // "Transmission"
+  fuelType          String? // "Fuel Type"
+  cylinders         String? // "Cylinders"
+  runsDrives        String? // "Runs/Drives"
+  saleStatus        String? // "Sale Status"
+  highBid           String? // "High Bid =non-vix,Sealed=Vix"
+  specialNote       String? // "Special Note"
+  locationCity      String? // "Location city"
+  locationState     String? // "Location state"
+  locationZip       String? // "Location ZIP"
+  locationCountry   String? // "Location country"
+  currencyCode      String? // "Currency Code"
+  imageThumbnail    String? // "Image Thumbnail"
+  createDateTime    String? // "Create Date/Time"
+  gridRow           String? // "Grid/Row"
+  makeOfferEligible String? // "Make-an-Offer Eligible"
+  buyItNowPrice     String? // "Buy-It-Now Price"
+  imageUrl          String? // "Image URL"
+  trim              String? // "Trim"
+  lastUpdatedTime   String? // "Last Updated Time"
+  rentals           String? // "Rentals"
+  wholesale         String? // "Wholesale"
+  sellerName        String? // "Seller Name"
+  offsiteAddress1   String? // "Offsite Address1"
+  offsiteState      String? // "Offsite State"
+  offsiteCity       String? // "Offsite City"
+  offsiteZip        String? // "Offsite Zip"
+  saleLight         String? // "Sale Light"
+  autoGrade         String? // "AutoGrade"
+  announcements     String? // "Announcements"
+  importedAt        DateTime @default(now())
 
   @@map("copart_staging")
 }
@@ -2563,7 +2573,7 @@ model AuctionListingGroup {
 }
 
 model AuctionListingGroupItem {
-  groupId   String @db.Uuid
+  groupId   String   @db.Uuid
   lotNumber BigInt
   createdAt DateTime @default(now())
 
@@ -2595,37 +2605,62 @@ model AuctionListingReview {
   @@map("auction_listing_reviews")
 }
 
+model BuyerAuctionBid {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String?
+  buyerId     String
+  lotNumber   BigInt
+  maxBid      Decimal  @db.Decimal(12, 2)
+  status      String   @default("pending") // pending | won | lost
+  finalAmount Decimal? @db.Decimal(12, 2)  // actual amount paid (won) or final bid (lost)
+  notes       String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant         Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  buyer          Buyer          @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  auctionListing AuctionListing @relation(fields: [lotNumber], references: [lotNumber], onDelete: Cascade)
+
+  @@unique([buyerId, lotNumber])
+  @@index([tenantId])
+  @@index([buyerId])
+  @@index([lotNumber])
+  @@index([status])
+  @@map("buyer_auction_bids")
+}
+
 // ========================================
 // Inventory Assets (Tools & Fixed Assets)
 // ========================================
 
 model InventoryAsset {
-  id              String    @id @default(uuid())
-  tenantId        String
-  name            String
-  assetTag        String?
-  serialNumber    String?
-  description     String?
-  notes           String?
-  category        String?   // e.g. "tool", "equipment", "furniture", "electronics"
-  status          String    @default("available") // available, in_use, maintenance, retired, lost
-  condition       String    @default("good") // new, good, fair, poor
-  location        String?
-  assignedTo      String?   // Name or identifier of person using it
-  brand           String?
-  model           String?
-  purchaseDate    DateTime?
-  purchasePrice   Decimal?  @db.Decimal(12, 2)
-  currentValue    Decimal?  @db.Decimal(12, 2)
-  warrantyExpiry  DateTime?
-  supplier        String?
-  quantity        Int       @default(1)
-  shippingCost    Decimal?  @db.Decimal(12, 2)
-  tax             Decimal?  @db.Decimal(12, 2)
-  receiptIds      String[]  @default([])
-  imageUrl        String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id             String    @id @default(uuid())
+  tenantId       String
+  name           String
+  assetTag       String?
+  serialNumber   String?
+  description    String?
+  notes          String?
+  category       String? // e.g. "tool", "equipment", "furniture", "electronics"
+  status         String    @default("available") // available, in_use, maintenance, retired, lost
+  condition      String    @default("good") // new, good, fair, poor
+  location       String?
+  assignedTo     String? // Name or identifier of person using it
+  brand          String?
+  model          String?
+  purchaseDate   DateTime?
+  purchasePrice  Decimal?  @db.Decimal(12, 2)
+  currentValue   Decimal?  @db.Decimal(12, 2)
+  warrantyExpiry DateTime?
+  supplier       String?
+  quantity       Int       @default(1)
+  shippingCost   Decimal?  @db.Decimal(12, 2)
+  tax            Decimal?  @db.Decimal(12, 2)
+  receiptIds     String[]  @default([])
+  imageUrl       String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -2633,4 +2668,234 @@ model InventoryAsset {
   @@index([tenantId, status])
   @@index([tenantId, category])
   @@map("inventory_assets")
+}
+
+// ─── Social Media ─────────────────────────────────────────
+
+model SocialAccount {
+  id                String    @id @default(uuid())
+  tenantId          String
+  platform          String // facebook, instagram, tiktok, youtube, linkedin, pinterest, threads, bluesky, gbp
+  platformAccountId String // external account/page ID from the platform
+  name              String // display name (page name, handle, etc.)
+  username          String? // @handle if applicable
+  avatarUrl         String? // profile picture URL
+  accessToken       String? // OAuth access token (encrypted at app level)
+  refreshToken      String? // OAuth refresh token (encrypted at app level)
+  tokenExpiresAt    DateTime? // when the access token expires
+  scopes            String[]  @default([]) // granted OAuth scopes
+  pageId            String? // for Facebook Pages (page ID vs user ID)
+  isActive          Boolean   @default(true)
+  lastSyncAt        DateTime?
+  lastErrorAt       DateTime?
+  lastErrorMsg      String?
+  metaValue         Json? // platform-specific extra data
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  groups SocialGroupAccount[]
+
+  @@unique([tenantId, platform, platformAccountId])
+  @@index([tenantId])
+  @@index([tenantId, platform])
+  @@map("social_accounts")
+}
+
+model SocialGroup {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accounts SocialGroupAccount[]
+
+  @@index([tenantId])
+  @@map("social_groups")
+}
+
+model SocialGroupAccount {
+  id              String @id @default(uuid())
+  socialGroupId   String
+  socialAccountId String
+
+  group   SocialGroup   @relation(fields: [socialGroupId], references: [id], onDelete: Cascade)
+  account SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialGroupId, socialAccountId])
+  @@map("social_group_accounts")
+}
+
+/// Customer order for parts (e-commerce)
+model PartOrder {
+  id          String @id @default(uuid())
+  tenantId    String
+  orderNumber String
+  buyerId     String
+  status      String @default("draft")
+  // draft | pending_payment | paid | ready_to_ship | shipped | delivered | cancelled | refunded
+
+  subtotal     Decimal @default(0) @db.Decimal(10, 2)
+  taxRate      Decimal @default(0) @db.Decimal(6, 4)
+  tax          Decimal @default(0) @db.Decimal(10, 2)
+  shippingCost Decimal @default(0) @db.Decimal(10, 2)
+  discount     Decimal @default(0) @db.Decimal(10, 2)
+  total        Decimal @default(0) @db.Decimal(10, 2)
+
+  // Payment
+  paymentMethod         String? // stripe | cash | manual | other
+  paymentStatus         String    @default("unpaid") // unpaid | processing | paid | refunded | failed
+  stripePaymentIntentId String?
+  stripeChargeId        String?
+  paidAt                DateTime?
+
+  // Shipping
+  shippingMethod String? // pickup | ship
+  shipToName     String?
+  shipToStreet1  String?
+  shipToStreet2  String?
+  shipToCity     String?
+  shipToState    String?
+  shipToZip      String?
+  shipToCountry  String? @default("US")
+  shipToPhone    String?
+  shipToEmail    String?
+
+  notes         String?
+  customerNotes String?
+
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  cancelledAt DateTime?
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  buyer     Buyer           @relation(fields: [buyerId], references: [id])
+  items     PartOrderItem[]
+  shipments PartShipment[]
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId])
+  @@index([buyerId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@map("part_orders")
+}
+
+model PartOrderItem {
+  id           String   @id @default(uuid())
+  orderId      String
+  partId       String
+  quantity     Int      @default(1)
+  unitPrice    Decimal  @db.Decimal(10, 2)
+  totalPrice   Decimal  @db.Decimal(10, 2)
+  // Snapshot fields at time of order
+  nameSnapshot String
+  skuSnapshot  String?
+  createdAt    DateTime @default(now())
+
+  order PartOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  part  Part      @relation(fields: [partId], references: [id])
+
+  @@index([orderId])
+  @@index([partId])
+  @@map("part_order_items")
+}
+
+model PartShipment {
+  id               String  @id @default(uuid())
+  orderId          String
+  parcelTemplateId String?
+  carrier          String  @default("ups")
+  serviceLevel     String? // e.g. ups_ground
+  serviceLevelName String?
+
+  // Parcel dimensions snapshot
+  length       Decimal? @db.Decimal(8, 2)
+  width        Decimal? @db.Decimal(8, 2)
+  height       Decimal? @db.Decimal(8, 2)
+  distanceUnit String?  @default("in")
+  weight       Decimal? @db.Decimal(8, 2)
+  massUnit     String?  @default("lb")
+
+  // Shippo
+  shippoShipmentId    String?
+  shippoTransactionId String?
+  shippoRateId        String?
+  labelUrl            String?
+  trackingNumber      String?
+  trackingUrl         String?
+  trackingStatus      String?
+  cost                Decimal? @db.Decimal(10, 2)
+
+  status String @default("pending")
+  // pending | label_purchased | shipped | in_transit | delivered | returned | failure | cancelled
+
+  purchasedAt DateTime?
+  shippedAt   DateTime?
+  deliveredAt DateTime?
+  cancelledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order          PartOrder       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  parcelTemplate ParcelTemplate? @relation(fields: [parcelTemplateId], references: [id])
+
+  @@index([orderId])
+  @@index([trackingNumber])
+  @@index([shippoShipmentId])
+  @@map("part_shipments")
+}
+
+model ParcelTemplate {
+  id                  String   @id @default(uuid())
+  tenantId            String
+  name                String
+  carrier             String? // ups | null (custom)
+  shippoTemplateToken String? // if imported from a Shippo carrier template
+  length              Decimal  @db.Decimal(8, 2)
+  width               Decimal  @db.Decimal(8, 2)
+  height              Decimal  @db.Decimal(8, 2)
+  distanceUnit        String   @default("in") // in | cm
+  defaultWeight       Decimal? @db.Decimal(8, 2)
+  massUnit            String   @default("lb") // lb | kg
+  isDefault           Boolean  @default(false)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  shipments PartShipment[]
+
+  @@index([tenantId])
+  @@index([carrier])
+  @@map("parcel_templates")
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  name        String
+  description String?
+  prefix      String    @unique // first 12 chars, shown in UI (e.g. "hta_live_abc")
+  hashedKey   String    @unique @map("hashed_key") // sha256 of the full token
+  scopes      String[]  @default([]) // ["orders:read", "orders:write", ...]
+  createdById String?   @map("created_by_id")
+  lastUsedAt  DateTime? @map("last_used_at")
+  lastUsedIp  String?   @map("last_used_ip")
+  expiresAt   DateTime? @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([prefix])
+  @@index([revokedAt])
+  @@map("api_keys")
 }

@@ -200,7 +200,25 @@ export class CopartImportService {
   private async mapStagingToAuctionListings(): Promise<number> {
     const client = await this.pool.connect();
     try {
+      // Helper: safe_numeric strips non-numeric chars, handles multiple dots
       const result = await client.query(`
+        CREATE OR REPLACE FUNCTION pg_temp.safe_numeric(val text) RETURNS numeric AS $$
+        DECLARE
+          cleaned text;
+        BEGIN
+          cleaned := REGEXP_REPLACE(TRIM(COALESCE(val, '')), '[^0-9.]', '', 'g');
+          cleaned := REGEXP_REPLACE(cleaned, '^\.+|\.+$', '', 'g');
+          -- If multiple dots remain, keep only digits
+          IF cleaned ~ '\.' AND LENGTH(cleaned) - LENGTH(REPLACE(cleaned, '.', '')) > 1 THEN
+            cleaned := REPLACE(cleaned, '.', '');
+          END IF;
+          IF cleaned = '' THEN RETURN NULL; END IF;
+          RETURN cleaned::numeric;
+        EXCEPTION WHEN OTHERS THEN
+          RETURN NULL;
+        END;
+        $$ LANGUAGE plpgsql;
+
         INSERT INTO auction_listings (
           "auctionName", "copartId", "yardNumber", "yardName", "saleDate",
           "dayOfWeek", "saleTime", "timeZone", "itemNumber", "lotNumber",
@@ -250,10 +268,10 @@ export class CopartImportService {
           NULLIF(TRIM("hasKeys"), ''),
           NULLIF(TRIM("lotCondCode"), ''),
           NULLIF(TRIM("vin"), ''),
-          NULLIF(REGEXP_REPLACE(TRIM("odometer"), '[^0-9.]', '', 'g'), '')::numeric,
+          pg_temp.safe_numeric("odometer"),
           NULLIF(TRIM("odometerBrand"), ''),
-          NULLIF(REGEXP_REPLACE(TRIM("estRetailValue"), '[^0-9.]', '', 'g'), '')::numeric,
-          NULLIF(REGEXP_REPLACE(TRIM("repairCost"), '[^0-9.]', '', 'g'), '')::numeric,
+          pg_temp.safe_numeric("estRetailValue"),
+          pg_temp.safe_numeric("repairCost"),
           NULLIF(TRIM("engine"), ''),
           NULLIF(TRIM("drive"), ''),
           NULLIF(TRIM("transmission"), ''),
@@ -261,7 +279,7 @@ export class CopartImportService {
           NULLIF(TRIM("cylinders"), ''),
           NULLIF(TRIM("runsDrives"), ''),
           NULLIF(TRIM("saleStatus"), ''),
-          NULLIF(REGEXP_REPLACE(TRIM("highBid"), '[^0-9.]', '', 'g'), '')::numeric,
+          pg_temp.safe_numeric("highBid"),
           NULLIF(TRIM("specialNote"), ''),
           NULLIF(TRIM("locationCity"), ''),
           NULLIF(TRIM("locationState"), ''),
@@ -272,7 +290,7 @@ export class CopartImportService {
           NULLIF(TRIM("createDateTime"), ''),
           NULLIF(TRIM("gridRow"), ''),
           NULLIF(TRIM("makeOfferEligible"), ''),
-          NULLIF(REGEXP_REPLACE(TRIM("buyItNowPrice"), '[^0-9.]', '', 'g'), '')::numeric,
+          pg_temp.safe_numeric("buyItNowPrice"),
           NULLIF(TRIM("trim"), ''),
           NOW(),
           NULLIF(TRIM("rentals"), ''),

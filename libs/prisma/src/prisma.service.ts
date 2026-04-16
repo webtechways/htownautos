@@ -89,6 +89,14 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.auditLog;
   }
 
+  get dealStatus() {
+    return this.prisma.dealStatus;
+  }
+
+  get financeType() {
+    return this.prisma.financeType;
+  }
+
   get deal() {
     return this.prisma.deal;
   }
@@ -222,12 +230,48 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.auctionListingReview;
   }
 
+  get buyerAuctionBid() {
+    return this.prisma.buyerAuctionBid;
+  }
+
   get rebuildItem() {
     return this.prisma.rebuildItem;
   }
 
   get inventoryAsset() {
     return this.prisma.inventoryAsset;
+  }
+
+  get socialAccount() {
+    return this.prisma.socialAccount;
+  }
+
+  get socialGroup() {
+    return this.prisma.socialGroup;
+  }
+
+  get socialGroupAccount() {
+    return this.prisma.socialGroupAccount;
+  }
+
+  get partOrder() {
+    return this.prisma.partOrder;
+  }
+
+  get partOrderItem() {
+    return this.prisma.partOrderItem;
+  }
+
+  get partShipment() {
+    return this.prisma.partShipment;
+  }
+
+  get parcelTemplate() {
+    return this.prisma.parcelTemplate;
+  }
+
+  get apiKey() {
+    return this.prisma.apiKey;
   }
 
   get $transaction() {

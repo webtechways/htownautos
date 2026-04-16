@@ -42,6 +42,11 @@ export class TenantGuard implements CanActivate {
       return true;
     }
 
+    // ApiKeyGuard already resolved tenant + user — skip membership check.
+    if (request.apiKey && request.tenant) {
+      return true;
+    }
+
     // Resolve tenant: prefer JWT org_id (Clerk Organizations), fall back to X-Tenant-Id header (legacy)
     const clerkOrgId = request.clerkOrgId; // Set by ClerkJwtGuard from JWT
     const legacyTenantId = request.headers['x-tenant-id'];

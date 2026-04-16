@@ -41,11 +41,42 @@ export class InventoryAssetsController {
     return this.service.create(tenantId, dto);
   }
 
+  @Post('analyze-url')
+  @ApiOperation({ summary: 'Analyze a product URL with AI to extract asset info' })
+  @ApiResponse({ status: 200, description: 'Analysis result with product details and images' })
+  analyzeUrl(@Body() body: { url: string }) {
+    return this.service.analyzeUrl(body.url);
+  }
+
   @Post('analyze-images')
   @ApiOperation({ summary: 'Analyze asset images with AI to extract product info' })
   @ApiResponse({ status: 200, description: 'Analysis result' })
   analyzeImages(@Body() body: { mediaIds: string[] }) {
     return this.service.analyzeImages(body.mediaIds);
+  }
+
+  @Post('analyze-receipt-items')
+  @ApiOperation({ summary: 'Analyze receipt images and extract individual line items' })
+  @ApiResponse({ status: 200, description: 'Receipt data with individual items array' })
+  analyzeReceiptItems(@Body() body: { mediaIds: string[] }) {
+    return this.service.analyzeReceiptItems(body.mediaIds);
+  }
+
+  @Post('bulk')
+  @ApiOperation({ summary: 'Create multiple inventory assets at once' })
+  @ApiResponse({ status: 201, description: 'Assets created successfully' })
+  bulkCreate(
+    @CurrentTenant() tenantId: string,
+    @Body() body: { assets: CreateInventoryAssetDto[] },
+  ) {
+    return this.service.bulkCreate(tenantId, body.assets);
+  }
+
+  @Get('stats')
+  @ApiOperation({ summary: 'Get inventory asset stats (total items and value)' })
+  @ApiResponse({ status: 200, description: 'Stats' })
+  getStats(@CurrentTenant() tenantId: string) {
+    return this.service.getStats(tenantId);
   }
 
   @Get()

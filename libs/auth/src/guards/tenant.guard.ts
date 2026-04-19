@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '@htownautos/prisma';
+import { resolveTenantUserIdentity } from '@htownautos/common';
 
 // Decorator key for marking routes that don't require tenant
 export const TENANT_OPTIONAL_KEY = 'tenantOptional';
@@ -85,11 +86,18 @@ export class TenantGuard implements CanActivate {
     }
 
     // Verify user has access to this tenant
-    const tenantUser = await this.prisma.tenantUser.findUnique({
+    let tenantUser = await this.prisma.tenantUser.findUnique({
       where: {
         tenantId_userId: { tenantId: tenant.id, userId: user.id },
       },
     });
+
+    // Auto-provision: Clerk says the user is a member of this org (JWT contains
+    // the org_id) but no TenantUser row exists yet — the webhook may have been
+    // missed or the user was invited before they had a local User record.
+    if ((!tenantUser || !tenantUser.isActive) && clerkOrgId) {
+      tenantUser = await this.autoProvisionMembership(tenant.id, user.id, request.clerkOrgRole);
+    }
 
     if (!tenantUser || !tenantUser.isActive || tenantUser.status !== 'active') {
       throw new ForbiddenException({
@@ -105,5 +113,108 @@ export class TenantGuard implements CanActivate {
     request.tenantUser = tenantUser;
 
     return true;
+  }
+
+  /**
+   * If Clerk's JWT says the user belongs to this org but we have no TenantUser
+   * row, create one on the fly. This covers:
+   *  - Webhook missed (dev without tunnel, network blip, etc.)
+   *  - User accepted invitation before their local User record existed.
+   *  - Race condition between webhook and first authenticated request.
+   */
+  private async autoProvisionMembership(
+    tenantId: string,
+    userId: string,
+    clerkOrgRole?: string,
+  ) {
+    try {
+      const roleSlug = clerkOrgRole === 'org:admin' ? 'owner' : 'salesperson';
+
+      // Try tenant-scoped role first, then global fallback.
+      const role =
+        (await this.prisma.role.findFirst({ where: { slug: roleSlug, tenantId } })) ||
+        (await this.prisma.role.findFirst({ where: { slug: roleSlug, tenantId: null } }));
+
+      if (!role) {
+        this.logger.warn(
+          `Auto-provision skipped: role "${roleSlug}" not found for tenant ${tenantId}`,
+        );
+        return null;
+      }
+
+      // Check if an inactive/removed row exists — reactivate it.
+      const existing = await this.prisma.tenantUser.findUnique({
+        where: { tenantId_userId: { tenantId, userId } },
+      });
+
+      // Look up tenant subdomain + user contact info once, for identity resolution.
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { subdomain: true },
+      });
+      const userRow = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, firstName: true, lastName: true },
+      });
+
+      if (existing) {
+        // Backfill missing username/tenantEmail for legacy rows created before this migration.
+        const patchIdentity =
+          !existing.username || !existing.tenantEmail
+            ? await resolveTenantUserIdentity(
+                this.prisma,
+                tenantId,
+                userRow || {},
+                tenant?.subdomain,
+                existing.id,
+              )
+            : null;
+
+        const updated = await this.prisma.tenantUser.update({
+          where: { id: existing.id },
+          data: {
+            status: 'active',
+            isActive: true,
+            roleId: role.id,
+            acceptedAt: new Date(),
+            ...(patchIdentity
+              ? {
+                  username: existing.username || patchIdentity.username,
+                  tenantEmail: existing.tenantEmail || patchIdentity.tenantEmail,
+                }
+              : {}),
+          },
+        });
+        this.logger.log(`Auto-reactivated TenantUser ${userId} in tenant ${tenantId}`);
+        return updated;
+      }
+
+      const identity = await resolveTenantUserIdentity(
+        this.prisma,
+        tenantId,
+        userRow || {},
+        tenant?.subdomain,
+      );
+
+      const created = await this.prisma.tenantUser.create({
+        data: {
+          tenantId,
+          userId,
+          roleId: role.id,
+          status: 'active',
+          isActive: true,
+          acceptedAt: new Date(),
+          username: identity.username,
+          tenantEmail: identity.tenantEmail,
+        },
+      });
+      this.logger.log(
+        `Auto-provisioned TenantUser ${userId} in tenant ${tenantId} as ${roleSlug} (${identity.tenantEmail || identity.username})`,
+      );
+      return created;
+    } catch (err: any) {
+      this.logger.error(`Auto-provision failed for user ${userId} tenant ${tenantId}: ${err.message}`);
+      return null;
+    }
   }
 }

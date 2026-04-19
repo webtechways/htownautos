@@ -271,4 +271,35 @@ export class S3Service {
       throw error;
     }
   }
+
+  /**
+   * Replace each attachment's `url` on the given records with a short-lived
+   * presigned S3 URL, based on each attachment's `key`. Mutates in place.
+   *
+   * Safe on heterogeneous shapes:
+   *   - records may be arbitrary objects; only those with `attachments: []`
+   *     and entries having `.key` get signed.
+   *   - a key that fails to sign is left with an empty url so the UI can still
+   *     render the metadata.
+   */
+  async signAttachmentsOnRecords(records: any[], expiresIn = 3600): Promise<void> {
+    if (!records?.length) return;
+    const tasks: Promise<void>[] = [];
+    for (const rec of records) {
+      if (!Array.isArray(rec?.attachments)) continue;
+      for (const att of rec.attachments) {
+        if (!att || typeof att !== 'object' || !att.key) continue;
+        tasks.push(
+          this.getSignedUrl(att.key, expiresIn)
+            .then((signed) => {
+              att.url = signed;
+            })
+            .catch(() => {
+              att.url = '';
+            }),
+        );
+      }
+    }
+    await Promise.all(tasks);
+  }
 }

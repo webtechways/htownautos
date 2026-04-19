@@ -7,6 +7,7 @@ import { PresenceGateway } from './presence.gateway';
 import { PhoneCallEventsService } from './phone-call-events.service';
 import { SmsEventsService } from './sms-events.service';
 import { StripeEventsService } from './stripe-events.service';
+import { EmailEventsService } from './email-events.service';
 import { PrismaModule } from '@htownautos/prisma';
 
 @Global()
@@ -18,6 +19,7 @@ import { PrismaModule } from '@htownautos/prisma';
     PhoneCallEventsService,
     SmsEventsService,
     StripeEventsService,
+    EmailEventsService,
     PresenceGateway,
     // Register interceptor globally to track all API activity
     {
@@ -25,6 +27,13 @@ import { PrismaModule } from '@htownautos/prisma';
       useClass: PresenceInterceptor,
     },
   ],
-  exports: [PresenceService, PresenceGateway, PhoneCallEventsService, SmsEventsService, StripeEventsService],
+  exports: [
+    PresenceService,
+    PresenceGateway,
+    PhoneCallEventsService,
+    SmsEventsService,
+    StripeEventsService,
+    EmailEventsService,
+  ],
 })
 export class PresenceModule {}

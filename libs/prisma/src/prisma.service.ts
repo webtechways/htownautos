@@ -170,6 +170,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.emailMessage;
   }
 
+  get unmatchedInboundEmail() {
+    return this.prisma.unmatchedInboundEmail;
+  }
+
   get twilioPhoneNumber() {
     return this.prisma.twilioPhoneNumber;
   }

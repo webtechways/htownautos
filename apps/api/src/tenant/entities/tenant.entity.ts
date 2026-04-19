@@ -134,6 +134,53 @@ export class TenantEntity implements Tenant {
   })
   updatedAt: Date;
 
+  @ApiPropertyOptional({
+    description: 'Postmark domain ID (sending domain provisioned for this tenant)',
+    example: 12345,
+  })
+  postmarkDomainId: number | null;
+
+  @ApiProperty({
+    description: 'Whether the tenant email domain has verified DKIM in Postmark',
+    example: false,
+  })
+  postmarkDkimVerified: boolean;
+
+  @ApiProperty({
+    description: 'Whether the tenant email Return-Path domain is verified',
+    example: false,
+  })
+  postmarkReturnPathVerified: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Timestamp when the email domain was provisioned',
+    example: '2024-01-12T10:30:00.000Z',
+  })
+  emailProvisionedAt: Date | null;
+
+  @ApiPropertyOptional({
+    description: 'Cloudflare DNS record IDs created for this tenant (cleanup metadata)',
+    example: ['abc123', 'def456'],
+  })
+  cloudflareDnsRecordIds: any;
+
+  @ApiPropertyOptional({
+    description: 'Postmark server ID dedicated to this tenant (one per tenant for inbound)',
+    example: 18950978,
+  })
+  postmarkServerId: number | null;
+
+  @ApiPropertyOptional({
+    description: 'API token for the tenant-specific Postmark server',
+  })
+  postmarkServerToken: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Postmark webhook ID registered on the tenant server',
+    example: 23758898,
+  })
+  postmarkWebhookId: number | null;
+
   constructor(partial: Partial<TenantEntity>) {
     Object.assign(this, partial);
   }

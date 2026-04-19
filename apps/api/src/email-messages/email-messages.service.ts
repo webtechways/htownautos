@@ -1,14 +1,116 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@htownautos/prisma';
-import { CreateEmailMessageDto, UpdateEmailMessageDto, EmailStatus } from './dto/create-email-message.dto';
+import { CreateEmailMessageDto, UpdateEmailMessageDto, EmailStatus, EmailDirection } from './dto/create-email-message.dto';
 import { QueryEmailMessageDto } from './dto/query-email-message.dto';
 import { Prisma } from '@prisma/client';
+import { PostmarkService, PostmarkAttachmentInput } from '../postmark/postmark.service';
+import { TenantEmailDomainService } from '../tenant/tenant-email-domain.service';
+import { EmailEventsService, EmailEvent } from '../presence/email-events.service';
+import { resolveTenantUserIdentity, S3Service } from '@htownautos/common';
+
+export interface SendEmailToBuyerDto {
+  subject: string;
+  bodyHtml: string;
+  bodyText?: string;
+  attachments?: Array<{
+    filename: string;
+    contentType: string;
+    content: string;
+    size?: number;
+  }>;
+}
 
 @Injectable()
 export class EmailMessagesService {
+  private readonly logger = new Logger(EmailMessagesService.name);
+
   constructor(
     private prisma: PrismaService,
+    private postmarkService: PostmarkService,
+    private tenantEmailDomainService: TenantEmailDomainService,
+    private emailEventsService: EmailEventsService,
+    private s3: S3Service,
   ) {}
+
+  /**
+   * Generate a short-lived presigned URL for a specific attachment of an email.
+   * Validates that the attachment key is actually recorded on that email within
+   * the tenant, preventing the caller from signing arbitrary S3 keys.
+   */
+  async getAttachmentDownloadUrl(
+    tenantId: string,
+    emailId: string,
+    key: string,
+    expiresInSeconds = 300,
+  ): Promise<{ url: string; name?: string; mimeType?: string }> {
+    const email = await this.prisma.emailMessage.findFirst({
+      where: { id: emailId, tenantId },
+      select: { attachments: true },
+    });
+
+    if (!email) {
+      throw new NotFoundException('Email message not found');
+    }
+
+    const attachments = Array.isArray(email.attachments)
+      ? (email.attachments as any[])
+      : [];
+    const match = attachments.find((a) => a && typeof a === 'object' && a.key === key);
+
+    if (!match || !match.key) {
+      throw new NotFoundException('Attachment not found on this email');
+    }
+
+    const url = await this.s3.getSignedUrl(match.key, expiresInSeconds);
+    return { url, name: match.name, mimeType: match.mimeType };
+  }
+
+  /**
+   * Upload outbound attachments to S3 so the UI can display/download them later.
+   * Returns the metadata list to persist on the EmailMessage record. Failures are
+   * logged but don't block sending — the email still goes out with the raw content.
+   */
+  private async uploadOutboundAttachments(
+    tenantId: string,
+    attachments: SendEmailToBuyerDto['attachments'],
+  ): Promise<Array<{ name: string; mimeType: string; size: number; url: string; key: string }>> {
+    if (!attachments?.length) return [];
+    const stored: Array<{ name: string; mimeType: string; size: number; url: string; key: string }> = [];
+    for (const att of attachments) {
+      try {
+        const base64 = att.content.includes('base64,')
+          ? att.content.slice(att.content.indexOf('base64,') + 'base64,'.length)
+          : att.content;
+        const buffer = Buffer.from(base64, 'base64');
+        const ext = (att.filename?.split('.').pop() || 'bin').toLowerCase();
+        const result = await this.s3.uploadBuffer(
+          buffer,
+          `email-attachments/${tenantId}/outbound`,
+          ext,
+          att.contentType || 'application/octet-stream',
+        );
+        stored.push({
+          name: att.filename,
+          mimeType: att.contentType,
+          size: att.size || buffer.length,
+          url: result.url,
+          key: result.key,
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to upload outbound attachment "${att.filename}": ${(err as Error)?.message}`,
+        );
+        stored.push({
+          name: att.filename,
+          mimeType: att.contentType,
+          size: att.size || 0,
+          url: '',
+          key: '',
+        });
+      }
+    }
+    return stored;
+  }
 
   private readonly includeRelations = {
     sender: {
@@ -35,6 +137,276 @@ export class EmailMessagesService {
       },
     },
   };
+
+  private async emitCreated(record: any): Promise<void> {
+    await this.s3.signAttachmentsOnRecords([record]);
+    this.emailEventsService.emitEmailCreated(this.toEmailEvent(record));
+  }
+
+  private async emitUpdated(record: any): Promise<void> {
+    await this.s3.signAttachmentsOnRecords([record]);
+    this.emailEventsService.emitEmailUpdated(this.toEmailEvent(record));
+  }
+
+  private toEmailEvent(record: any): EmailEvent {
+    return {
+      id: record.id,
+      tenantId: record.tenantId,
+      direction: record.direction,
+      status: record.status,
+      fromEmail: record.fromEmail,
+      toEmail: record.toEmail,
+      subject: record.subject,
+      bodyHtml: record.bodyHtml,
+      bodyText: record.bodyText,
+      messageId: record.messageId,
+      sesStatus: record.sesStatus,
+      bounceType: record.bounceType,
+      isRead: record.isRead,
+      buyerId: record.buyerId,
+      senderId: record.senderId,
+      sentAt: record.sentAt?.toISOString() || null,
+      deliveredAt: record.deliveredAt?.toISOString() || null,
+      bouncedAt: record.bouncedAt?.toISOString() || null,
+      createdAt: record.createdAt?.toISOString() || new Date().toISOString(),
+      attachmentCount: record.attachmentCount || 0,
+      attachments: (record.attachments as any) || null,
+      sender: record.sender
+        ? {
+            id: record.sender.id,
+            user: {
+              id: record.sender.user.id,
+              firstName: record.sender.user.firstName,
+              lastName: record.sender.user.lastName,
+              email: record.sender.user.email,
+            },
+          }
+        : null,
+      buyer: record.buyer
+        ? {
+            id: record.buyer.id,
+            firstName: record.buyer.firstName,
+            lastName: record.buyer.lastName,
+            email: record.buyer.email,
+          }
+        : null,
+    };
+  }
+
+  /**
+   * Send an email to a buyer via Postmark using the sender's tenant email
+   * (e.g. marcos@dealermx.htownautos.com). Lazily provisions the tenant's
+   * email domain on first use.
+   */
+  async sendToBuyer(
+    tenantId: string,
+    senderId: string,
+    buyerId: string,
+    dto: SendEmailToBuyerDto,
+  ) {
+    this.logger.log(`Sending email to buyer ${buyerId} from tenant ${tenantId}`);
+
+    if (!dto.subject?.trim()) {
+      throw new BadRequestException('Subject is required');
+    }
+    if (!dto.bodyHtml?.trim()) {
+      throw new BadRequestException('Body is required');
+    }
+
+    const buyer = await this.prisma.buyer.findFirst({
+      where: { id: buyerId, tenantId },
+      select: { id: true, email: true, firstName: true, lastName: true },
+    });
+
+    if (!buyer) {
+      throw new NotFoundException('Buyer not found in this tenant');
+    }
+
+    if (!buyer.email) {
+      throw new BadRequestException('Buyer does not have an email address');
+    }
+
+    let tenantUser = await this.prisma.tenantUser.findFirst({
+      where: { id: senderId, tenantId },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+        tenant: { select: { id: true, name: true, subdomain: true } },
+      },
+    });
+
+    if (!tenantUser) {
+      throw new BadRequestException('Sender is not a member of this tenant');
+    }
+
+    // Self-heal: legacy TenantUser rows created by Clerk webhook / auto-provision
+    // may have null username/tenantEmail. Derive and persist on the fly so we
+    // don't block the user from sending.
+    if (!tenantUser.tenantEmail || !tenantUser.username) {
+      if (!tenantUser.tenant?.subdomain) {
+        throw new BadRequestException(
+          'Tenant has no subdomain configured; cannot derive sender email',
+        );
+      }
+      const identity = await resolveTenantUserIdentity(
+        this.prisma,
+        tenantId,
+        {
+          email: tenantUser.user.email,
+          firstName: tenantUser.user.firstName,
+          lastName: tenantUser.user.lastName,
+        },
+        tenantUser.tenant.subdomain,
+        tenantUser.id,
+      );
+      const patched = await this.prisma.tenantUser.update({
+        where: { id: tenantUser.id },
+        data: {
+          username: tenantUser.username || identity.username,
+          tenantEmail: tenantUser.tenantEmail || identity.tenantEmail,
+        },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, email: true } },
+          tenant: { select: { id: true, name: true, subdomain: true } },
+        },
+      });
+      this.logger.log(
+        `Self-healed TenantUser ${tenantUser.id}: ${patched.tenantEmail}`,
+      );
+      tenantUser = patched;
+    }
+
+    if (!tenantUser.tenantEmail) {
+      throw new BadRequestException(
+        'Sender does not have a tenantEmail configured; cannot send from this account',
+      );
+    }
+
+    // Lazy provision: ensure tenant's email domain + dedicated Postmark server are live.
+    const provisionedTenant = await this.tenantEmailDomainService.ensureProvisioned(tenantId);
+    if (!provisionedTenant.postmarkServerToken) {
+      throw new BadRequestException(
+        'Tenant is missing a Postmark server token; provisioning did not complete',
+      );
+    }
+
+    const fromName =
+      [tenantUser.user.firstName, tenantUser.user.lastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim() || tenantUser.tenant?.name || undefined;
+
+    const fromEmail = tenantUser.tenantEmail;
+    const replyTo = tenantUser.tenantEmail; // replies route back through Postmark inbound
+    const subject = dto.subject.trim();
+    const bodyText = dto.bodyText?.trim() || this.htmlToText(dto.bodyHtml);
+
+    // Upload attachments to S3 in parallel with the queued-record creation so the
+    // UI can later render/download them. Postmark still receives the raw base64.
+    const uploadedAttachments = await this.uploadOutboundAttachments(tenantId, dto.attachments);
+    const attachmentMetadata: Prisma.InputJsonValue = uploadedAttachments;
+
+    // Optimistic record (status=queued) so the UI shows the pending email immediately.
+    let record = await this.prisma.emailMessage.create({
+      data: {
+        tenantId,
+        senderId,
+        buyerId,
+        direction: EmailDirection.OUTBOUND,
+        status: EmailStatus.QUEUED,
+        fromEmail,
+        toEmail: buyer.email,
+        replyTo,
+        subject,
+        bodyHtml: dto.bodyHtml,
+        bodyText,
+        attachments: attachmentMetadata,
+        attachmentCount: dto.attachments?.length || 0,
+      },
+      include: this.includeRelations,
+    });
+
+    await this.emitCreated(record);
+
+    const attachments: PostmarkAttachmentInput[] | undefined = dto.attachments?.map((a) => ({
+      filename: a.filename,
+      contentType: a.contentType,
+      content: a.content,
+    }));
+
+    const result = await this.postmarkService.sendEmailWithToken(
+      provisionedTenant.postmarkServerToken,
+      {
+        from: this.formatSender(fromName, fromEmail),
+        to: buyer.email,
+        subject,
+        htmlBody: dto.bodyHtml,
+        textBody: bodyText,
+        replyTo,
+        attachments,
+        tag: 'buyer-outbound',
+        metadata: { tenantId, buyerId, senderId },
+      },
+    );
+
+    if (result.success) {
+      record = await this.prisma.emailMessage.update({
+        where: { id: record.id },
+        data: {
+          status: EmailStatus.SENT,
+          messageId: result.messageId,
+          sentAt: new Date(),
+        },
+        include: this.includeRelations,
+      });
+      await this.emitUpdated(record);
+      return record;
+    }
+
+    // Failure path
+    record = await this.prisma.emailMessage.update({
+      where: { id: record.id },
+      data: {
+        status: EmailStatus.FAILED,
+        sesStatus: result.errorMessage?.slice(0, 255) || null,
+      },
+      include: this.includeRelations,
+    });
+    await this.emitUpdated(record);
+    throw new BadRequestException(
+      `Failed to send email: ${result.errorMessage || 'Unknown error'}`,
+    );
+  }
+
+  /**
+   * Format sender as `"Display Name" <email>`, RFC 2047-encoding display names
+   * with non-ASCII characters and escaping quotes.
+   */
+  private formatSender(displayName: string | undefined, email: string): string {
+    if (!displayName) return email;
+    const hasNonAscii = /[^\x20-\x7E]/.test(displayName);
+    if (hasNonAscii) {
+      const encoded = `=?UTF-8?B?${Buffer.from(displayName, 'utf8').toString('base64')}?=`;
+      return `${encoded} <${email}>`;
+    }
+    const safe = displayName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return `"${safe}" <${email}>`;
+  }
+
+  private htmlToText(html: string): string {
+    return (html || '')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
 
   async create(
     tenantId: string,
@@ -147,6 +519,8 @@ export class EmailMessagesService {
       this.prisma.emailMessage.count({ where }),
     ]);
 
+    await this.s3.signAttachmentsOnRecords(data as any[]);
+
     return {
       data,
       total,
@@ -165,6 +539,8 @@ export class EmailMessagesService {
     if (!emailMessage) {
       throw new NotFoundException('Email message not found');
     }
+
+    await this.s3.signAttachmentsOnRecords([emailMessage as any]);
 
     return emailMessage;
   }

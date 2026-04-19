@@ -22,6 +22,7 @@ import { Prisma } from '@prisma/client';
 import { ClerkService } from '@htownautos/auth';
 import { EmailService } from '../email/email.service';
 import { TwilioService } from '../twilio/twilio.service';
+import { TenantEmailDomainService } from './tenant-email-domain.service';
 import { SearchType, PurchasePhoneNumberDto, UpdatePhoneNumberDto } from './dto/phone-number.dto';
 
 // Invitation status constants
@@ -41,6 +42,7 @@ export class TenantService {
     private clerkService: ClerkService,
     private emailService: EmailService,
     private twilioService: TwilioService,
+    private tenantEmailDomainService: TenantEmailDomainService,
   ) {}
 
   async create(createTenantDto: CreateTenantDto, creatorUserId: string, ownerUsername: string) {
@@ -124,6 +126,17 @@ export class TenantService {
 
       return newTenant;
     });
+
+    // Provision email domain in Postmark + Cloudflare DNS. Failures here don't
+    // block tenant creation — lazy provisioning will retry on first email send.
+    try {
+      await this.tenantEmailDomainService.provision(tenant.id);
+    } catch (error) {
+      this.logger.error(
+        `Failed to provision email domain for tenant ${tenant.id}; will retry lazily`,
+        (error as Error)?.stack,
+      );
+    }
 
     // Create Clerk Organization so the tenant appears in the frontend
     try {
@@ -417,6 +430,11 @@ export class TenantService {
     }
 
     const now = new Date();
+
+    // Tear down Postmark domain + Cloudflare DNS before marking the tenant deleted.
+    // Individual failures inside deprovision() are logged, not thrown — so a
+    // DNS/Postmark outage can't block tenant deletion.
+    await this.tenantEmailDomainService.deprovision(tenant.id);
 
     // Soft-delete the tenant and deactivate all related tenant users in a transaction
     await this.prisma.$transaction([

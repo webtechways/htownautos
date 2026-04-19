@@ -61,6 +61,8 @@ import { ShippoModule } from './shippo/shippo.module';
 import { ParcelTemplatesModule } from './parcel-templates/parcel-templates.module';
 import { PartOrdersModule } from './part-orders/part-orders.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
+import { PostmarkModule } from './postmark/postmark.module';
+import { CloudflareModule } from './cloudflare/cloudflare.module';
 
 /**
  * API Gateway Module
@@ -138,6 +140,8 @@ import { ApiKeysModule } from './api-keys/api-keys.module';
     ParcelTemplatesModule,
     PartOrdersModule,
     ApiKeysModule,
+    PostmarkModule,
+    CloudflareModule,
   ],
   controllers: [AppController],
   providers: [

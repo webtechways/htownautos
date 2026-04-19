@@ -40,6 +40,14 @@ export interface EmailEvent {
   deliveredAt?: string | null;
   bouncedAt?: string | null;
   createdAt: string;
+  attachmentCount?: number;
+  attachments?: Array<{
+    name: string;
+    mimeType: string;
+    size: number;
+    url?: string;
+    key?: string;
+  }> | null;
   // Related data
   sender?: EmailEventSender | null;
   buyer?: EmailEventBuyer | null;

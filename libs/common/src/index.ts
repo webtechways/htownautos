@@ -22,6 +22,13 @@ export { SanitizeString, NormalizeSSN, NormalizeVIN, NormalizeEmail, NormalizePh
 
 // Utils
 export { normalizePhoneNumber, isValidE164, formatPhoneForDisplay, phoneNumbersMatch } from './utils/phone.utils';
+export {
+  slugifyUsername,
+  baseUsernameForUser,
+  findAvailableUsername,
+  buildTenantEmail,
+  resolveTenantUserIdentity,
+} from './utils/tenant-email.utils';
 
 // Interceptors
 export { AuditLogInterceptor } from './interceptors/audit-log.interceptor';

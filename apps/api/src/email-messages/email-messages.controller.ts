@@ -11,7 +11,9 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -110,6 +112,33 @@ export class EmailMessagesController {
     @Query() query: QueryEmailMessageDto,
   ) {
     return this.emailMessagesService.getThread(tenantId, threadId, query);
+  }
+
+  @Get(':id/attachments/download')
+  @ApiOperation({
+    summary: 'Download an email attachment',
+    description:
+      'Generates a short-lived presigned URL for an attachment stored in S3 ' +
+      'and redirects to it. The attachment key must belong to the email, and ' +
+      'the email must belong to the current tenant.',
+  })
+  @ApiParam({ name: 'id', description: 'Email message UUID' })
+  @ApiResponse({ status: 302, description: 'Redirect to presigned URL' })
+  @ApiResponse({ status: 404, description: 'Email or attachment not found' })
+  async downloadAttachment(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('key') key: string,
+    @Res() res: Response,
+  ) {
+    if (!key) throw new BadRequestException('Missing "key" query parameter');
+    const { url } = await this.emailMessagesService.getAttachmentDownloadUrl(
+      tenantId,
+      id,
+      key,
+      300,
+    );
+    res.redirect(302, url);
   }
 
   @Get(':id')

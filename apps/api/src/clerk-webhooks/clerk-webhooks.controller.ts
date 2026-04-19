@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Public } from '@htownautos/auth';
 import { PrismaService } from '@htownautos/prisma';
+import { resolveTenantUserIdentity } from '@htownautos/common';
 
 /**
  * Handles Clerk webhook events for syncing organization memberships.
@@ -100,13 +101,48 @@ export class ClerkWebhooksController {
       where: { tenantId_userId: { tenantId, userId: user.id } },
     });
 
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { subdomain: true },
+    });
+
     if (existing) {
+      // Backfill username/tenantEmail for legacy rows created before identity resolution
+      const patch =
+        !existing.username || !existing.tenantEmail
+          ? await resolveTenantUserIdentity(
+              this.prisma,
+              tenantId,
+              { email: user.email, firstName: user.firstName, lastName: user.lastName },
+              tenant?.subdomain,
+              existing.id,
+            )
+          : null;
+
       await this.prisma.tenantUser.update({
         where: { id: existing.id },
-        data: { status: 'active', isActive: true, roleId: dbRole.id, acceptedAt: new Date() },
+        data: {
+          status: 'active',
+          isActive: true,
+          roleId: dbRole.id,
+          acceptedAt: new Date(),
+          ...(patch
+            ? {
+                username: existing.username || patch.username,
+                tenantEmail: existing.tenantEmail || patch.tenantEmail,
+              }
+            : {}),
+        },
       });
       this.logger.log(`Reactivated membership: ${user.email} in tenant ${tenantId}`);
     } else {
+      const identity = await resolveTenantUserIdentity(
+        this.prisma,
+        tenantId,
+        { email: user.email, firstName: user.firstName, lastName: user.lastName },
+        tenant?.subdomain,
+      );
+
       await this.prisma.tenantUser.create({
         data: {
           tenantId,
@@ -114,9 +150,14 @@ export class ClerkWebhooksController {
           roleId: dbRole.id,
           status: 'active',
           isActive: true,
+          acceptedAt: new Date(),
+          username: identity.username,
+          tenantEmail: identity.tenantEmail,
         },
       });
-      this.logger.log(`Created membership: ${user.email} in tenant ${tenantId}`);
+      this.logger.log(
+        `Created membership: ${user.email} in tenant ${tenantId} as ${identity.tenantEmail || identity.username}`,
+      );
     }
   }
 
@@ -223,6 +264,18 @@ export class ClerkWebhooksController {
         });
 
         if (ownerRole) {
+          // Load the tenant we just inserted to see if it has a subdomain
+          const tenantRow = await this.prisma.tenant.findUnique({
+            where: { id: tenantId },
+            select: { subdomain: true },
+          });
+          const identity = await resolveTenantUserIdentity(
+            this.prisma,
+            tenantId,
+            { email: creator.email, firstName: creator.firstName, lastName: creator.lastName },
+            tenantRow?.subdomain,
+          );
+
           await this.prisma.tenantUser.create({
             data: {
               tenantId,
@@ -231,9 +284,13 @@ export class ClerkWebhooksController {
               status: 'active',
               isActive: true,
               acceptedAt: new Date(),
+              username: identity.username,
+              tenantEmail: identity.tenantEmail,
             },
           });
-          this.logger.log(`Linked creator ${creator.email} as owner of tenant ${tenantId}`);
+          this.logger.log(
+            `Linked creator ${creator.email} as owner of tenant ${tenantId} (${identity.tenantEmail || identity.username})`,
+          );
         }
       }
     }

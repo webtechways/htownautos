@@ -238,6 +238,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.buyerAuctionBid;
   }
 
+  get buyerVehiclePreference() {
+    return this.prisma.buyerVehiclePreference;
+  }
+
   get rebuildItem() {
     return this.prisma.rebuildItem;
   }

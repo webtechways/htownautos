@@ -193,6 +193,42 @@ export class PostmarkService {
     };
   }
 
+  async getServer(id: number): Promise<CreatedServer> {
+    if (!this.accountClient) throw new Error('Postmark account client not configured');
+    const server = (await this.accountClient.getServer(id)) as Server;
+    const token = server.ApiTokens?.[0];
+    if (!token) {
+      throw new Error(`Postmark server ${server.ID} has no API token`);
+    }
+    return {
+      id: server.ID,
+      name: server.Name,
+      apiToken: token,
+      inboundAddress: server.InboundAddress,
+      inboundDomain: server.InboundDomain,
+    };
+  }
+
+  /**
+   * Find an existing Postmark server by exact name. Useful when reconciling
+   * from a partial provision failure (server created, but its ID/token weren't
+   * persisted on the tenant row).
+   */
+  async findServerByName(name: string): Promise<CreatedServer | null> {
+    if (!this.accountClient) throw new Error('Postmark account client not configured');
+    const target = name.toLowerCase();
+    let offset = 0;
+    const pageSize = 50;
+    for (let i = 0; i < 20; i++) {
+      const page: any = await this.accountClient.getServers({ count: pageSize, offset } as any);
+      const hit = page.Servers?.find((s: any) => s.Name?.toLowerCase() === target);
+      if (hit) return this.getServer(hit.ID);
+      if (!page.Servers || page.Servers.length < pageSize) return null;
+      offset += pageSize;
+    }
+    return null;
+  }
+
   async updateServer(
     id: number,
     params: {

@@ -155,18 +155,31 @@ export class TenantEmailDomainService {
     let postmarkServerId = tenant.postmarkServerId;
     let postmarkServerToken = tenant.postmarkServerToken;
     if (!postmarkServerId || !postmarkServerToken) {
+      const serverName = tenant.name || tenant.subdomain;
       try {
-        const created = await this.postmark.createServer({
-          name: tenant.name || tenant.subdomain,
-          color: 'Blue',
-          inboundHookUrl: this.buildInboundHookUrl(),
-          trackOpens: true,
-          trackLinks: 'HtmlAndText',
-          rawEmailEnabled: true,
-        });
-        postmarkServerId = created.id;
-        postmarkServerToken = created.apiToken;
-        this.logger.log(`Created Postmark server ${created.id} for tenant ${tenantId}`);
+        // Reconcile by name first: if a previous provision attempt created the
+        // server but failed before persisting its ID/token, Postmark will reject
+        // a second createServer with "server name already exists". Adopt it.
+        const existing = await this.postmark.findServerByName(serverName).catch(() => null);
+        if (existing) {
+          postmarkServerId = existing.id;
+          postmarkServerToken = existing.apiToken;
+          this.logger.log(
+            `Adopting existing Postmark server ${existing.id} ("${serverName}") for tenant ${tenantId}`,
+          );
+        } else {
+          const created = await this.postmark.createServer({
+            name: serverName,
+            color: 'Blue',
+            inboundHookUrl: this.buildInboundHookUrl(),
+            trackOpens: true,
+            trackLinks: 'HtmlAndText',
+            rawEmailEnabled: true,
+          });
+          postmarkServerId = created.id;
+          postmarkServerToken = created.apiToken;
+          this.logger.log(`Created Postmark server ${created.id} for tenant ${tenantId}`);
+        }
       } catch (err) {
         this.logger.error(`Failed to create Postmark server for ${domainName}`, (err as Error)?.stack);
         throw err;

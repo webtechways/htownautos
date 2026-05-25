@@ -43,6 +43,23 @@ export class BuyerVehiclePreferencesController {
     return this.service.list(buyerId, tenantId);
   }
 
+  @Get('matches')
+  @ApiOperation({
+    summary: 'Auction listings matching the buyer preferences',
+    description:
+      'Returns all active (non-stale) auction listings that satisfy at ' +
+      'least one of the buyer\'s wanted vehicles. Listings whose highBid ' +
+      'already exceeds that preference\'s maxCost are excluded.',
+  })
+  @ApiParam({ name: 'buyerId', description: 'Buyer UUID' })
+  @ApiResponse({ status: HttpStatus.OK })
+  matches(
+    @CurrentTenant() tenantId: string,
+    @Param('buyerId', ParseUUIDPipe) buyerId: string,
+  ) {
+    return this.service.matches(buyerId, tenantId);
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Add a wanted vehicle preference for a buyer' })

@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { OpenSearchService, AUCTION_INDEX_NAME } from '@htownautos/opensearch';
+import { OpenSearchService, AUCTION_INDEX_NAME, AuctionSyncService } from '@htownautos/opensearch';
 import type { UnifiedAuction, AuctionAggregations, AuctionSearchResult } from '@htownautos/opensearch';
 import { PrismaService } from '@htownautos/prisma';
 import { RabbitMQService } from '@htownautos/rabbitmq';
@@ -65,6 +65,7 @@ export class AuctionSearchService {
     private readonly prisma: PrismaService,
     private readonly rabbitMQ: RabbitMQService,
     private readonly proxyService: ProxyService,
+    private readonly syncService: AuctionSyncService,
   ) {}
 
   async search(dto: SearchAuctionsDto): Promise<AuctionSearchResult> {
@@ -336,6 +337,11 @@ export class AuctionSearchService {
       });
     }
 
+    // Buy-It-Now filter (only listings with a buy-it-now price > 0)
+    if (dto.hasBuyItNow) {
+      filter.push({ range: { buyItNowPrice: { gt: 0 } } });
+    }
+
     // Price range (estRetailValue)
     if (dto.priceMin !== undefined || dto.priceMax !== undefined) {
       const rangeQuery: any = {};
@@ -546,6 +552,86 @@ export class AuctionSearchService {
     return this.findById(id);
   }
 
+  /**
+   * Scrape autobidmaster.com to refresh the current high bid for a Copart lot.
+   * The Copart CSV doesn't carry a current bid, so users trigger this on demand
+   * from the listing detail page. We persist to Postgres and reindex the single
+   * doc so the next read from OpenSearch reflects the new value.
+   *
+   * The autobidmaster page is JS/cookie gated; passing `?fallback=true` together
+   * with a `screenSize` cookie skips the bootstrap challenge and serves SSR
+   * HTML containing the `qa_current_bid` element.
+   */
+  async refreshHighBid(
+    lotNumberStr: string,
+  ): Promise<{ lotNumber: string; highBid: number | null }> {
+    this.logger.log(`[BidRefresh] === Start lot ${lotNumberStr} ===`);
+    const lotNumber = BigInt(lotNumberStr);
+    const listing = await this.prisma.auctionListing.findUnique({
+      where: { lotNumber },
+    });
+    if (!listing) {
+      this.logger.warn(`[BidRefresh] Listing ${lotNumberStr} not found in DB`);
+      throw new NotFoundException(`Auction listing ${lotNumberStr} not found`);
+    }
+    this.logger.log(
+      `[BidRefresh] Current DB highBid: ${listing.highBid?.toString() ?? 'null'}`,
+    );
+
+    const url = `https://www.autobidmaster.com/en/search/lot/${lotNumberStr}/?fallback=true`;
+    this.logger.log(`[BidRefresh] Fetching ${url}`);
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        Cookie: 'screenSize=1920x1080; cookietest=1',
+      },
+      redirect: 'follow',
+    });
+    this.logger.log(
+      `[BidRefresh] HTTP ${res.status} ${res.statusText} (final url: ${res.url})`,
+    );
+    if (!res.ok) {
+      throw new Error(`autobidmaster returned ${res.status}`);
+    }
+    const html = await res.text();
+    this.logger.log(`[BidRefresh] HTML size: ${html.length} bytes`);
+
+    const matchIdx = html.indexOf('qa_current_bid');
+    if (matchIdx === -1) {
+      this.logger.warn(
+        `[BidRefresh] qa_current_bid NOT present in HTML for lot ${lotNumberStr}. ` +
+          `First 400 chars: ${html.slice(0, 400)}`,
+      );
+    } else {
+      const snippet = html.slice(Math.max(0, matchIdx - 80), matchIdx + 250);
+      this.logger.log(`[BidRefresh] qa_current_bid snippet: ${snippet}`);
+    }
+
+    const highBid = parseAutobidmasterHighBid(html);
+    this.logger.log(`[BidRefresh] Parsed highBid: ${highBid}`);
+
+    const updated = await this.prisma.auctionListing.update({
+      where: { lotNumber },
+      data: { highBid },
+    });
+    this.logger.log(
+      `[BidRefresh] DB updated. New highBid: ${updated.highBid?.toString() ?? 'null'}`,
+    );
+
+    try {
+      const ok = await this.syncService.indexCopartListing(updated);
+      this.logger.log(`[BidRefresh] Reindex result: ${ok}`);
+    } catch (err) {
+      this.logger.warn(
+        `[BidRefresh] Failed to reindex lot ${lotNumberStr}: ${(err as Error).message}`,
+      );
+    }
+
+    this.logger.log(`[BidRefresh] === Done lot ${lotNumberStr} → ${highBid} ===`);
+    return { lotNumber: lotNumberStr, highBid };
+  }
+
   async getLastSyncTime() {
     const result = await this.prisma.auctionListing.aggregate({
       _max: { updatedAt: true },
@@ -672,4 +758,19 @@ export class AuctionSearchService {
       this.logger.warn(`[Gallery] Failed to cleanup expired caches: ${err.message}`);
     }
   }
+}
+
+/**
+ * Extract the current high bid number from autobidmaster HTML.
+ * The element looks like:
+ *   <strong class="... qa_current_bid ...">$1,200<span...> USD</span></strong>
+ * Returns null if the element is missing or the value can't be parsed.
+ */
+function parseAutobidmasterHighBid(html: string): number | null {
+  const match = html.match(/class="[^"]*qa_current_bid[^"]*"[^>]*>([^<]+)/);
+  if (!match) return null;
+  const digits = match[1].replace(/[^0-9.]/g, '');
+  if (!digits) return null;
+  const num = Number(digits);
+  return Number.isFinite(num) ? num : null;
 }

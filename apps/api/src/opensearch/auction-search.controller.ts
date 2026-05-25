@@ -16,10 +16,23 @@ import {
 } from '@nestjs/swagger';
 import { AuctionSearchService } from './auction-search.service';
 import { AuctionSyncService, AuctionIndexService } from '@htownautos/opensearch';
-import { CopartImportService } from './copart-import.service';
+import {
+  RabbitMQService,
+  AUCTION_SYNC_TRIGGER_QUEUE,
+  type AuctionSyncTriggerMessage,
+} from '@htownautos/rabbitmq';
 import { SearchAuctionsDto } from './dto/search-auctions.dto';
 import { Public } from '@htownautos/auth';
 
+/**
+ * Heavy sync work (CSV import, full reindex, index recreation) is owned by the
+ * `data-sync` worker. This api only publishes a trigger message to RabbitMQ so
+ * the user gets an immediate response and the api process never blocks on a
+ * minutes-long pipeline.
+ *
+ * Read-only endpoints (`/sync/stats`, `/index/stats`) stay here because they
+ * are cheap.
+ */
 @ApiTags('Auctions (OpenSearch)')
 @Controller('auctions')
 export class AuctionSearchController {
@@ -27,7 +40,7 @@ export class AuctionSearchController {
     private readonly searchService: AuctionSearchService,
     private readonly syncService: AuctionSyncService,
     private readonly indexService: AuctionIndexService,
-    private readonly importService: CopartImportService,
+    private readonly rabbitMQ: RabbitMQService,
   ) {}
 
   @Get('search')
@@ -76,56 +89,52 @@ export class AuctionSearchController {
     return this.searchService.getLastSyncTime();
   }
 
-  // === ADMIN / SYNC & IMPORT ENDPOINTS ===
+  // === SYNC TRIGGERS — published to RabbitMQ, executed by data-sync ===
 
   @Post('import/copart')
   @Public()
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
-    summary: 'Full Copart import: CSV → DB → OpenSearch',
-    description: 'Downloads CSV from Copart, parses, upserts into auction_listings, and indexes to OpenSearch',
+    summary: 'Queue full Copart import (CSV → DB → OpenSearch)',
+    description: 'Publishes a trigger to the data-sync worker. Returns immediately; check sync stats to follow progress.',
   })
-  @ApiResponse({ status: 200, description: 'Import results' })
+  @ApiResponse({ status: 202, description: 'Sync queued' })
   async importCopart() {
-    return this.importService.importFromCopartUrl();
+    return this.publishSync({ kind: 'copart-import' });
   }
 
   @Post('import/recreate')
   @Public()
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
-    summary: 'Recreate index + full Copart import',
-    description: 'Deletes OpenSearch index, downloads CSV, upserts DB, and re-indexes everything',
+    summary: 'Queue index recreate + full Copart import',
+    description: 'Publishes a destructive trigger: drop the OpenSearch index, then re-import everything from Copart.',
   })
-  @ApiResponse({ status: 200, description: 'Recreate + import results' })
+  @ApiResponse({ status: 202, description: 'Recreate + import queued' })
   async recreateAndImport() {
-    const recreated = await this.indexService.recreateIndex();
-    const importResult = await this.importService.importFromCopartUrl();
-    return { recreated, ...importResult };
+    return this.publishSync({ kind: 'copart-import-recreate' });
   }
 
   @Post('sync/all')
   @Public()
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
-    summary: 'Sync all auctions to OpenSearch',
-    description: 'Full sync of all Copart and MarketCheck listings from PostgreSQL to OpenSearch',
+    summary: 'Queue reindex of all sources to OpenSearch',
   })
-  @ApiResponse({ status: 200, description: 'Sync results' })
+  @ApiResponse({ status: 202, description: 'Reindex queued' })
   async syncAll() {
-    return this.syncService.syncAll();
+    return this.publishSync({ kind: 'reindex-all' });
   }
 
   @Post('sync/copart')
   @ApiBearerAuth()
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
-    summary: 'Sync all Copart listings to OpenSearch',
-    description: 'Full sync of all Copart listings from PostgreSQL to OpenSearch',
+    summary: 'Queue reindex of all Copart listings to OpenSearch',
   })
-  @ApiResponse({ status: 200, description: 'Sync results' })
+  @ApiResponse({ status: 202, description: 'Reindex queued' })
   async syncCopart() {
-    return this.syncService.syncAllCopart();
+    return this.publishSync({ kind: 'reindex-copart' });
   }
 
   @Get('sync/stats')
@@ -152,15 +161,29 @@ export class AuctionSearchController {
 
   @Post('index/recreate')
   @Public()
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Queue OpenSearch index recreate',
+    description: 'Publishes a destructive trigger: drop and recreate the index. No reimport.',
+  })
+  @ApiResponse({ status: 202, description: 'Recreate queued' })
+  async recreateIndex() {
+    return this.publishSync({ kind: 'recreate-index' });
+  }
+
+  @Post('copart/:lotNumber/refresh-bid')
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Recreate the auction index',
-    description: 'Deletes and recreates the OpenSearch index (WARNING: deletes all indexed data)',
+    summary: 'Refresh current high bid for a Copart lot',
+    description:
+      'Scrapes autobidmaster.com for the given lot number, extracts the qa_current_bid value, persists it to the auction listing, and reindexes the doc.',
   })
-  @ApiResponse({ status: 200, description: 'Index recreated' })
-  async recreateIndex() {
-    const result = await this.indexService.recreateIndex();
-    return { success: result, message: result ? 'Index recreated successfully' : 'Failed to recreate index' };
+  @ApiParam({ name: 'lotNumber', description: 'Copart lot number' })
+  @ApiResponse({ status: 200, description: 'Refreshed high bid' })
+  @ApiResponse({ status: 404, description: 'Auction listing not found' })
+  async refreshCopartBid(@Param('lotNumber') lotNumber: string) {
+    return this.searchService.refreshHighBid(lotNumber);
   }
 
   // Wildcard route — MUST be last to avoid catching static routes
@@ -183,5 +206,12 @@ export class AuctionSearchController {
       return { error: 'Auction not found', source, sourceId };
     }
     return result;
+  }
+
+  private async publishSync(
+    msg: AuctionSyncTriggerMessage,
+  ): Promise<{ queued: boolean; kind: string }> {
+    const queued = await this.rabbitMQ.publish(AUCTION_SYNC_TRIGGER_QUEUE, msg);
+    return { queued, kind: msg.kind };
   }
 }

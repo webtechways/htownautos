@@ -1873,6 +1873,10 @@ model AuctionListing {
   saleLight             String?
   autoGrade             String?
   announcements         String?
+  // Freshness tracking — updated every sync run when the lot appears in the feed.
+  // Listings whose lastSeenAt is older than the staleness threshold get isStale=true.
+  lastSeenAt            DateTime?
+  isStale               Boolean                   @default(false)
   createdAt             DateTime                  @default(now())
   updatedAt             DateTime                  @updatedAt
   analyses              AuctionVehicleAnalysis[]
@@ -1892,7 +1896,34 @@ model AuctionListing {
   @@index([locationState])
   @@index([damageDescription])
   @@index([createdAt])
+  @@index([isStale])
+  @@index([lastSeenAt])
   @@map("auction_listings")
+}
+
+/// Audit trail for every sync cron run. One row per invocation (including skipped
+/// runs), lets us answer "when did the last sync succeed?" and "why did it fail?"
+/// without scraping container logs.
+model SyncRun {
+  id              String    @id @default(uuid()) @db.Uuid
+  source          String    // "copart" | ... (future feeds)
+  startedAt       DateTime  @default(now())
+  finishedAt      DateTime?
+  status          String    @default("running") // running | success | failed | skipped
+  bytesDownloaded Int?
+  rowsParsed      Int       @default(0)
+  rowsValid       Int       @default(0)
+  rowsInvalid     Int       @default(0)
+  rowsUpserted    Int       @default(0)
+  rowsStaleMarked Int       @default(0)
+  rowsIndexed     Int       @default(0)
+  rowsIndexFailed Int       @default(0)
+  durationMs      Int?
+  error           String?
+
+  @@index([source, startedAt(sort: Desc)])
+  @@index([status])
+  @@map("sync_runs")
 }
 
 model MarketCheckAuctionListing {

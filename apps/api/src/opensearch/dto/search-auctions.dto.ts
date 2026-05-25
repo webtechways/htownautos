@@ -297,6 +297,12 @@ export class SearchAuctionsDto {
   @IsBoolean()
   hasCarfaxReport?: boolean;
 
+  @ApiPropertyOptional({ description: 'Filter listings that have a Buy-It-Now price (> 0)' })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  hasBuyItNow?: boolean;
+
   // === AGGREGATIONS ===
 
   @ApiPropertyOptional({ description: 'Include aggregations in response', default: false })

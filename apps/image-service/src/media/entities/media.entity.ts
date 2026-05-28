@@ -163,6 +163,21 @@ export class MediaEntity implements Media {
   })
   updatedAt: Date;
 
+  @ApiPropertyOptional({
+    description: 'Vehicle inspection UUID (top-level inspection media)',
+  })
+  inspectionId: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Inspection checklist item UUID (per-item photos/videos/voice notes)',
+  })
+  inspectionChecklistItemId: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Carfax report UUID (the carfax registry attaches its file(s) here)',
+  })
+  carfaxReportId: string | null;
+
   constructor(partial: Partial<MediaEntity>) {
     Object.assign(this, partial);
   }

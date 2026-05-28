@@ -533,6 +533,7 @@ model Tenant {
   vehicleStatuses           VehicleStatus[]
   vehicles                  Vehicle[]
   auctionFavorites          AuctionFavorite[]
+  vehicleInspections        VehicleInspection[]
   auctionListingGroups      AuctionListingGroup[]
   auctionListingReviews     AuctionListingReview[]
   buyerAuctionBids          BuyerAuctionBid[]
@@ -890,6 +891,7 @@ model Buyer {
   partOrders               PartOrder[]
   auctionBids              BuyerAuctionBid[]
   vehiclePreferences       BuyerVehiclePreference[]
+  inspections              VehicleInspection[]      @relation("BuyerInspections")
 
   @@unique([tenantId, phoneMain])
   @@index([tenantId])
@@ -1174,6 +1176,12 @@ model Media {
   buyerId                      String?
   tenantId                     String?
   partId                       String?
+  // New relations for the inspection + carfax registry. All nullable; deleting
+  // the parent cascades its media (orphaned files are then cleaned by the
+  // existing media GC).
+  inspectionId                 String?
+  inspectionChecklistItemId    String?
+  carfaxReportId               String?
   buyer                        Buyer?         @relation("BuyerMedia", fields: [buyerId], references: [id], onDelete: Cascade)
   part                         Part?          @relation("PartMedia", fields: [partId], references: [id], onDelete: Cascade)
   tenant                       Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1187,6 +1195,9 @@ model Media {
   titleAsOdometerStatementFile Title[]        @relation("TitleOdometerStatementFile")
   vehicleAsMain                Vehicle?       @relation("VehicleMainImage")
   extraExpenseReceipts         ExtraExpense[] @relation("ExtraExpenseReceipts")
+  inspection                   VehicleInspection?       @relation("InspectionMedia", fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspectionChecklistItem      InspectionChecklistItem? @relation("ChecklistItemMedia", fields: [inspectionChecklistItemId], references: [id], onDelete: Cascade)
+  carfaxReport                 CarfaxReport?            @relation("CarfaxReportMedia", fields: [carfaxReportId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([vehicleId])
@@ -1195,6 +1206,9 @@ model Media {
   @@index([mediaType])
   @@index([category])
   @@index([isActive])
+  @@index([inspectionId])
+  @@index([inspectionChecklistItemId])
+  @@index([carfaxReportId])
   @@map("media")
 }
 
@@ -1286,6 +1300,7 @@ model Vehicle {
   usedParts             VehiclePart[]
   tasks                 Task[]
   rebuildItems          RebuildItem[]
+  inspections           VehicleInspection[] @relation("VehicleInspections")
 
   @@index([tenantId])
   @@index([createdById])
@@ -2500,13 +2515,20 @@ model CarfaxReport {
   vin              String?
   s3Key            String
   analysis         String?  @db.Text
+  // Report date (when the Carfax was issued), separate from createdAt which
+  // is when this row was inserted into our DB.
+  date             DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   auctionListing AuctionListing @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
+  // Optional richer media (PDF/scan) stored via the Media table. s3Key stays
+  // for backward compatibility with the carfax-analyzer pipeline.
+  media          Media[] @relation("CarfaxReportMedia")
 
   @@index([auctionListingId])
   @@index([vin])
+  @@index([date])
   @@map("carfax_reports")
 }
 
@@ -3002,4 +3024,112 @@ model ApiKey {
   @@index([prefix])
   @@index([revokedAt])
   @@map("api_keys")
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Vehicle inspections (Copart yard checklist + on-site media + voice
+// notes). One inspection has many checklist items; each item carries
+// quality (1=red, 2=yellow, 3=green), free-text notes, a voice-note
+// transcription, and any number of media rows (image / video / audio).
+// Inspection-level videos hang off VehicleInspection.media directly.
+// Carfax is intentionally NOT a field here — it lives in CarfaxReport
+// (keyed by vin) so the registry survives independently of any
+// individual inspection.
+// ────────────────────────────────────────────────────────────────────
+
+enum VehicleInspectionStatus {
+  REQUESTED       // client requested it; not yet assigned
+  IN_PROGRESS     // inspector working on it
+  DONE            // completed
+  REJECTED        // refused (won't be done)
+  CANCELED        // canceled by the client / system
+}
+
+enum ChecklistCategory {
+  FRONT_END            // 1. Front end
+  SIDE_PANELS          // 2. Side panels (L/R)
+  REAR_END             // 3. Rear
+  WHEELS_SUSPENSION    // 4. Wheels & suspension
+  INTERIOR             // 5. Interior
+  ENGINE_BAY           // 6. Engine bay
+  UNDERBODY            // 7. Underbody
+  LIGHTING_ELECTRICAL  // 8. Exterior lighting & electrical
+  REPAIR_BODYWORK      // 9. Repair / bodywork signs
+  FLOOD_DAMAGE         // 10. Flood damage signs
+  OTHER
+}
+
+model VehicleInspection {
+  id              String   @id @default(uuid())
+  tenantId        String?
+
+  // What is being inspected (the lot/VIN — vehicleId is set only once the
+  // lot becomes a Vehicle in our CRM, often AFTER the inspection happens).
+  vin             String
+  lotNumber       String?
+  yardName        String?
+  yardNumber      String?
+  vehicleId       String?
+  buyerId         String?
+
+  // Lifecycle
+  status          VehicleInspectionStatus @default(REQUESTED)
+  requestedAt     DateTime @default(now())
+  inspectedAt     DateTime?
+  completedAt     DateTime?
+  inspectorId     String?
+
+  // Request from the client (free text — "check the engine", "look at the roof"...)
+  specificRequest String?
+
+  // Results
+  overallRating   Int?                       // 1..5 — caller's convention
+  marketPrice     Decimal? @db.Decimal(12, 2)
+  notes           String?
+
+  // Audit
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle         Vehicle? @relation("VehicleInspections", fields: [vehicleId], references: [id], onDelete: SetNull)
+  buyer           Buyer?   @relation("BuyerInspections", fields: [buyerId], references: [id], onDelete: SetNull)
+  checklist       InspectionChecklistItem[]
+  media           Media[]  @relation("InspectionMedia")
+
+  @@index([tenantId])
+  @@index([vehicleId])
+  @@index([buyerId])
+  @@index([vin])
+  @@index([lotNumber])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("vehicle_inspections")
+}
+
+model InspectionChecklistItem {
+  id                     String   @id @default(uuid())
+  inspectionId           String
+
+  category               ChecklistCategory
+  part                   String                  // free text: "Hood", "Radiator support", "A-Pillar L", ...
+  // 1 = RED (problem), 2 = YELLOW (review), 3 = GREEN (ok). Null = not yet evaluated.
+  quality                Int?
+  notes                  String?
+  // Transcription of the voice note (the audio itself is a Media row in
+  // `media` below with mediaType = 'audio').
+  voiceNoteTranscription String?
+
+  sortOrder              Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  inspection             VehicleInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  media                  Media[] @relation("ChecklistItemMedia")
+
+  @@index([inspectionId])
+  @@index([category])
+  @@map("inspection_checklist_items")
 }

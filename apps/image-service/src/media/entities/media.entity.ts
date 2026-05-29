@@ -174,6 +174,11 @@ export class MediaEntity implements Media {
   inspectionChecklistItemId: string | null;
 
   @ApiPropertyOptional({
+    description: 'Inspection request item UUID (photo attached to a client-requested note)',
+  })
+  inspectionRequestItemId: string | null;
+
+  @ApiPropertyOptional({
     description: 'Carfax report UUID (the carfax registry attaches its file(s) here)',
   })
   carfaxReportId: string | null;

@@ -107,6 +107,11 @@ export class CreateMediaDto {
   @IsUUID()
   inspectionChecklistItemId?: string;
 
+  @ApiPropertyOptional({ description: 'Inspection request item UUID' })
+  @IsOptional()
+  @IsUUID()
+  inspectionRequestItemId?: string;
+
   @ApiPropertyOptional({ description: 'Carfax report UUID' })
   @IsOptional()
   @IsUUID()

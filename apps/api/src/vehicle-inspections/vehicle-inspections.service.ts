@@ -10,6 +10,9 @@ import { UpdateVehicleInspectionDto } from './dto/update-vehicle-inspection.dto'
 import { ListVehicleInspectionsDto } from './dto/list-vehicle-inspections.dto';
 import { CreateChecklistItemDto } from './dto/create-checklist-item.dto';
 import { UpdateChecklistItemDto } from './dto/update-checklist-item.dto';
+import { CreateRequestItemDto } from './dto/create-request-item.dto';
+import { UpdateRequestItemDto } from './dto/update-request-item.dto';
+import { DEFAULT_CHECKLIST } from './checklist-template';
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
@@ -51,6 +54,15 @@ const INSPECTION_INCLUDE = {
       { sortOrder: 'asc' as const },
       { createdAt: 'asc' as const },
     ] satisfies Prisma.InspectionChecklistItemOrderByWithRelationInput[],
+    include: {
+      media: { orderBy: { createdAt: 'asc' as const } },
+    },
+  },
+  requestItems: {
+    orderBy: [
+      { sortOrder: 'asc' as const },
+      { createdAt: 'asc' as const },
+    ] satisfies Prisma.InspectionRequestItemOrderByWithRelationInput[],
     include: {
       media: { orderBy: { createdAt: 'asc' as const } },
     },
@@ -134,6 +146,15 @@ export class VehicleInspectionsService {
         marketPrice:
           dto.marketPrice != null ? new Prisma.Decimal(dto.marketPrice) : null,
         notes: dto.notes,
+        // Auto-seed the default checklist so every inspector starts from the
+        // same baseline. Items remain editable / deletable per inspection.
+        checklist: {
+          create: DEFAULT_CHECKLIST.map((it, idx) => ({
+            category: it.category,
+            part: it.part,
+            sortOrder: idx,
+          })),
+        },
       },
       include: INSPECTION_INCLUDE,
     });
@@ -247,6 +268,51 @@ export class VehicleInspectionsService {
     return { deleted: true };
   }
 
+  // ─── client request items ─────────────────────────────────────────
+
+  async addRequestItem(
+    inspectionId: string,
+    tenantId: string,
+    dto: CreateRequestItemDto,
+  ) {
+    await this.ensureInspection(inspectionId, tenantId);
+    return this.prisma.inspectionRequestItem.create({
+      data: {
+        inspectionId,
+        note: dto.note,
+        sortOrder: dto.sortOrder ?? 0,
+      },
+      include: { media: true },
+    });
+  }
+
+  async updateRequestItem(
+    itemId: string,
+    inspectionId: string,
+    tenantId: string,
+    dto: UpdateRequestItemDto,
+  ) {
+    await this.ensureRequestItem(itemId, inspectionId, tenantId);
+    const data: Prisma.InspectionRequestItemUpdateInput = {};
+    if (dto.note !== undefined) data.note = dto.note;
+    if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
+    return this.prisma.inspectionRequestItem.update({
+      where: { id: itemId },
+      data,
+      include: { media: true },
+    });
+  }
+
+  async removeRequestItem(
+    itemId: string,
+    inspectionId: string,
+    tenantId: string,
+  ) {
+    await this.ensureRequestItem(itemId, inspectionId, tenantId);
+    await this.prisma.inspectionRequestItem.delete({ where: { id: itemId } });
+    return { deleted: true };
+  }
+
   // ─── helpers ──────────────────────────────────────────────────────
 
   // Enforce: dueAt must be (a) at least 48h from now, and (b) strictly before
@@ -312,5 +378,22 @@ export class VehicleInspectionsService {
     });
     if (!exists)
       throw new NotFoundException(`Checklist item ${itemId} not found`);
+  }
+
+  private async ensureRequestItem(
+    itemId: string,
+    inspectionId: string,
+    tenantId: string,
+  ): Promise<void> {
+    const exists = await this.prisma.inspectionRequestItem.findFirst({
+      where: {
+        id: itemId,
+        inspectionId,
+        inspection: { tenantId: tenantId || undefined },
+      },
+      select: { id: true },
+    });
+    if (!exists)
+      throw new NotFoundException(`Request item ${itemId} not found`);
   }
 }

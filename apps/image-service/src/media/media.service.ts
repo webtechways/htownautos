@@ -175,6 +175,9 @@ export class MediaService {
           ...(createMediaDto.inspectionChecklistItemId && {
             inspectionChecklistItemId: createMediaDto.inspectionChecklistItemId,
           }),
+          ...(createMediaDto.inspectionRequestItemId && {
+            inspectionRequestItemId: createMediaDto.inspectionRequestItemId,
+          }),
           ...(createMediaDto.carfaxReportId && { carfaxReportId: createMediaDto.carfaxReportId }),
         },
       });
@@ -320,6 +323,9 @@ export class MediaService {
           ...(dto.inspectionId && { inspectionId: dto.inspectionId }),
           ...(dto.inspectionChecklistItemId && {
             inspectionChecklistItemId: dto.inspectionChecklistItemId,
+          }),
+          ...(dto.inspectionRequestItemId && {
+            inspectionRequestItemId: dto.inspectionRequestItemId,
           }),
           ...(dto.carfaxReportId && { carfaxReportId: dto.carfaxReportId }),
         },

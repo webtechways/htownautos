@@ -25,6 +25,8 @@ import { UpdateVehicleInspectionDto } from './dto/update-vehicle-inspection.dto'
 import { ListVehicleInspectionsDto } from './dto/list-vehicle-inspections.dto';
 import { CreateChecklistItemDto } from './dto/create-checklist-item.dto';
 import { UpdateChecklistItemDto } from './dto/update-checklist-item.dto';
+import { CreateRequestItemDto } from './dto/create-request-item.dto';
+import { UpdateRequestItemDto } from './dto/update-request-item.dto';
 
 @ApiTags('Vehicle Inspections')
 @Controller('vehicle-inspections')
@@ -130,5 +132,47 @@ export class VehicleInspectionsController {
     @Param('itemId', ParseUUIDPipe) itemId: string,
   ) {
     return this.service.removeChecklistItem(itemId, id, tenantId);
+  }
+
+  // ─── client request items ────────────────────────────────────────
+
+  @Post(':id/request-items')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Add a client-request item (a note + optional photo)',
+  })
+  @ApiParam({ name: 'id', description: 'Inspection UUID' })
+  addRequestItem(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateRequestItemDto,
+  ) {
+    return this.service.addRequestItem(id, tenantId, dto);
+  }
+
+  @Patch(':id/request-items/:itemId')
+  @ApiOperation({ summary: 'Update a client-request item' })
+  @ApiParam({ name: 'id', description: 'Inspection UUID' })
+  @ApiParam({ name: 'itemId', description: 'Request item UUID' })
+  updateRequestItem(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: UpdateRequestItemDto,
+  ) {
+    return this.service.updateRequestItem(itemId, id, tenantId, dto);
+  }
+
+  @Delete(':id/request-items/:itemId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Remove a client-request item (cascades its media)' })
+  @ApiParam({ name: 'id', description: 'Inspection UUID' })
+  @ApiParam({ name: 'itemId', description: 'Request item UUID' })
+  removeRequestItem(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+  ) {
+    return this.service.removeRequestItem(itemId, id, tenantId);
   }
 }

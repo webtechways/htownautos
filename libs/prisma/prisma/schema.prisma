@@ -1181,6 +1181,7 @@ model Media {
   // existing media GC).
   inspectionId                 String?
   inspectionChecklistItemId    String?
+  inspectionRequestItemId      String?
   carfaxReportId               String?
   buyer                        Buyer?         @relation("BuyerMedia", fields: [buyerId], references: [id], onDelete: Cascade)
   part                         Part?          @relation("PartMedia", fields: [partId], references: [id], onDelete: Cascade)
@@ -1197,6 +1198,7 @@ model Media {
   extraExpenseReceipts         ExtraExpense[] @relation("ExtraExpenseReceipts")
   inspection                   VehicleInspection?       @relation("InspectionMedia", fields: [inspectionId], references: [id], onDelete: Cascade)
   inspectionChecklistItem      InspectionChecklistItem? @relation("ChecklistItemMedia", fields: [inspectionChecklistItemId], references: [id], onDelete: Cascade)
+  inspectionRequestItem        InspectionRequestItem?   @relation("RequestItemMedia", fields: [inspectionRequestItemId], references: [id], onDelete: Cascade)
   carfaxReport                 CarfaxReport?            @relation("CarfaxReportMedia", fields: [carfaxReportId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
@@ -1208,6 +1210,7 @@ model Media {
   @@index([isActive])
   @@index([inspectionId])
   @@index([inspectionChecklistItemId])
+  @@index([inspectionRequestItemId])
   @@index([carfaxReportId])
   @@map("media")
 }
@@ -3056,6 +3059,10 @@ enum ChecklistCategory {
   LIGHTING_ELECTRICAL  // 8. Exterior lighting & electrical
   REPAIR_BODYWORK      // 9. Repair / bodywork signs
   FLOOD_DAMAGE         // 10. Flood damage signs
+  // Beyond visible body inspection — sensory and mechanical checks.
+  FLUIDS               // 11. Oil / coolant / transmission / brake fluid
+  SENSORY              // 12. Smell, noises, vibrations
+  START_BEHAVIOR       // 13. Cold start, hot start, idle quality
   OTHER
 }
 
@@ -3100,6 +3107,9 @@ model VehicleInspection {
   vehicle         Vehicle? @relation("VehicleInspections", fields: [vehicleId], references: [id], onDelete: SetNull)
   buyer           Buyer?   @relation("BuyerInspections", fields: [buyerId], references: [id], onDelete: SetNull)
   checklist       InspectionChecklistItem[]
+  // Replaces the single specificRequest text — each item has its own note +
+  // optional photo. specificRequest column is kept for backward compatibility.
+  requestItems    InspectionRequestItem[]
   media           Media[]  @relation("InspectionMedia")
 
   @@index([tenantId])
@@ -3136,4 +3146,23 @@ model InspectionChecklistItem {
   @@index([inspectionId])
   @@index([category])
   @@map("inspection_checklist_items")
+}
+
+// ── Client-requested inspection items ─────────────────────────────
+// One inspection has N request items, each a note + optional photo. Replaces
+// the single specificRequest text field on VehicleInspection going forward
+// (the column is kept for backward compatibility).
+model InspectionRequestItem {
+  id           String   @id @default(uuid())
+  inspectionId String
+  note         String
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  inspection   VehicleInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  media        Media[]           @relation("RequestItemMedia")
+
+  @@index([inspectionId])
+  @@map("inspection_request_items")
 }

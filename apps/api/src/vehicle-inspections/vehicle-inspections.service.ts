@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
 import { CreateVehicleInspectionDto } from './dto/create-vehicle-inspection.dto';
@@ -9,6 +13,34 @@ import { UpdateChecklistItemDto } from './dto/update-checklist-item.dto';
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
+const MIN_LEAD_HOURS = 48;
+
+// Parse Copart-style saleDate (YYYYMMDD as int) + saleTime ("HH:mm")
+// into a UTC Date. Returns null when the date can't be parsed.
+function parseAuctionDateTime(
+  saleDate: number | null | undefined,
+  saleTime: string | null | undefined,
+): Date | null {
+  if (!saleDate || saleDate === 0) return null;
+  const str = saleDate.toString();
+  if (str.length !== 8) return null;
+  const year = Number(str.slice(0, 4));
+  const month = Number(str.slice(4, 6)) - 1;
+  const day = Number(str.slice(6, 8));
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null;
+  }
+  let hours = 0;
+  let minutes = 0;
+  if (saleTime) {
+    const m = saleTime.match(/^(\d{1,2}):(\d{2})/);
+    if (m) {
+      hours = Number(m[1]);
+      minutes = Number(m[2]);
+    }
+  }
+  return new Date(Date.UTC(year, month, day, hours, minutes));
+}
 
 // Pulled in by every "get inspection" call. Includes the checklist (ordered)
 // with each item's media, plus the inspection-level media (top-level videos).
@@ -81,6 +113,8 @@ export class VehicleInspectionsService {
     userId: string | null,
     dto: CreateVehicleInspectionDto,
   ) {
+    await this.validateRequestedWindow(dto);
+
     const row = await this.prisma.vehicleInspection.create({
       data: {
         tenantId: tenantId || null,
@@ -93,6 +127,7 @@ export class VehicleInspectionsService {
         buyerId: dto.buyerId,
         status: dto.status ?? 'REQUESTED',
         specificRequest: dto.specificRequest,
+        dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
         inspectedAt: dto.inspectedAt ? new Date(dto.inspectedAt) : null,
         inspectorId: dto.inspectorId,
         overallRating: dto.overallRating,
@@ -124,6 +159,8 @@ export class VehicleInspectionsService {
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.specificRequest !== undefined)
       data.specificRequest = dto.specificRequest;
+    if (dto.dueAt !== undefined)
+      data.dueAt = dto.dueAt ? new Date(dto.dueAt) : null;
     if (dto.inspectedAt !== undefined)
       data.inspectedAt = dto.inspectedAt ? new Date(dto.inspectedAt) : null;
     if (dto.completedAt !== undefined)
@@ -211,6 +248,46 @@ export class VehicleInspectionsService {
   }
 
   // ─── helpers ──────────────────────────────────────────────────────
+
+  // Enforce: dueAt must be (a) at least 48h from now, and (b) strictly before
+  // the scheduled auction datetime when the listing has one. Future-sale lots
+  // (no saleDate) have no upper bound.
+  private async validateRequestedWindow(
+    dto: CreateVehicleInspectionDto,
+  ): Promise<void> {
+    if (!dto.dueAt) return;
+    const due = new Date(dto.dueAt);
+    if (Number.isNaN(due.getTime())) {
+      throw new BadRequestException('dueAt is not a valid date');
+    }
+
+    const now = new Date();
+    const earliest = new Date(now.getTime() + MIN_LEAD_HOURS * 60 * 60 * 1000);
+    if (due < earliest) {
+      throw new BadRequestException(
+        `Requested date must be at least ${MIN_LEAD_HOURS}h from now`,
+      );
+    }
+
+    if (!dto.lotNumber) return;
+    let lotKey: bigint;
+    try {
+      lotKey = BigInt(dto.lotNumber);
+    } catch {
+      return;
+    }
+    const listing = await this.prisma.auctionListing.findUnique({
+      where: { lotNumber: lotKey },
+      select: { saleDate: true, saleTime: true },
+    });
+    if (!listing) return;
+    const auctionAt = parseAuctionDateTime(listing.saleDate, listing.saleTime);
+    if (auctionAt && due >= auctionAt) {
+      throw new BadRequestException(
+        'Requested date must be before the scheduled auction date',
+      );
+    }
+  }
 
   private async ensureInspection(id: string, tenantId: string): Promise<void> {
     const exists = await this.prisma.vehicleInspection.findFirst({

@@ -45,6 +45,11 @@ export class CreateVehicleInspectionDto {
   @IsString()
   specificRequest?: string;
 
+  /** Deadline: ISO timestamp by when the inspection must be completed. */
+  @IsOptional()
+  @IsDateString()
+  dueAt?: string;
+
   @IsOptional()
   @IsDateString()
   inspectedAt?: string;

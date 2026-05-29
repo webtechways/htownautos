@@ -23,6 +23,7 @@ export class UpdateVehicleInspectionDto {
   status?: VehicleInspectionStatus;
 
   @IsOptional() @IsString() specificRequest?: string;
+  @IsOptional() @IsDateString() dueAt?: string;
   @IsOptional() @IsDateString() inspectedAt?: string;
   @IsOptional() @IsDateString() completedAt?: string;
   @IsOptional() @IsUUID() inspectorId?: string;

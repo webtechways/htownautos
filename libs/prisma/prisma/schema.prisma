@@ -3075,6 +3075,9 @@ model VehicleInspection {
   // Lifecycle
   status          VehicleInspectionStatus @default(REQUESTED)
   requestedAt     DateTime @default(now())
+  // Deadline: by when the inspection must be completed (set by the client
+  // when requesting). Null = no hard deadline.
+  dueAt           DateTime?
   inspectedAt     DateTime?
   completedAt     DateTime?
   inspectorId     String?
@@ -3106,6 +3109,7 @@ model VehicleInspection {
   @@index([lotNumber])
   @@index([status])
   @@index([requestedAt])
+  @@index([dueAt])
   @@map("vehicle_inspections")
 }
 

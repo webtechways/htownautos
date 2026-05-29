@@ -13,6 +13,8 @@ export enum MediaType {
   IMAGE = 'image',
   VIDEO = 'video',
   DOCUMENT = 'document',
+  // Voice notes attached to inspection checklist items.
+  AUDIO = 'audio',
 }
 
 export enum MediaCategory {
@@ -23,6 +25,10 @@ export enum MediaCategory {
   RECEIPT = 'receipt',
   TITLE = 'title',
   OTHER = 'other',
+  // Inspection-specific categories.
+  INSPECTION_REQUEST = 'inspection_request', // images attached to specificRequest
+  INSPECTION_ITEM = 'inspection_item',       // per-checklist-item photos/videos
+  INSPECTION_VOICE = 'inspection_voice',     // voice note (audio)
 }
 
 export class CreateMediaDto {
@@ -90,6 +96,21 @@ export class CreateMediaDto {
   @IsOptional()
   @IsUUID()
   partId?: string;
+
+  @ApiPropertyOptional({ description: 'Vehicle inspection UUID (top-level inspection media)' })
+  @IsOptional()
+  @IsUUID()
+  inspectionId?: string;
+
+  @ApiPropertyOptional({ description: 'Inspection checklist item UUID' })
+  @IsOptional()
+  @IsUUID()
+  inspectionChecklistItemId?: string;
+
+  @ApiPropertyOptional({ description: 'Carfax report UUID' })
+  @IsOptional()
+  @IsUUID()
+  carfaxReportId?: string;
 
   @ApiPropertyOptional({
     description: 'Whether the media is public (ignored if buyerId is provided - buyer media is always private)',

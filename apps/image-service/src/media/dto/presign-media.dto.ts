@@ -10,10 +10,10 @@ export class PresignMediaDto extends CreateMediaDto {
   @ApiProperty({ description: 'MIME type of the file', example: 'image/jpeg' })
   @IsString()
   @Matches(
-    /^(image\/(jpeg|png|webp|gif)|application\/pdf|video\/(mp4|quicktime))$/,
+    /^(image\/(jpeg|png|webp|gif)|application\/pdf|video\/(mp4|quicktime|webm)|audio\/(mp4|mpeg|webm|ogg|wav|x-m4a))$/,
     {
       message:
-        'Allowed: image/jpeg, image/png, image/webp, image/gif, application/pdf, video/mp4, video/quicktime',
+        'Allowed: image/*, application/pdf, video/*, audio/* (for inspection voice notes)',
     },
   )
   contentType: string;

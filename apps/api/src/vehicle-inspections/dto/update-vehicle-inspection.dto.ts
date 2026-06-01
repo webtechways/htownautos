@@ -1,4 +1,6 @@
 import {
+  ArrayUnique,
+  IsArray,
   IsDateString,
   IsEnum,
   IsInt,
@@ -35,4 +37,11 @@ export class UpdateVehicleInspectionDto {
   marketPrice?: number;
 
   @IsOptional() @IsString() notes?: string;
+
+  /** Client users granted read access to this inspection (replaces the list). */
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID(undefined, { each: true })
+  sharedWithIds?: string[];
 }

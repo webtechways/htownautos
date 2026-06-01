@@ -1,4 +1,6 @@
 import {
+  ArrayUnique,
+  IsArray,
   IsDateString,
   IsEnum,
   IsInt,
@@ -71,4 +73,11 @@ export class CreateVehicleInspectionDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  /** Client users granted read access to this inspection. */
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID(undefined, { each: true })
+  sharedWithIds?: string[];
 }

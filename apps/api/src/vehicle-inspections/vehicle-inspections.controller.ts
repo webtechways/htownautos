@@ -41,9 +41,10 @@ export class VehicleInspectionsController {
   @ApiResponse({ status: HttpStatus.OK })
   list(
     @CurrentTenant() tenantId: string,
+    @CurrentUser('sub') userId: string,
     @Query() query: ListVehicleInspectionsDto,
   ) {
-    return this.service.list(tenantId, query);
+    return this.service.list(tenantId, userId, query);
   }
 
   @Get(':id')
@@ -51,9 +52,10 @@ export class VehicleInspectionsController {
   @ApiParam({ name: 'id', description: 'Inspection UUID' })
   get(
     @CurrentTenant() tenantId: string,
+    @CurrentUser('sub') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.service.get(id, tenantId);
+    return this.service.get(id, tenantId, userId);
   }
 
   @Post()

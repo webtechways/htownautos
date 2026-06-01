@@ -613,6 +613,7 @@ model User {
   vehiclesCreated Vehicle[]          @relation("VehicleCreatedBy")
   sentInvitations TenantInvitation[]
   paidExpenses    ExtraExpense[]     @relation("ExpensePaidBy")
+  sharedInspections VehicleInspection[] @relation("InspectionSharedWith")
 
   @@index([clerkUserId])
   @@index([email])
@@ -3111,6 +3112,9 @@ model VehicleInspection {
   // optional photo. specificRequest column is kept for backward compatibility.
   requestItems    InspectionRequestItem[]
   media           Media[]  @relation("InspectionMedia")
+  // Clients (users) granted read access to this inspection. Independent of
+  // inspectorId (who performs it) — sharedWith governs who can VIEW it.
+  sharedWith      User[]   @relation("InspectionSharedWith")
 
   @@index([tenantId])
   @@index([vehicleId])

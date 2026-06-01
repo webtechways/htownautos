@@ -45,6 +45,17 @@ function parseAuctionDateTime(
   return new Date(Date.UTC(year, month, day, hours, minutes));
 }
 
+// Shape of a User returned alongside an inspection (sharedWith list).
+// Kept narrow on purpose — UI just needs name/email for the chips.
+const SHARED_USER_SELECT = {
+  id: true,
+  email: true,
+  name: true,
+  firstName: true,
+  lastName: true,
+  avatar: true,
+} satisfies Prisma.UserSelect;
+
 // Pulled in by every "get inspection" call. Includes the checklist (ordered)
 // with each item's media, plus the inspection-level media (top-level videos).
 const INSPECTION_INCLUDE = {
@@ -67,7 +78,45 @@ const INSPECTION_INCLUDE = {
       media: { orderBy: { createdAt: 'asc' as const } },
     },
   },
+  sharedWith: { select: SHARED_USER_SELECT },
 } satisfies Prisma.VehicleInspectionInclude;
+
+// Treat Sat/Sun as if they didn't exist when measuring lead time. Adding
+// `hours` of "business" time means: every hour landing on a weekend is
+// skipped and the same hour is consumed on the next Monday at the same
+// time-of-day. Same result as iterating one hour at a time, but O(1).
+function addBusinessHours(start: Date, hours: number): Date {
+  let cur = new Date(start);
+  // Snap a weekend start to next Monday (same time-of-day).
+  const startDay = cur.getUTCDay();
+  if (startDay === 6) cur = new Date(cur.getTime() + 2 * 86_400_000);
+  else if (startDay === 0) cur = new Date(cur.getTime() + 1 * 86_400_000);
+
+  let remainingMs = hours * 3_600_000;
+  while (remainingMs > 0) {
+    // ms left in the current weekday (until 24:00 UTC).
+    const dayEnd = new Date(cur);
+    dayEnd.setUTCHours(24, 0, 0, 0);
+    const slice = dayEnd.getTime() - cur.getTime();
+    if (slice > remainingMs) {
+      cur = new Date(cur.getTime() + remainingMs);
+      remainingMs = 0;
+    } else {
+      remainingMs -= slice;
+      cur = dayEnd;
+      // Skip Sat/Sun entirely.
+      const d = cur.getUTCDay();
+      if (d === 6) cur = new Date(cur.getTime() + 2 * 86_400_000);
+      else if (d === 0) cur = new Date(cur.getTime() + 1 * 86_400_000);
+    }
+  }
+  return cur;
+}
+
+function isWeekend(d: Date): boolean {
+  const day = d.getUTCDay();
+  return day === 0 || day === 6;
+}
 
 function serialize(row: any) {
   return {
@@ -82,12 +131,22 @@ export class VehicleInspectionsService {
 
   // ─── inspections ──────────────────────────────────────────────────
 
-  async list(tenantId: string, query: ListVehicleInspectionsDto) {
+  async list(
+    tenantId: string,
+    userId: string | null,
+    query: ListVehicleInspectionsDto,
+  ) {
     const page = query.page && query.page > 0 ? query.page : 1;
     const limit = Math.min(query.limit ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
 
+    // Visibility: either the inspection belongs to the user's tenant, OR
+    // the user has been explicitly added to its sharedWith list. The latter
+    // is how clients (possibly from other tenants) get access.
+    const visibility: Prisma.VehicleInspectionWhereInput[] = [];
+    if (tenantId) visibility.push({ tenantId });
+    if (userId) visibility.push({ sharedWith: { some: { id: userId } } });
     const where: Prisma.VehicleInspectionWhereInput = {
-      tenantId: tenantId || undefined,
+      ...(visibility.length === 1 ? visibility[0] : { OR: visibility }),
       ...(query.status && { status: query.status }),
       ...(query.buyerId && { buyerId: query.buyerId }),
       ...(query.vehicleId && { vehicleId: query.vehicleId }),
@@ -111,9 +170,15 @@ export class VehicleInspectionsService {
     };
   }
 
-  async get(id: string, tenantId: string) {
+  async get(id: string, tenantId: string, userId: string | null) {
+    const visibility: Prisma.VehicleInspectionWhereInput[] = [];
+    if (tenantId) visibility.push({ tenantId });
+    if (userId) visibility.push({ sharedWith: { some: { id: userId } } });
     const row = await this.prisma.vehicleInspection.findFirst({
-      where: { id, tenantId: tenantId || undefined },
+      where: {
+        id,
+        ...(visibility.length === 1 ? visibility[0] : { OR: visibility }),
+      },
       include: INSPECTION_INCLUDE,
     });
     if (!row) throw new NotFoundException(`Inspection ${id} not found`);
@@ -146,6 +211,9 @@ export class VehicleInspectionsService {
         marketPrice:
           dto.marketPrice != null ? new Prisma.Decimal(dto.marketPrice) : null,
         notes: dto.notes,
+        sharedWith: dto.sharedWithIds?.length
+          ? { connect: dto.sharedWithIds.map((id) => ({ id })) }
+          : undefined,
         // Auto-seed the default checklist so every inspector starts from the
         // same baseline. Items remain editable / deletable per inspection.
         checklist: {
@@ -192,6 +260,8 @@ export class VehicleInspectionsService {
       data.marketPrice =
         dto.marketPrice === null ? null : new Prisma.Decimal(dto.marketPrice);
     if (dto.notes !== undefined) data.notes = dto.notes;
+    if (dto.sharedWithIds !== undefined)
+      data.sharedWith = { set: dto.sharedWithIds.map((id) => ({ id })) };
 
     // Auto-stamp completedAt when moving to DONE for the first time.
     if (dto.status === 'DONE' && !data.completedAt) {
@@ -315,9 +385,10 @@ export class VehicleInspectionsService {
 
   // ─── helpers ──────────────────────────────────────────────────────
 
-  // Enforce: dueAt must be (a) at least 48h from now, and (b) strictly before
-  // the scheduled auction datetime when the listing has one. Future-sale lots
-  // (no saleDate) have no upper bound.
+  // Enforce: dueAt must (a) fall on a weekday — Copart closed Sat/Sun —
+  // (b) be at least 48 *business* hours from now (weekend hours don't count),
+  // and (c) be strictly before the scheduled auction datetime when the
+  // listing has one. Future-sale lots (no saleDate) have no upper bound.
   private async validateRequestedWindow(
     dto: CreateVehicleInspectionDto,
   ): Promise<void> {
@@ -327,11 +398,17 @@ export class VehicleInspectionsService {
       throw new BadRequestException('dueAt is not a valid date');
     }
 
+    if (isWeekend(due)) {
+      throw new BadRequestException(
+        'Deadline must be a weekday — Copart is closed Sat/Sun',
+      );
+    }
+
     const now = new Date();
-    const earliest = new Date(now.getTime() + MIN_LEAD_HOURS * 60 * 60 * 1000);
+    const earliest = addBusinessHours(now, MIN_LEAD_HOURS);
     if (due < earliest) {
       throw new BadRequestException(
-        `Requested date must be at least ${MIN_LEAD_HOURS}h from now`,
+        `Requested date must be at least ${MIN_LEAD_HOURS} business hours from now (weekends excluded)`,
       );
     }
 

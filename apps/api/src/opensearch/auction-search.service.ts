@@ -177,26 +177,36 @@ export class AuctionSearchService {
       });
     }
 
-    // Source filter
+    // ── Exact-match filters ────────────────────────────────────────────
+    //
+    // Every string field in the production index is `text` with a `.keyword`
+    // subfield (dynamic mapping legacy). `term/terms` queries MUST hit the
+    // `.keyword` subfield — running them against the analyzed text would
+    // miss any uppercase value, and lowercasing the query before sending
+    // it makes things worse (the indexed keyword is case-sensitive — the
+    // dropdowns show the canonical "CHEVROLET", "Pure Sale", etc.).
+    // No .toLowerCase() on any of these; pass the user's selection through.
+
+    // Source filter (text+keyword, e.g. "copart")
     if (dto.source && dto.source.length > 0) {
-      filter.push({ terms: { source: dto.source } });
+      filter.push({ terms: { 'source.keyword': dto.source } });
     }
 
     // Source IDs filter (for favorites by lot number)
     if (dto.sourceIds) {
       const ids = dto.sourceIds.split(',').map(id => id.trim());
-      filter.push({ terms: { sourceId: ids } });
+      filter.push({ terms: { 'sourceId.keyword': ids } });
     }
 
-    // IDs filter (for favorites by UUID)
+    // IDs filter (for favorites by UUID) — UUIDs are stored as text+keyword too
     if (dto.ids) {
       const ids = dto.ids.split(',').map(id => id.trim());
-      filter.push({ terms: { id: ids } });
+      filter.push({ terms: { 'id.keyword': ids } });
     }
 
     // VIN filter
     if (dto.vin) {
-      filter.push({ term: { vin: dto.vin.toUpperCase() } });
+      filter.push({ term: { 'vin.keyword': dto.vin.toUpperCase() } });
     }
 
     // Year filters
@@ -211,69 +221,57 @@ export class AuctionSearchService {
 
     // Make filter
     if (dto.make && dto.make.length > 0) {
-      filter.push({
-        terms: { 'make.keyword': dto.make.map(m => m.toLowerCase()) },
-      });
+      filter.push({ terms: { 'make.keyword': dto.make } });
     }
 
     // Model filter
     if (dto.model && dto.model.length > 0) {
-      filter.push({
-        terms: { 'model.keyword': dto.model.map(m => m.toLowerCase()) },
-      });
+      filter.push({ terms: { 'model.keyword': dto.model } });
     }
 
     // Body type filter
     if (dto.bodyType && dto.bodyType.length > 0) {
-      filter.push({
-        terms: { bodyType: dto.bodyType.map(b => b.toLowerCase()) },
-      });
+      filter.push({ terms: { 'bodyType.keyword': dto.bodyType } });
     }
 
     // Trim filter
     if (dto.trim && dto.trim.length > 0) {
-      filter.push({
-        terms: { 'trim': dto.trim },
-      });
+      filter.push({ terms: { 'trim.keyword': dto.trim } });
     }
 
     // Yard name filter
     if (dto.yardName && dto.yardName.length > 0) {
-      filter.push({
-        terms: { yardName: dto.yardName },
-      });
+      filter.push({ terms: { 'yardName.keyword': dto.yardName } });
     }
 
     // Seller name filter
     if (dto.sellerName && dto.sellerName.length > 0) {
-      filter.push({
-        terms: { sellerName: dto.sellerName },
-      });
+      filter.push({ terms: { 'sellerName.keyword': dto.sellerName } });
     }
 
-    // Exclude unknown sellers
+    // Exclude unknown sellers (existence works on text fields too)
     if (dto.excludeUnknownSellers) {
       filter.push({ exists: { field: 'sellerName' } });
     }
 
     // Transmission filter
     if (dto.transmission) {
-      filter.push({ term: { transmission: dto.transmission.toLowerCase() } });
+      filter.push({ term: { 'transmission.keyword': dto.transmission } });
     }
 
     // Fuel type filter
     if (dto.fuelType) {
-      filter.push({ term: { fuelType: dto.fuelType.toLowerCase() } });
+      filter.push({ term: { 'fuelType.keyword': dto.fuelType } });
     }
 
     // Drivetrain filter
     if (dto.drivetrain) {
-      filter.push({ term: { drivetrain: dto.drivetrain.toLowerCase() } });
+      filter.push({ term: { 'drivetrain.keyword': dto.drivetrain } });
     }
 
     // Location state filter
     if (dto.locationState && dto.locationState.length > 0) {
-      filter.push({ terms: { locationState: dto.locationState } });
+      filter.push({ terms: { 'locationState.keyword': dto.locationState } });
     }
 
     // Odometer range
@@ -286,7 +284,7 @@ export class AuctionSearchService {
 
     // Odometer brand filter
     if (dto.odometerBrand) {
-      filter.push({ term: { odometerBrand: dto.odometerBrand } });
+      filter.push({ term: { 'odometerBrand.keyword': dto.odometerBrand } });
     }
 
     // === COPART SPECIFIC FILTERS ===
@@ -294,47 +292,45 @@ export class AuctionSearchService {
     // Damage description filter
     if (dto.damageDescription && dto.damageDescription.length > 0) {
       filter.push({
-        terms: { 'damageDescription.keyword': dto.damageDescription.map(d => d.toLowerCase()) },
+        terms: { 'damageDescription.keyword': dto.damageDescription },
       });
     }
 
     // Sale status filter
     if (dto.saleStatus) {
-      filter.push({ term: { saleStatus: dto.saleStatus.toLowerCase() } });
+      filter.push({ term: { 'saleStatus.keyword': dto.saleStatus } });
     }
 
     // Sale title type filter
     if (dto.saleTitleType && dto.saleTitleType.length > 0) {
       filter.push({
-        terms: { saleTitleType: dto.saleTitleType.map(t => t.toLowerCase()) },
+        terms: { 'saleTitleType.keyword': dto.saleTitleType },
       });
     }
 
     // Has keys filter
     if (dto.hasKeys) {
-      filter.push({ term: { hasKeys: dto.hasKeys.toLowerCase() } });
+      filter.push({ term: { 'hasKeys.keyword': dto.hasKeys } });
     }
 
     // Runs/Drives filter
     if (dto.runsDrives) {
-      filter.push({ term: { runsDrives: dto.runsDrives } });
+      filter.push({ term: { 'runsDrives.keyword': dto.runsDrives } });
     }
 
     // Lot condition code filter
     if (dto.lotCondCode) {
-      filter.push({ term: { lotCondCode: dto.lotCondCode } });
+      filter.push({ term: { 'lotCondCode.keyword': dto.lotCondCode } });
     }
 
     // Wholesale filter
     if (dto.wholesale) {
-      filter.push({ term: { wholesale: dto.wholesale.toLowerCase() } });
+      filter.push({ term: { 'wholesale.keyword': dto.wholesale } });
     }
 
     // Sale light filter
     if (dto.saleLight && dto.saleLight.length > 0) {
-      filter.push({
-        terms: { saleLight: dto.saleLight.map(s => s.toLowerCase()) },
-      });
+      filter.push({ terms: { 'saleLight.keyword': dto.saleLight } });
     }
 
     // Buy-It-Now filter (only listings with a buy-it-now price > 0)
@@ -377,7 +373,7 @@ export class AuctionSearchService {
 
     // Carfax report existence filter (IDs resolved from PostgreSQL)
     if (carfaxSourceIds && carfaxSourceIds.length > 0) {
-      filter.push({ terms: { sourceId: carfaxSourceIds } });
+      filter.push({ terms: { 'sourceId.keyword': carfaxSourceIds } });
     }
 
     // Build final query
@@ -402,6 +398,8 @@ export class AuctionSearchService {
   }
 
   private getSortField(sortBy: string): string {
+    // Same rule as filters: sorting on a text field throws — use the
+    // .keyword subfield for every string. Numeric / date fields plain.
     const fieldMap: Record<string, string> = {
       year: 'year',
       make: 'make.keyword',
@@ -411,8 +409,8 @@ export class AuctionSearchService {
       estRetailValue: 'estRetailValue',
       createdAt: 'createdAt',
       dom: 'dom',
-      locationState: 'locationState',
-      saleTitleType: 'saleTitleType',
+      locationState: 'locationState.keyword',
+      saleTitleType: 'saleTitleType.keyword',
     };
     return fieldMap[sortBy] || 'createdAt';
   }

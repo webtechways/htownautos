@@ -7,6 +7,9 @@ import { UpdateMediaDto } from './dto/update-media.dto';
 import { QueryMediaDto } from './dto/query-media.dto';
 import { PresignMediaDto } from './dto/presign-media.dto';
 import { ConfirmMediaDto } from './dto/confirm-media.dto';
+import { InitMultipartDto } from './dto/init-multipart.dto';
+import { CompleteMultipartDto } from './dto/complete-multipart.dto';
+import { AbortMultipartDto } from './dto/abort-multipart.dto';
 import { MediaEntity } from './entities/media.entity';
 import { PaginatedResponseDto } from '@htownautos/common';
 import sharp from 'sharp';
@@ -341,6 +344,203 @@ export class MediaService {
       }
       throw error;
     }
+  }
+
+  // ─── Multipart upload (videos / large files) ──────────────────────────
+  //
+  // The browser streams a file in N parts (~8MB each) directly to S3 using
+  // presigned PUT URLs, then asks us to "complete" the multipart so S3
+  // reassembles the object. We model that as init → (parts uploaded by
+  // browser) → complete | abort. Smaller files keep using presign/confirm.
+
+  /** Hard part size for multipart uploads. 8MB is well over S3's 5MB
+   *  minimum and is a reasonable single-request size on phone uplinks. */
+  private readonly MULTIPART_PART_SIZE = 8 * 1024 * 1024;
+  /** Cap on parts per upload — matches S3's hard limit. */
+  private readonly MULTIPART_MAX_PARTS = 10000;
+
+  /** Pick the same S3 folder the presign flow uses, so multipart and
+   *  presign uploads end up co-located by association. */
+  private folderForDto(dto: { vehicleId?: string; buyerId?: string; partId?: string }): string {
+    if (dto.buyerId) return `buyers/${dto.buyerId}`;
+    if (dto.vehicleId) return `vehicles/${dto.vehicleId}`;
+    if (dto.partId) return `parts/${dto.partId}`;
+    return 'uploads';
+  }
+
+  /** Step 1: validate, generate the S3 key, init the multipart on S3,
+   *  presign N upload-part URLs and hand them back to the client. */
+  async initMultipart(dto: InitMultipartDto): Promise<{
+    uploadId: string;
+    key: string;
+    partUrls: { partNumber: number; url: string }[];
+    partSize: number;
+    partCount: number;
+  }> {
+    // Validate FK targets exist (same checks as presign — keeps the two
+    // entry points behaviorally identical).
+    if (dto.vehicleId) {
+      const exists = await this.prisma.vehicle.findUnique({
+        where: { id: dto.vehicleId },
+        select: { id: true },
+      });
+      if (!exists) {
+        throw new NotFoundException(`Vehicle with ID ${dto.vehicleId} not found`);
+      }
+    }
+    if (dto.buyerId) {
+      const exists = await this.prisma.buyer.findUnique({
+        where: { id: dto.buyerId },
+        select: { id: true },
+      });
+      if (!exists) {
+        throw new NotFoundException(`Buyer with ID ${dto.buyerId} not found`);
+      }
+    }
+    if (dto.partId) {
+      const exists = await this.prisma.part.findUnique({
+        where: { id: dto.partId },
+        select: { id: true },
+      });
+      if (!exists) {
+        throw new NotFoundException(`Part with ID ${dto.partId} not found`);
+      }
+    }
+
+    const partSize = this.MULTIPART_PART_SIZE;
+    const partCount = Math.ceil(dto.fileSize / partSize);
+    if (partCount < 1 || partCount > this.MULTIPART_MAX_PARTS) {
+      throw new BadRequestException(
+        `Invalid part count ${partCount} for file size ${dto.fileSize}`,
+      );
+    }
+
+    const folder = this.folderForDto(dto);
+    const fileExtension = dto.filename.split('.').pop() || 'bin';
+    const key = this.s3Service.generateKey(folder, fileExtension);
+
+    const { uploadId } = await this.s3Service.initMultipartUpload(key, dto.contentType);
+
+    // Presign all parts in parallel so the client can start uploading
+    // immediately. Presigned URLs expire after 1h — plenty for any
+    // single upload, way less than the multipart's own lifetime.
+    const partUrls = await Promise.all(
+      Array.from({ length: partCount }, (_, i) => i + 1).map(async (partNumber) => ({
+        partNumber,
+        url: await this.s3Service.presignUploadPart(key, uploadId, partNumber),
+      })),
+    );
+
+    this.logger.log(
+      `Multipart init: key=${key} parts=${partCount} size=${dto.fileSize}`,
+    );
+
+    return { uploadId, key, partUrls, partSize, partCount };
+  }
+
+  /** Step 2: finalize the multipart, verify the object, create the
+   *  Media row. Mirrors confirmUpload(...) but without the 20MB cap. */
+  async completeMultipart(dto: CompleteMultipartDto): Promise<MediaEntity> {
+    // Tell S3 to assemble the parts. If a part is missing / ETag is
+    // wrong / order is wrong, this throws with a clear error.
+    await this.s3Service.completeMultipartUpload(
+      dto.key,
+      dto.uploadId,
+      dto.parts.map((p) => ({ partNumber: p.partNumber, etag: p.etag })),
+    );
+
+    // Confirm the final object exists and get its real size/contentType.
+    const head = await this.s3Service.headObject(dto.key);
+    if (!head.exists) {
+      throw new BadRequestException(
+        'Multipart upload completed but object is not visible in S3',
+      );
+    }
+
+    // FK existence checks again (object is already in S3; we still want
+    // to fail loud rather than orphan it silently).
+    if (dto.vehicleId) {
+      const exists = await this.prisma.vehicle.findUnique({
+        where: { id: dto.vehicleId },
+        select: { id: true },
+      });
+      if (!exists) {
+        throw new NotFoundException(`Vehicle with ID ${dto.vehicleId} not found`);
+      }
+    }
+    if (dto.buyerId) {
+      const exists = await this.prisma.buyer.findUnique({
+        where: { id: dto.buyerId },
+        select: { id: true },
+      });
+      if (!exists) {
+        throw new NotFoundException(`Buyer with ID ${dto.buyerId} not found`);
+      }
+    }
+    if (dto.partId) {
+      const exists = await this.prisma.part.findUnique({
+        where: { id: dto.partId },
+        select: { id: true },
+      });
+      if (!exists) {
+        throw new NotFoundException(`Part with ID ${dto.partId} not found`);
+      }
+    }
+
+    const isPrivate = !!dto.buyerId || !(dto.isPublic ?? true);
+    const publicUrl = this.s3Service.buildPublicUrl(dto.key);
+
+    try {
+      const media = await this.prisma.media.create({
+        data: {
+          filename: dto.filename,
+          url: publicUrl,
+          path: dto.key,
+          mimeType: dto.contentType,
+          size: head.contentLength,
+          mediaType: dto.mediaType,
+          category: dto.category,
+          title: dto.title,
+          description: dto.description,
+          alt: dto.alt,
+          storageProvider: 's3',
+          storageBucket: process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_PUBLIC || '',
+          storageKey: dto.key,
+          isPublic: !isPrivate,
+          isActive: true,
+          ...(dto.vehicleId && { vehicleId: dto.vehicleId }),
+          ...(dto.buyerId && { buyerId: dto.buyerId }),
+          ...(dto.partId && { partId: dto.partId }),
+          ...(dto.inspectionId && { inspectionId: dto.inspectionId }),
+          ...(dto.inspectionChecklistItemId && {
+            inspectionChecklistItemId: dto.inspectionChecklistItemId,
+          }),
+          ...(dto.inspectionRequestItemId && {
+            inspectionRequestItemId: dto.inspectionRequestItemId,
+          }),
+          ...(dto.carfaxReportId && { carfaxReportId: dto.carfaxReportId }),
+        },
+      });
+
+      return new MediaEntity(media);
+    } catch (error) {
+      this.logger.warn(`DB create failed after multipart, cleaning up S3 key: ${dto.key}`);
+      try {
+        await this.s3Service.deleteFile(dto.key);
+      } catch (cleanupErr) {
+        this.logger.error(
+          `Failed to clean up orphaned S3 object: ${dto.key}`,
+          cleanupErr,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /** Step 2 (failure path): tell S3 to discard the in-flight parts. */
+  async abortMultipart(dto: AbortMultipartDto): Promise<{ aborted: true }> {
+    await this.s3Service.abortMultipartUpload(dto.key, dto.uploadId);
+    return { aborted: true };
   }
 
   async findAll(query: QueryMediaDto): Promise<PaginatedResponseDto<MediaEntity>> {

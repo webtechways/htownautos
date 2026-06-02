@@ -5,6 +5,10 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
   type ObjectCannedACL,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -301,5 +305,107 @@ export class S3Service {
       }
     }
     await Promise.all(tasks);
+  }
+
+  /**
+   * Start an S3 multipart upload. Returns the upload session id that the
+   * caller will reference when uploading individual parts and when
+   * completing/aborting the upload.
+   */
+  async initMultipartUpload(
+    key: string,
+    contentType: string,
+  ): Promise<{ uploadId: string }> {
+    const command = new CreateMultipartUploadCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ContentType: contentType,
+    });
+    const response = await this.s3Client.send(command);
+    if (!response.UploadId) {
+      throw new Error('S3 did not return an UploadId for multipart init');
+    }
+    this.logger.log(`Multipart upload started: ${key} (uploadId=${response.UploadId})`);
+    return { uploadId: response.UploadId };
+  }
+
+  /**
+   * Presign a single part of an in-flight multipart upload. The browser
+   * will PUT the chunk bytes to this URL directly and read the `ETag` from
+   * the response header to pass back into `completeMultipartUpload`.
+   *
+   * Part numbers are 1-indexed (S3 contract).
+   */
+  async presignUploadPart(
+    key: string,
+    uploadId: string,
+    partNumber: number,
+    expiresIn = 3600,
+  ): Promise<string> {
+    const command = new UploadPartCommand({
+      Bucket: this.bucket,
+      Key: key,
+      UploadId: uploadId,
+      PartNumber: partNumber,
+    });
+    return getSignedUrl(this.s3Client, command, { expiresIn });
+  }
+
+  /**
+   * Finalize a multipart upload. `parts` must be sorted ascending by
+   * partNumber; S3 reassembles in that order. ETags are passed through
+   * verbatim — DO Spaces (and some other S3-compatibles) include the
+   * surrounding quotes and re-quoting / unquoting trips them up.
+   */
+  async completeMultipartUpload(
+    key: string,
+    uploadId: string,
+    parts: { partNumber: number; etag: string }[],
+  ): Promise<void> {
+    if (!parts.length) {
+      throw new Error('completeMultipartUpload called with empty parts array');
+    }
+    const sorted = [...parts].sort((a, b) => a.partNumber - b.partNumber);
+    const command = new CompleteMultipartUploadCommand({
+      Bucket: this.bucket,
+      Key: key,
+      UploadId: uploadId,
+      MultipartUpload: {
+        Parts: sorted.map((p) => ({ ETag: p.etag, PartNumber: p.partNumber })),
+      },
+    });
+    await this.s3Client.send(command);
+    this.logger.log(`Multipart upload completed: ${key} (${sorted.length} parts)`);
+  }
+
+  /**
+   * Abort an in-flight multipart upload. Idempotent: if S3 reports the
+   * upload no longer exists, we treat it as a successful no-op so callers
+   * can safely retry abort.
+   *
+   * Always call this when a multipart upload fails mid-way — otherwise
+   * the uploaded parts stay in S3 and keep accruing storage cost.
+   */
+  async abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+    try {
+      const command = new AbortMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+      });
+      await this.s3Client.send(command);
+      this.logger.log(`Multipart upload aborted: ${key} (uploadId=${uploadId})`);
+    } catch (error: any) {
+      // S3 returns NoSuchUpload when the upload was already aborted or
+      // completed; that's fine — keep the call idempotent.
+      if (
+        error?.name === 'NoSuchUpload' ||
+        error?.$metadata?.httpStatusCode === 404
+      ) {
+        this.logger.log(`Multipart upload already gone: ${key}`);
+        return;
+      }
+      throw error;
+    }
   }
 }

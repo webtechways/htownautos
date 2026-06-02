@@ -34,6 +34,9 @@ import { UpdateMediaDto } from './dto/update-media.dto';
 import { QueryMediaDto } from './dto/query-media.dto';
 import { PresignMediaDto } from './dto/presign-media.dto';
 import { ConfirmMediaDto } from './dto/confirm-media.dto';
+import { InitMultipartDto } from './dto/init-multipart.dto';
+import { CompleteMultipartDto } from './dto/complete-multipart.dto';
+import { AbortMultipartDto } from './dto/abort-multipart.dto';
 import { MediaEntity } from './entities/media.entity';
 import { PaginatedResponseDto } from '@htownautos/common';
 
@@ -297,6 +300,70 @@ export class MediaController {
     @Body(ValidationPipe) dto: ConfirmMediaDto,
   ): Promise<MediaEntity> {
     return this.mediaService.confirmUpload(dto);
+  }
+
+  // ─── Multipart upload (large files / videos) ────────────────────────────
+
+  @Post('multipart/init')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Start an S3 multipart upload (videos / large files)',
+    description:
+      'Returns an uploadId, an S3 key and a list of presigned PUT URLs — one per part. ' +
+      'The browser uploads each part directly to S3 in parallel, then calls /media/multipart/complete ' +
+      'with the ETags S3 returned. On failure, call /media/multipart/abort to discard the parts.',
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Multipart session created' })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Invalid contentType or fileSize' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Vehicle / Buyer / Part not found' })
+  async multipartInit(
+    @Body(ValidationPipe) dto: InitMultipartDto,
+  ): Promise<{
+    uploadId: string;
+    key: string;
+    partUrls: { partNumber: number; url: string }[];
+    partSize: number;
+    partCount: number;
+  }> {
+    return this.mediaService.initMultipart(dto);
+  }
+
+  @Post('multipart/complete')
+  @AuditLog({
+    action: 'create',
+    resource: 'media',
+    level: 'medium',
+    pii: false,
+    compliance: ['dealertrack', 'glba'],
+  })
+  @ApiOperation({
+    summary: 'Complete a multipart upload and create the media record',
+    description:
+      'Tells S3 to reassemble the parts into the final object, verifies the object exists, ' +
+      'then creates the Media DB record with the same FK wiring as /media/confirm.',
+  })
+  @ApiResponse({ status: HttpStatus.CREATED, description: 'Media record created', type: MediaEntity })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Multipart completion failed or object missing in S3' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Vehicle / Buyer / Part not found' })
+  async multipartComplete(
+    @Body(ValidationPipe) dto: CompleteMultipartDto,
+  ): Promise<MediaEntity> {
+    return this.mediaService.completeMultipart(dto);
+  }
+
+  @Post('multipart/abort')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Abort an in-flight multipart upload',
+    description:
+      'Discards all uploaded parts so they stop accruing storage cost. Idempotent — safe to call ' +
+      'after a partial failure or when the user cancels mid-upload.',
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Multipart upload aborted' })
+  async multipartAbort(
+    @Body(ValidationPipe) dto: AbortMultipartDto,
+  ): Promise<{ aborted: true }> {
+    return this.mediaService.abortMultipart(dto);
   }
 
   @Get()

@@ -2,14 +2,21 @@ import 'dotenv/config';
 (BigInt.prototype as any).toJSON = function () { return this.toString(); };
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { json } from 'express';
 import { AppModule } from './app.module';
 import { LoggingInterceptor } from './logging.interceptor';
 
 async function bootstrap() {
   const logger = new Logger('ImageService');
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log', 'debug'],
   });
+
+  // Bump the JSON body limit — the multipart "complete" payload carries
+  // every part's ETag (up to 10k parts ≈ ~800KB worst case). Default 100KB
+  // would 413 on long videos.
+  app.use(json({ limit: '2mb' }));
 
   app.enableCors({
     origin: process.env.ALLOWED_ORIGINS?.split(',') || ['https://app.htownautos.com'],

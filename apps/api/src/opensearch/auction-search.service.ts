@@ -418,57 +418,63 @@ export class AuctionSearchService {
   }
 
   private buildAggregations(): any {
+    // The production index was first created by OpenSearch's dynamic
+    // mapping, which produces every string field as `text` with a
+    // `.keyword` subfield. Aggregations / sorts must hit the keyword
+    // subfield — running `terms { field: 'source' }` against a text
+    // field fails with `illegal_argument_exception`. Numeric / date
+    // fields (year) stay plain.
     return {
       sources: {
-        terms: { field: 'source', size: 10 },
+        terms: { field: 'source.keyword', size: 10 },
       },
       makes: {
-        terms: { field: 'make.raw', size: 50 },
+        terms: { field: 'make.keyword', size: 50 },
       },
       models: {
-        terms: { field: 'model.raw', size: 100 },
+        terms: { field: 'model.keyword', size: 100 },
       },
       trims: {
-        terms: { field: 'trim', size: 100 },
+        terms: { field: 'trim.keyword', size: 100 },
       },
       years: {
         terms: { field: 'year', size: 30, order: { _key: 'desc' } },
       },
       states: {
-        terms: { field: 'locationState', size: 60 },
+        terms: { field: 'locationState.keyword', size: 60 },
       },
       bodyTypes: {
-        terms: { field: 'bodyType', size: 20 },
+        terms: { field: 'bodyType.keyword', size: 20 },
       },
       transmissions: {
-        terms: { field: 'transmission', size: 10 },
+        terms: { field: 'transmission.keyword', size: 10 },
       },
       fuelTypes: {
-        terms: { field: 'fuelType', size: 10 },
+        terms: { field: 'fuelType.keyword', size: 10 },
       },
       damageTypes: {
-        terms: { field: 'damageDescription.raw', size: 30 },
+        terms: { field: 'damageDescription.keyword', size: 30 },
       },
       saleStatuses: {
-        terms: { field: 'saleStatus', size: 10 },
+        terms: { field: 'saleStatus.keyword', size: 10 },
       },
       titleTypes: {
-        terms: { field: 'saleTitleType', size: 20 },
+        terms: { field: 'saleTitleType.keyword', size: 20 },
       },
       yards: {
-        terms: { field: 'yardName', size: 100 },
+        terms: { field: 'yardName.keyword', size: 100 },
       },
       sellers: {
-        terms: { field: 'sellerName', size: 200 },
+        terms: { field: 'sellerName.keyword', size: 200 },
       },
       lotCondCodes: {
-        terms: { field: 'lotCondCode', size: 20 },
+        terms: { field: 'lotCondCode.keyword', size: 20 },
       },
       runsDrivesOptions: {
-        terms: { field: 'runsDrives', size: 10 },
+        terms: { field: 'runsDrives.keyword', size: 10 },
       },
       saleLights: {
-        terms: { field: 'saleLight', size: 10 },
+        terms: { field: 'saleLight.keyword', size: 10 },
       },
     };
   }

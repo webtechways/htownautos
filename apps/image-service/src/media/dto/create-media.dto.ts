@@ -29,6 +29,9 @@ export enum MediaCategory {
   INSPECTION_REQUEST = 'inspection_request', // images attached to specificRequest
   INSPECTION_ITEM = 'inspection_item',       // per-checklist-item photos/videos
   INSPECTION_VOICE = 'inspection_voice',     // voice note (audio)
+  // Inspection-level "full walkaround" videos shown above the checklist.
+  INSPECTION_FULL_EXTERIOR_VIDEO = 'inspection_full_exterior_video',
+  INSPECTION_FULL_INTERIOR_VIDEO = 'inspection_full_interior_video',
 }
 
 export class CreateMediaDto {

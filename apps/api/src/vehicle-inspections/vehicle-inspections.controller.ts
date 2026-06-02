@@ -84,7 +84,7 @@ export class VehicleInspectionsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Delete an inspection (cascades the checklist + all inspection media — carfax records are NOT touched).',
+      'Delete an inspection (cascades the checklist + all inspection media — carfax records are NOT touched). Also deletes the underlying S3 objects (best-effort).',
   })
   @ApiParam({ name: 'id', description: 'Inspection UUID' })
   remove(
@@ -92,6 +92,19 @@ export class VehicleInspectionsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.service.remove(id, tenantId);
+  }
+
+  @Delete()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Bulk delete inspections by ids. All-or-nothing: if any id is not in the caller tenant, returns 404 and nothing is deleted. S3 cleanup is best-effort.',
+  })
+  removeMany(
+    @CurrentTenant() tenantId: string,
+    @Body() body: { ids: string[] },
+  ) {
+    return this.service.removeMany(body?.ids ?? [], tenantId);
   }
 
   // ─── checklist items ──────────────────────────────────────────────

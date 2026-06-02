@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
+import { S3Service } from '@htownautos/common';
 import { CreateVehicleInspectionDto } from './dto/create-vehicle-inspection.dto';
 import { UpdateVehicleInspectionDto } from './dto/update-vehicle-inspection.dto';
 import { ListVehicleInspectionsDto } from './dto/list-vehicle-inspections.dto';
@@ -127,7 +129,12 @@ function serialize(row: any) {
 
 @Injectable()
 export class VehicleInspectionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(VehicleInspectionsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly s3: S3Service,
+  ) {}
 
   // ─── inspections ──────────────────────────────────────────────────
 
@@ -278,8 +285,88 @@ export class VehicleInspectionsService {
 
   async remove(id: string, tenantId: string) {
     await this.ensureInspection(id, tenantId);
+    const keys = await this.collectInspectionStorageKeys([id]);
     await this.prisma.vehicleInspection.delete({ where: { id } });
-    return { deleted: true };
+    // S3 cleanup is best-effort and intentionally async: a missed key
+    // costs cents in storage, but blocking the response on S3 retries
+    // makes the UI feel broken when the API container has bad network.
+    this.cleanupS3Keys(keys);
+    return { deleted: true, mediaCleaned: keys.length };
+  }
+
+  /**
+   * Delete multiple inspections in one call. Every id is validated against
+   * the tenant before any delete happens — if any id doesn't belong to
+   * this tenant we 404, so the caller can't half-delete.
+   */
+  async removeMany(
+    ids: string[],
+    tenantId: string,
+  ): Promise<{ deleted: number; mediaCleaned: number }> {
+    if (!ids.length) return { deleted: 0, mediaCleaned: 0 };
+    // De-dup just in case.
+    const uniqueIds = Array.from(new Set(ids));
+
+    // Tenant-scoped existence check: must match every requested id.
+    const found = await this.prisma.vehicleInspection.findMany({
+      where: { id: { in: uniqueIds }, tenantId: tenantId || undefined },
+      select: { id: true },
+    });
+    if (found.length !== uniqueIds.length) {
+      throw new NotFoundException(
+        'One or more inspections were not found for this tenant',
+      );
+    }
+
+    const keys = await this.collectInspectionStorageKeys(uniqueIds);
+    const result = await this.prisma.vehicleInspection.deleteMany({
+      where: { id: { in: uniqueIds }, tenantId: tenantId || undefined },
+    });
+    this.cleanupS3Keys(keys);
+    return { deleted: result.count, mediaCleaned: keys.length };
+  }
+
+  /**
+   * Gather every S3 storage key tied to a set of inspections — top-level
+   * inspection media + per-checklist-item media + per-request-item media.
+   * Carfax media is intentionally NOT touched (lives under its own model
+   * and may be referenced elsewhere).
+   */
+  private async collectInspectionStorageKeys(
+    inspectionIds: string[],
+  ): Promise<string[]> {
+    const rows = await this.prisma.media.findMany({
+      where: {
+        OR: [
+          { inspectionId: { in: inspectionIds } },
+          { inspectionChecklistItem: { inspectionId: { in: inspectionIds } } },
+          { inspectionRequestItem: { inspectionId: { in: inspectionIds } } },
+        ],
+      },
+      select: { storageKey: true },
+    });
+    return rows
+      .map((r) => r.storageKey)
+      .filter((k): k is string => !!k);
+  }
+
+  /**
+   * Fire-and-forget S3 cleanup. Errors are logged but never propagated —
+   * orphaned objects are recoverable (manual prefix sweep) but breaking
+   * the delete response is not.
+   */
+  private cleanupS3Keys(keys: string[]): void {
+    if (!keys.length) return;
+    void Promise.allSettled(
+      keys.map((key) => this.s3.deleteFile(key)),
+    ).then((results) => {
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed > 0) {
+        this.logger.warn(
+          `S3 cleanup: ${failed}/${keys.length} keys failed to delete`,
+        );
+      }
+    });
   }
 
   // ─── checklist items ──────────────────────────────────────────────

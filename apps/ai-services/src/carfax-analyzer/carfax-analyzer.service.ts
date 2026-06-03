@@ -163,6 +163,29 @@ Be thorough and specific. Include dates and mileage where available. This is a p
     return reports;
   }
 
+  /**
+   * Find every Carfax report tied to a vehicle, regardless of which UI
+   * created it. A car can be identified by VIN, by lot number, or both —
+   * we return the union so the inspection detail page (which has both)
+   * surfaces a carfax uploaded earlier from /auction/:id or /vehicles.
+   */
+  async getReportsByVehicle(params: { vin?: string | null; lotNumber?: string | null }) {
+    const orClauses: any[] = [];
+    if (params.vin) orClauses.push({ vin: params.vin });
+    if (params.lotNumber) {
+      try {
+        orClauses.push({ auctionListingId: BigInt(params.lotNumber) });
+      } catch {
+        // Non-numeric lot number — skip; VIN lookup may still match.
+      }
+    }
+    if (!orClauses.length) return [];
+    return this.prisma.carfaxReport.findMany({
+      where: { OR: orClauses },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   /** Batch check which auction listing IDs have at least one CarfaxReport */
   async batchCheckHasReports(auctionListingIds: string[]): Promise<string[]> {
     if (auctionListingIds.length === 0) return [];

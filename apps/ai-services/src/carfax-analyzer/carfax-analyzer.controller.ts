@@ -62,6 +62,24 @@ export class CarfaxAnalyzerController {
     return { data: idsWithReports };
   }
 
+  @Get('by-vehicle')
+  @ApiOperation({
+    summary:
+      'Find Carfax reports for a vehicle by VIN and/or lot number (returns the union).',
+  })
+  @ApiQuery({ name: 'vin', required: false })
+  @ApiQuery({ name: 'lotNumber', required: false })
+  async getByVehicle(
+    @Query('vin') vin?: string,
+    @Query('lotNumber') lotNumber?: string,
+  ) {
+    const reports = await this.carfaxAnalyzerService.getReportsByVehicle({
+      vin: vin || null,
+      lotNumber: lotNumber || null,
+    });
+    return { data: reports };
+  }
+
   @Get(':auctionListingId')
   @ApiOperation({ summary: 'Get existing Carfax reports for an auction listing' })
   @ApiParam({ name: 'auctionListingId', description: 'Auction listing ID' })

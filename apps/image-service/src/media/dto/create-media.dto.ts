@@ -32,6 +32,7 @@ export enum MediaCategory {
   // Inspection-level "full walkaround" videos shown above the checklist.
   INSPECTION_FULL_EXTERIOR_VIDEO = 'inspection_full_exterior_video',
   INSPECTION_FULL_INTERIOR_VIDEO = 'inspection_full_interior_video',
+  INSPECTION_FULL_ENGINE_VIDEO = 'inspection_full_engine_video',
 }
 
 export class CreateMediaDto {

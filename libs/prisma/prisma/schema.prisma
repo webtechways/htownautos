@@ -474,11 +474,11 @@ model VehicleEngine {
 }
 
 model Tenant {
-  id                        String                 @id @default(uuid())
-  clerkOrgId                String?                @unique @map("clerk_org_id") // Clerk Organization ID
+  id                        String    @id @default(uuid())
+  clerkOrgId                String?   @unique @map("clerk_org_id") // Clerk Organization ID
   name                      String
-  slug                      String                 @unique
-  subdomain                 String?                @unique // subdomain.htownautos.com (nullable for migration)
+  slug                      String    @unique
+  subdomain                 String?   @unique // subdomain.htownautos.com (nullable for migration)
   businessName              String?
   taxId                     String?
   phone                     String?
@@ -488,73 +488,73 @@ model Tenant {
   city                      String?
   state                     String?
   zipCode                   String?
-  country                   String                 @default("USA")
+  country                   String    @default("USA")
   settings                  Json?
   twilioMessagingServiceSid String? // Twilio Messaging Service ID for SMS
   logo                      String?
-  isActive                  Boolean                @default(true)
+  isActive                  Boolean   @default(true)
   deletedAt                 DateTime?
-  createdAt                 DateTime               @default(now())
-  updatedAt                 DateTime               @updatedAt
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
   // Email provisioning (Postmark + Cloudflare DNS)
-  postmarkDomainId          Int?
-  postmarkDkimVerified      Boolean                @default(false)
-  postmarkReturnPathVerified Boolean               @default(false)
-  emailProvisionedAt        DateTime?
-  cloudflareDnsRecordIds    Json?
+  postmarkDomainId           Int?
+  postmarkDkimVerified       Boolean   @default(false)
+  postmarkReturnPathVerified Boolean   @default(false)
+  emailProvisionedAt         DateTime?
+  cloudflareDnsRecordIds     Json?
   // Per-tenant Postmark server (one server per tenant to support unique inbound domains)
-  postmarkServerId          Int?
-  postmarkServerToken       String?
-  postmarkWebhookId         Int?
+  postmarkServerId           Int?
+  postmarkServerToken        String?
+  postmarkWebhookId          Int?
 
-  activities                Activity[]
-  activityStatuses          ActivityStatus[]
-  activityTypes             ActivityType[]
-  auditLogs                 AuditLog[]
-  buyers                    Buyer[]
-  dealStatuses              DealStatus[]
-  deals                     Deal[]
-  extraExpenses             ExtraExpense[]
-  leadSources               LeadSource[]
-  leads                     Lead[]
-  media                     Media[]
-  metas                     Meta[]
-  notifications             Notification[]
-  partCategories            PartCategory[]
-  partConditions            PartCondition[]
-  partStatuses              PartStatus[]
-  parts                     Part[]
-  roles                     Role[]
-  tenantIntegrations        TenantIntegration[]
-  users                     TenantUser[]
-  titles                    Title[]
-  vehicleSources            VehicleSource[]
-  vehicleStatuses           VehicleStatus[]
-  vehicles                  Vehicle[]
-  auctionFavorites          AuctionFavorite[]
-  vehicleInspections        VehicleInspection[]
-  auctionListingGroups      AuctionListingGroup[]
-  auctionListingReviews     AuctionListingReview[]
-  buyerAuctionBids          BuyerAuctionBid[]
-  buyerVehiclePreferences   BuyerVehiclePreference[]
-  invitations               TenantInvitation[]
-  tasks                     Task[]
-  notes                     Note[]
-  phoneCalls                PhoneCall[]
-  smsMessages               SmsMessage[]
-  emailMessages             EmailMessage[]
-  twilioPhoneNumbers        TwilioPhoneNumber[]
-  callFlows                 CallFlow[]
-  shortUrls                 ShortUrl[]
-  rebuildItems              RebuildItem[]
-  inventoryAssets           InventoryAsset[]
-  socialAccounts            SocialAccount[]
-  socialGroups              SocialGroup[]
-  partOrders                PartOrder[]
-  parcelTemplates           ParcelTemplate[]
-  apiKeys                   ApiKey[]
-  unmatchedInboundEmails    UnmatchedInboundEmail[]
+  activities              Activity[]
+  activityStatuses        ActivityStatus[]
+  activityTypes           ActivityType[]
+  auditLogs               AuditLog[]
+  buyers                  Buyer[]
+  dealStatuses            DealStatus[]
+  deals                   Deal[]
+  extraExpenses           ExtraExpense[]
+  leadSources             LeadSource[]
+  leads                   Lead[]
+  media                   Media[]
+  metas                   Meta[]
+  notifications           Notification[]
+  partCategories          PartCategory[]
+  partConditions          PartCondition[]
+  partStatuses            PartStatus[]
+  parts                   Part[]
+  roles                   Role[]
+  tenantIntegrations      TenantIntegration[]
+  users                   TenantUser[]
+  titles                  Title[]
+  vehicleSources          VehicleSource[]
+  vehicleStatuses         VehicleStatus[]
+  vehicles                Vehicle[]
+  auctionFavorites        AuctionFavorite[]
+  vehicleInspections      VehicleInspection[]
+  auctionListingGroups    AuctionListingGroup[]
+  auctionListingReviews   AuctionListingReview[]
+  buyerAuctionBids        BuyerAuctionBid[]
+  buyerVehiclePreferences BuyerVehiclePreference[]
+  invitations             TenantInvitation[]
+  tasks                   Task[]
+  notes                   Note[]
+  phoneCalls              PhoneCall[]
+  smsMessages             SmsMessage[]
+  emailMessages           EmailMessage[]
+  twilioPhoneNumbers      TwilioPhoneNumber[]
+  callFlows               CallFlow[]
+  shortUrls               ShortUrl[]
+  rebuildItems            RebuildItem[]
+  inventoryAssets         InventoryAsset[]
+  socialAccounts          SocialAccount[]
+  socialGroups            SocialGroup[]
+  partOrders              PartOrder[]
+  parcelTemplates         ParcelTemplate[]
+  apiKeys                 ApiKey[]
+  unmatchedInboundEmails  UnmatchedInboundEmail[]
 
   @@index([clerkOrgId])
   @@index([slug])
@@ -592,27 +592,27 @@ model UnmatchedInboundEmail {
 }
 
 model User {
-  id              String             @id @default(uuid())
-  email           String             @unique
-  name            String?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  metaValue       Json?
-  avatar          String?
-  clerkUserId     String?            @unique
-  emailVerified   Boolean            @default(false)
-  firstName       String?
-  isActive        Boolean            @default(true)
-  lastActivityAt  DateTime?
-  lastLoginAt     DateTime?
-  lastSeenAt      DateTime?
-  lastName        String?
-  phoneNumber     String?
-  isOnline        Boolean            @default(false)
-  tenants         TenantUser[]
-  vehiclesCreated Vehicle[]          @relation("VehicleCreatedBy")
-  sentInvitations TenantInvitation[]
-  paidExpenses    ExtraExpense[]     @relation("ExpensePaidBy")
+  id                String              @id @default(uuid())
+  email             String              @unique
+  name              String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  metaValue         Json?
+  avatar            String?
+  clerkUserId       String?             @unique
+  emailVerified     Boolean             @default(false)
+  firstName         String?
+  isActive          Boolean             @default(true)
+  lastActivityAt    DateTime?
+  lastLoginAt       DateTime?
+  lastSeenAt        DateTime?
+  lastName          String?
+  phoneNumber       String?
+  isOnline          Boolean             @default(false)
+  tenants           TenantUser[]
+  vehiclesCreated   Vehicle[]           @relation("VehicleCreatedBy")
+  sentInvitations   TenantInvitation[]
+  paidExpenses      ExtraExpense[]      @relation("ExpensePaidBy")
   sharedInspections VehicleInspection[] @relation("InspectionSharedWith")
 
   @@index([clerkUserId])
@@ -739,7 +739,7 @@ model TenantInvitation {
 }
 
 model Buyer {
-  id                       String             @id @default(uuid())
+  id                       String                   @id @default(uuid())
   firstName                String
   middleName               String?
   lastName                 String
@@ -758,11 +758,11 @@ model Buyer {
   currentCity              String
   currentState             String
   currentZipCode           String
-  currentCountry           String             @default("USA")
+  currentCountry           String                   @default("USA")
   yearsAtAddress           Int?
   monthsAtAddress          Int?
   housingStatus            String?
-  monthlyHousingCost       Decimal?           @db.Decimal(10, 2)
+  monthlyHousingCost       Decimal?                 @db.Decimal(10, 2)
   previousAddress          String?
   previousCity             String?
   previousState            String?
@@ -787,10 +787,10 @@ model Buyer {
   employerCity             String?
   employerState            String?
   employerZipCode          String?
-  monthlyIncome            Decimal?           @db.Decimal(10, 2)
+  monthlyIncome            Decimal?                 @db.Decimal(10, 2)
   yearsEmployed            Int?
   monthsEmployed           Int?
-  additionalIncome         Decimal?           @db.Decimal(10, 2)
+  additionalIncome         Decimal?                 @db.Decimal(10, 2)
   additionalIncomeSource   String?
   previousEmployer         String?
   previousEmployerPhone    String?
@@ -799,7 +799,7 @@ model Buyer {
   previousEmployerCity     String?
   previousEmployerState    String?
   previousEmployerZipCode  String?
-  previousMonthlyIncome    Decimal?           @db.Decimal(10, 2)
+  previousMonthlyIncome    Decimal?                 @db.Decimal(10, 2)
   previousYearsEmployed    Int?
   previousMonthsEmployed   Int?
   bankName                 String?
@@ -809,16 +809,16 @@ model Buyer {
   yearsWithBank            Int?
   monthsWithBank           Int?
   creditScore              Int?
-  bankruptcyHistory        Boolean            @default(false)
+  bankruptcyHistory        Boolean                  @default(false)
   bankruptcyDate           DateTime?
   bankruptcyType           String?
   bankruptcyDischargeDate  DateTime?
-  repoHistory              Boolean            @default(false)
+  repoHistory              Boolean                  @default(false)
   repoDate                 DateTime?
-  foreclosureHistory       Boolean            @default(false)
+  foreclosureHistory       Boolean                  @default(false)
   foreclosureDate          DateTime?
-  currentMonthlyDebts      Decimal?           @db.Decimal(10, 2)
-  alimonyChildSupport      Decimal?           @db.Decimal(10, 2)
+  currentMonthlyDebts      Decimal?                 @db.Decimal(10, 2)
+  alimonyChildSupport      Decimal?                 @db.Decimal(10, 2)
   reference1Name           String?
   reference1Phone          String?
   reference1Relation       String?
@@ -844,17 +844,17 @@ model Buyer {
   reference5Relation       String?
   reference5Address        String?
   reference5YearsKnown     Int?
-  isBusinessBuyer          Boolean            @default(false)
+  isBusinessBuyer          Boolean                  @default(false)
   businessName             String?
   businessType             String?
   businessEIN              String?
   businessYearsInBusiness  Int?
-  businessAnnualRevenue    Decimal?           @db.Decimal(12, 2)
-  ofacCheckCompleted       Boolean            @default(false)
+  businessAnnualRevenue    Decimal?                 @db.Decimal(12, 2)
+  ofacCheckCompleted       Boolean                  @default(false)
   ofacCheckDate            DateTime?
   ofacCheckResult          String?
   ofacNotes                String?
-  identityVerified         Boolean            @default(false)
+  identityVerified         Boolean                  @default(false)
   identityVerifiedDate     DateTime?
   identityVerifiedBy       String?
   source                   String?
@@ -864,26 +864,26 @@ model Buyer {
   contactMethod            String?
   contactTime              String?
   notes                    String?
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @updatedAt
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
   metaValue                Json?
   tenantId                 String?
   salesPersonId            String?
   bdcAgentId               String?
-  stripeCustomerId         String?            @unique
+  stripeCustomerId         String?                  @unique
   activities               Activity[]
-  employmentStatus         EmploymentStatus?  @relation(fields: [employmentStatusId], references: [id])
-  gender                   Gender?            @relation(fields: [genderId], references: [id])
-  idState                  IdState?           @relation(fields: [idStateId], references: [id])
-  idType                   IdType?            @relation(fields: [idTypeId], references: [id])
-  occupation               Occupation?        @relation(fields: [occupationId], references: [id])
-  preferredLanguage        PreferredLanguage? @relation(fields: [preferredLanguageId], references: [id])
-  tenant                   Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  salesperson              TenantUser?        @relation("BuyerSalesperson", fields: [salesPersonId], references: [id])
-  bdcAgent                 TenantUser?        @relation("BuyerBdcAgent", fields: [bdcAgentId], references: [id])
-  dealsAsBuyer             Deal[]             @relation("BuyerDeals")
-  dealsAsCoBuyer           Deal[]             @relation("CoBuyerDeals")
-  media                    Media[]            @relation("BuyerMedia")
+  employmentStatus         EmploymentStatus?        @relation(fields: [employmentStatusId], references: [id])
+  gender                   Gender?                  @relation(fields: [genderId], references: [id])
+  idState                  IdState?                 @relation(fields: [idStateId], references: [id])
+  idType                   IdType?                  @relation(fields: [idTypeId], references: [id])
+  occupation               Occupation?              @relation(fields: [occupationId], references: [id])
+  preferredLanguage        PreferredLanguage?       @relation(fields: [preferredLanguageId], references: [id])
+  tenant                   Tenant?                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  salesperson              TenantUser?              @relation("BuyerSalesperson", fields: [salesPersonId], references: [id])
+  bdcAgent                 TenantUser?              @relation("BuyerBdcAgent", fields: [bdcAgentId], references: [id])
+  dealsAsBuyer             Deal[]                   @relation("BuyerDeals")
+  dealsAsCoBuyer           Deal[]                   @relation("CoBuyerDeals")
+  media                    Media[]                  @relation("BuyerMedia")
   tasks                    Task[]
   buyerNotes               Note[]
   phoneCalls               PhoneCall[]
@@ -1151,7 +1151,7 @@ model Title {
 }
 
 model Media {
-  id                           String         @id @default(uuid())
+  id                           String                   @id @default(uuid())
   filename                     String
   url                          String
   path                         String?
@@ -1168,11 +1168,11 @@ model Media {
   storageProvider              String?
   storageBucket                String?
   storageKey                   String?
-  isPublic                     Boolean        @default(true)
-  isActive                     Boolean        @default(true)
+  isPublic                     Boolean                  @default(true)
+  isActive                     Boolean                  @default(true)
   vehicleId                    String?
-  createdAt                    DateTime       @default(now())
-  updatedAt                    DateTime       @updatedAt
+  createdAt                    DateTime                 @default(now())
+  updatedAt                    DateTime                 @updatedAt
   metaValue                    Json?
   buyerId                      String?
   tenantId                     String?
@@ -1184,19 +1184,19 @@ model Media {
   inspectionChecklistItemId    String?
   inspectionRequestItemId      String?
   carfaxReportId               String?
-  buyer                        Buyer?         @relation("BuyerMedia", fields: [buyerId], references: [id], onDelete: Cascade)
-  part                         Part?          @relation("PartMedia", fields: [partId], references: [id], onDelete: Cascade)
-  tenant                       Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  vehicle                      Vehicle?       @relation("VehicleGallery", fields: [vehicleId], references: [id], onDelete: Cascade)
-  partAsMain                   Part?          @relation("PartMainImage")
-  titleAsBackImage             Title[]        @relation("TitleBackImage")
-  titleAsBillOfSaleFile        Title[]        @relation("TitleBillOfSaleFile")
-  titleAsFile                  Title[]        @relation("TitleFile")
-  titleAsFrontImage            Title[]        @relation("TitleFrontImage")
-  titleAsLienReleaseFile       Title[]        @relation("TitleLienReleaseFile")
-  titleAsOdometerStatementFile Title[]        @relation("TitleOdometerStatementFile")
-  vehicleAsMain                Vehicle?       @relation("VehicleMainImage")
-  extraExpenseReceipts         ExtraExpense[] @relation("ExtraExpenseReceipts")
+  buyer                        Buyer?                   @relation("BuyerMedia", fields: [buyerId], references: [id], onDelete: Cascade)
+  part                         Part?                    @relation("PartMedia", fields: [partId], references: [id], onDelete: Cascade)
+  tenant                       Tenant?                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle                      Vehicle?                 @relation("VehicleGallery", fields: [vehicleId], references: [id], onDelete: Cascade)
+  partAsMain                   Part?                    @relation("PartMainImage")
+  titleAsBackImage             Title[]                  @relation("TitleBackImage")
+  titleAsBillOfSaleFile        Title[]                  @relation("TitleBillOfSaleFile")
+  titleAsFile                  Title[]                  @relation("TitleFile")
+  titleAsFrontImage            Title[]                  @relation("TitleFrontImage")
+  titleAsLienReleaseFile       Title[]                  @relation("TitleLienReleaseFile")
+  titleAsOdometerStatementFile Title[]                  @relation("TitleOdometerStatementFile")
+  vehicleAsMain                Vehicle?                 @relation("VehicleMainImage")
+  extraExpenseReceipts         ExtraExpense[]           @relation("ExtraExpenseReceipts")
   inspection                   VehicleInspection?       @relation("InspectionMedia", fields: [inspectionId], references: [id], onDelete: Cascade)
   inspectionChecklistItem      InspectionChecklistItem? @relation("ChecklistItemMedia", fields: [inspectionChecklistItemId], references: [id], onDelete: Cascade)
   inspectionRequestItem        InspectionRequestItem?   @relation("RequestItemMedia", fields: [inspectionRequestItemId], references: [id], onDelete: Cascade)
@@ -1217,9 +1217,9 @@ model Media {
 }
 
 model Vehicle {
-  id                    String            @id @default(uuid())
-  vin                   String            @unique
-  stockNumber           String?           @unique
+  id                    String              @id @default(uuid())
+  vin                   String              @unique
+  stockNumber           String?             @unique
   mileage               Int?
   exteriorColor         String?
   interiorColor         String?
@@ -1231,9 +1231,9 @@ model Vehicle {
   vehicleConditionId    String?
   vehicleStatusId       String?
   sourceId              String?
-  costPrice             Decimal?          @db.Decimal(10, 2)
-  listPrice             Decimal?          @db.Decimal(10, 2)
-  salePrice             Decimal?          @db.Decimal(10, 2)
+  costPrice             Decimal?            @db.Decimal(10, 2)
+  listPrice             Decimal?            @db.Decimal(10, 2)
+  salePrice             Decimal?            @db.Decimal(10, 2)
   engine                String?
   cylinders             Int?
   doors                 Int?
@@ -1241,9 +1241,9 @@ model Vehicle {
   description           String?
   features              String?
   notes                 String?
-  mainImageId           String?           @unique
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  mainImageId           String?             @unique
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
   makeId                String
   modelId               String
   trimId                String?
@@ -1252,55 +1252,55 @@ model Vehicle {
   tenantId              String?
   createdById           String?
   titleBrandId          String?
-  advertisingPrice      Decimal?          @db.Decimal(10, 2)
-  askingPrice           Decimal?          @db.Decimal(10, 2)
-  bidIncrement          Decimal?          @db.Decimal(10, 2)
-  buyNowPrice           Decimal?          @db.Decimal(10, 2)
-  floorPrice            Decimal?          @db.Decimal(10, 2)
-  minDepositAmount      Decimal?          @db.Decimal(10, 2)
-  minDepositPercent     Decimal?          @db.Decimal(5, 2)
+  advertisingPrice      Decimal?            @db.Decimal(10, 2)
+  askingPrice           Decimal?            @db.Decimal(10, 2)
+  bidIncrement          Decimal?            @db.Decimal(10, 2)
+  buyNowPrice           Decimal?            @db.Decimal(10, 2)
+  floorPrice            Decimal?            @db.Decimal(10, 2)
+  minDepositAmount      Decimal?            @db.Decimal(10, 2)
+  minDepositPercent     Decimal?            @db.Decimal(5, 2)
   minDepositType        String?
-  minDownAmount         Decimal?          @db.Decimal(10, 2)
-  minDownPercent        Decimal?          @db.Decimal(5, 2)
+  minDownAmount         Decimal?            @db.Decimal(10, 2)
+  minDownPercent        Decimal?            @db.Decimal(5, 2)
   minDownType           String?
-  msrp                  Decimal?          @db.Decimal(10, 2)
-  purchaseDate          DateTime?         @default(now())
-  specialPrice          Decimal?          @db.Decimal(10, 2)
+  msrp                  Decimal?            @db.Decimal(10, 2)
+  purchaseDate          DateTime?           @default(now())
+  specialPrice          Decimal?            @db.Decimal(10, 2)
   specialPriceEndDate   DateTime?
   specialPriceStartDate DateTime?
-  startBid              Decimal?          @db.Decimal(10, 2)
-  startBidEqualsFloor   Boolean           @default(false)
-  vehicleCost           Decimal           @default(0) @db.Decimal(10, 2)
-  wholesalePrice        Decimal?          @db.Decimal(10, 2)
+  startBid              Decimal?            @db.Decimal(10, 2)
+  startBidEqualsFloor   Boolean             @default(false)
+  vehicleCost           Decimal             @default(0) @db.Decimal(10, 2)
+  wholesalePrice        Decimal?            @db.Decimal(10, 2)
   mileageUnitId         String?
   bodySubtypeId         String?
   engineId              String?
   activities            Activity[]
   deals                 Deal[]
   extraExpenses         ExtraExpense[]
-  leadsInterested       Lead[]            @relation("LeadInterestedVehicle")
-  gallery               Media[]           @relation("VehicleGallery")
-  partsExtracted        Part[]            @relation("PartSourceVehicle")
+  leadsInterested       Lead[]              @relation("LeadInterestedVehicle")
+  gallery               Media[]             @relation("VehicleGallery")
+  partsExtracted        Part[]              @relation("PartSourceVehicle")
   titles                Title[]
-  bodySubtype           BodySubtype?      @relation(fields: [bodySubtypeId], references: [id])
-  bodyType              BodyType?         @relation(fields: [bodyTypeId], references: [id])
-  driveType             DriveType?        @relation(fields: [driveTypeId], references: [id])
-  vehicleEngine         VehicleEngine?    @relation(fields: [engineId], references: [id])
-  fuelType              FuelType?         @relation(fields: [fuelTypeId], references: [id])
-  mainImage             Media?            @relation("VehicleMainImage", fields: [mainImageId], references: [id])
-  make                  VehicleMake       @relation(fields: [makeId], references: [id])
-  mileageUnit           MileageUnit?      @relation(fields: [mileageUnitId], references: [id])
-  model                 VehicleModel      @relation(fields: [modelId], references: [id])
-  source                VehicleSource?    @relation(fields: [sourceId], references: [id])
-  tenant                Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdBy             User?             @relation("VehicleCreatedBy", fields: [createdById], references: [id])
-  titleBrand            TitleBrand?       @relation(fields: [titleBrandId], references: [id])
-  transmissionType      TransmissionType? @relation(fields: [transmissionTypeId], references: [id])
-  trim                  VehicleTrim?      @relation(fields: [trimId], references: [id])
-  vehicleCondition      VehicleCondition? @relation(fields: [vehicleConditionId], references: [id])
-  vehicleStatus         VehicleStatus?    @relation(fields: [vehicleStatusId], references: [id])
-  vehicleType           VehicleType?      @relation(fields: [vehicleTypeId], references: [id])
-  year                  VehicleYear       @relation(fields: [yearId], references: [id])
+  bodySubtype           BodySubtype?        @relation(fields: [bodySubtypeId], references: [id])
+  bodyType              BodyType?           @relation(fields: [bodyTypeId], references: [id])
+  driveType             DriveType?          @relation(fields: [driveTypeId], references: [id])
+  vehicleEngine         VehicleEngine?      @relation(fields: [engineId], references: [id])
+  fuelType              FuelType?           @relation(fields: [fuelTypeId], references: [id])
+  mainImage             Media?              @relation("VehicleMainImage", fields: [mainImageId], references: [id])
+  make                  VehicleMake         @relation(fields: [makeId], references: [id])
+  mileageUnit           MileageUnit?        @relation(fields: [mileageUnitId], references: [id])
+  model                 VehicleModel        @relation(fields: [modelId], references: [id])
+  source                VehicleSource?      @relation(fields: [sourceId], references: [id])
+  tenant                Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy             User?               @relation("VehicleCreatedBy", fields: [createdById], references: [id])
+  titleBrand            TitleBrand?         @relation(fields: [titleBrandId], references: [id])
+  transmissionType      TransmissionType?   @relation(fields: [transmissionTypeId], references: [id])
+  trim                  VehicleTrim?        @relation(fields: [trimId], references: [id])
+  vehicleCondition      VehicleCondition?   @relation(fields: [vehicleConditionId], references: [id])
+  vehicleStatus         VehicleStatus?      @relation(fields: [vehicleStatusId], references: [id])
+  vehicleType           VehicleType?        @relation(fields: [vehicleTypeId], references: [id])
+  year                  VehicleYear         @relation(fields: [yearId], references: [id])
   usedParts             VehiclePart[]
   tasks                 Task[]
   rebuildItems          RebuildItem[]
@@ -1906,6 +1906,12 @@ model AuctionListing {
   reviews               AuctionListingReview[]
   buyerBids             BuyerAuctionBid[]
 
+  // Normalized link to the Yard. yardName / yardNumber stay as a cache
+  // (Copart's CSV import writes them directly) but yardId is the source
+  // of truth for relations.
+  yardId String?
+  yard   Yard?   @relation(fields: [yardId], references: [id], onDelete: SetNull)
+
   @@index([auctionName])
   @@index([vin])
   @@index([year])
@@ -1917,7 +1923,60 @@ model AuctionListing {
   @@index([createdAt])
   @@index([isStale])
   @@index([lastSeenAt])
+  @@index([yardId])
   @@map("auction_listings")
+}
+
+enum YardSource {
+  COPART
+  IAAI
+  OTHER
+}
+
+/// Physical auction yard. One row per (source, yardNumber). Carries
+/// operational metadata that's not in the Copart CSV — address,
+/// contact, ops notes, and the critical `physicalInspectionAvailable`
+/// flag that the inspector workflow keys off.
+model Yard {
+  id         String     @id @default(uuid())
+  source     YardSource
+  yardNumber Int
+  name       String
+
+  // Location / contact
+  address     String?
+  city        String?
+  state       String?
+  zip         String?
+  country     String? @default("US")
+  latitude    Float?
+  longitude   Float?
+  phone       String?
+  email       String?
+  contactName String?
+
+  // Ops
+  // Whether we (or our partner network) physically visit this yard
+  // to inspect cars. Drives the inspection-request UI.
+  physicalInspectionAvailable Boolean @default(false)
+  // Loose JSON for opening hours (e.g. { mon: "9-17", sat: "closed" }).
+  // Kept Json on purpose so we don't lock the shape too early.
+  hours                       Json?
+  // Internal notes: access instructions, key handling, photo policy, etc.
+  notes                       String?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  auctionListings AuctionListing[]
+  inspections     VehicleInspection[]
+
+  @@unique([source, yardNumber])
+  @@index([state])
+  @@index([physicalInspectionAvailable])
+  @@index([isActive])
+  @@map("yards")
 }
 
 /// Audit trail for every sync cron run. One row per invocation (including skipped
@@ -1925,7 +1984,7 @@ model AuctionListing {
 /// without scraping container logs.
 model SyncRun {
   id              String    @id @default(uuid()) @db.Uuid
-  source          String    // "copart" | ... (future feeds)
+  source          String // "copart" | ... (future feeds)
   startedAt       DateTime  @default(now())
   finishedAt      DateTime?
   status          String    @default("running") // running | success | failed | skipped
@@ -2514,21 +2573,21 @@ model VehicleMarketPart {
 }
 
 model CarfaxReport {
-  id               String   @id @default(uuid())
+  id               String    @id @default(uuid())
   auctionListingId BigInt
   vin              String?
   s3Key            String
-  analysis         String?  @db.Text
+  analysis         String?   @db.Text
   // Report date (when the Carfax was issued), separate from createdAt which
   // is when this row was inserted into our DB.
   date             DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   auctionListing AuctionListing @relation(fields: [auctionListingId], references: [lotNumber], onDelete: Cascade)
   // Optional richer media (PDF/scan) stored via the Media table. s3Key stays
   // for backward compatibility with the carfax-analyzer pipeline.
-  media          Media[] @relation("CarfaxReportMedia")
+  media          Media[]        @relation("CarfaxReportMedia")
 
   @@index([auctionListingId])
   @@index([vin])
@@ -2711,7 +2770,7 @@ model BuyerAuctionBid {
   lotNumber   BigInt
   maxBid      Decimal  @db.Decimal(12, 2)
   status      String   @default("pending") // pending | won | lost
-  finalAmount Decimal? @db.Decimal(12, 2)  // actual amount paid (won) or final bid (lost)
+  finalAmount Decimal? @db.Decimal(12, 2) // actual amount paid (won) or final bid (lost)
   notes       String?
   createdBy   String?
   createdAt   DateTime @default(now())
@@ -2732,24 +2791,24 @@ model BuyerAuctionBid {
 /// Buyer's "wanted" vehicles — what kind of cars they are looking to buy.
 /// Used to match incoming auction listings to interested buyers.
 model BuyerVehiclePreference {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String?
-  buyerId     String
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String?
+  buyerId  String
 
-  yearFrom    Int?
-  yearTo      Int?
-  make        String
-  models      String[] @default([])
-  trims       String[] @default([])
-  maxMileage  Int?
-  titleTypes  String[] @default([])
-  colors      String[] @default([])
-  maxCost     Decimal? @db.Decimal(12, 2)
-  notes       String?
+  yearFrom   Int?
+  yearTo     Int?
+  make       String
+  models     String[] @default([])
+  trims      String[] @default([])
+  maxMileage Int?
+  titleTypes String[] @default([])
+  colors     String[] @default([])
+  maxCost    Decimal? @db.Decimal(12, 2)
+  notes      String?
 
-  createdBy   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   buyer  Buyer   @relation(fields: [buyerId], references: [id], onDelete: Cascade)
@@ -3042,79 +3101,83 @@ model ApiKey {
 // ────────────────────────────────────────────────────────────────────
 
 enum VehicleInspectionStatus {
-  REQUESTED       // client requested it; not yet assigned
-  IN_PROGRESS     // inspector working on it
-  DONE            // completed
-  REJECTED        // refused (won't be done)
-  CANCELED        // canceled by the client / system
+  REQUESTED // client requested it; not yet assigned
+  IN_PROGRESS // inspector working on it
+  DONE // completed
+  REJECTED // refused (won't be done)
+  CANCELED // canceled by the client / system
 }
 
 enum ChecklistCategory {
-  FRONT_END            // 1. Front end
-  SIDE_PANELS          // 2. Side panels (L/R)
-  REAR_END             // 3. Rear
-  WHEELS_SUSPENSION    // 4. Wheels & suspension
-  INTERIOR             // 5. Interior
-  ENGINE_BAY           // 6. Engine bay
-  UNDERBODY            // 7. Underbody
-  LIGHTING_ELECTRICAL  // 8. Exterior lighting & electrical
-  REPAIR_BODYWORK      // 9. Repair / bodywork signs
-  FLOOD_DAMAGE         // 10. Flood damage signs
+  FRONT_END // 1. Front end
+  SIDE_PANELS // 2. Side panels (L/R)
+  REAR_END // 3. Rear
+  WHEELS_SUSPENSION // 4. Wheels & suspension
+  INTERIOR // 5. Interior
+  ENGINE_BAY // 6. Engine bay
+  UNDERBODY // 7. Underbody
+  LIGHTING_ELECTRICAL // 8. Exterior lighting & electrical
+  REPAIR_BODYWORK // 9. Repair / bodywork signs
+  FLOOD_DAMAGE // 10. Flood damage signs
   // Beyond visible body inspection — sensory and mechanical checks.
-  FLUIDS               // 11. Oil / coolant / transmission / brake fluid
-  SENSORY              // 12. Smell, noises, vibrations
-  START_BEHAVIOR       // 13. Cold start, hot start, idle quality
+  FLUIDS // 11. Oil / coolant / transmission / brake fluid
+  SENSORY // 12. Smell, noises, vibrations
+  START_BEHAVIOR // 13. Cold start, hot start, idle quality
   OTHER
 }
 
 model VehicleInspection {
-  id              String   @id @default(uuid())
-  tenantId        String?
+  id       String  @id @default(uuid())
+  tenantId String?
 
   // What is being inspected (the lot/VIN — vehicleId is set only once the
   // lot becomes a Vehicle in our CRM, often AFTER the inspection happens).
-  vin             String
-  lotNumber       String?
-  yardName        String?
-  yardNumber      String?
-  vehicleId       String?
-  buyerId         String?
+  vin        String
+  lotNumber  String?
+  // yardName / yardNumber stay as a denormalized cache (copied from the
+  // listing at request time); yardId is the source of truth.
+  yardName   String?
+  yardNumber String?
+  yardId     String?
+  yard       Yard?   @relation(fields: [yardId], references: [id], onDelete: SetNull)
+  vehicleId  String?
+  buyerId    String?
 
   // Lifecycle
-  status          VehicleInspectionStatus @default(REQUESTED)
-  requestedAt     DateTime @default(now())
+  status      VehicleInspectionStatus @default(REQUESTED)
+  requestedAt DateTime                @default(now())
   // Deadline: by when the inspection must be completed (set by the client
   // when requesting). Null = no hard deadline.
-  dueAt           DateTime?
-  inspectedAt     DateTime?
-  completedAt     DateTime?
-  inspectorId     String?
+  dueAt       DateTime?
+  inspectedAt DateTime?
+  completedAt DateTime?
+  inspectorId String?
 
   // Request from the client (free text — "check the engine", "look at the roof"...)
   specificRequest String?
 
   // Results
-  overallRating   Int?                       // 1..5 — caller's convention
-  marketPrice     Decimal? @db.Decimal(12, 2)
-  notes           String?
+  overallRating Int? // 1..5 — caller's convention
+  marketPrice   Decimal? @db.Decimal(12, 2)
+  notes         String?
 
   // Audit
-  createdBy       String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  vehicle         Vehicle? @relation("VehicleInspections", fields: [vehicleId], references: [id], onDelete: SetNull)
-  buyer           Buyer?   @relation("BuyerInspections", fields: [buyerId], references: [id], onDelete: SetNull)
-  checklist       InspectionChecklistItem[]
+  tenant       Tenant?                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle      Vehicle?                  @relation("VehicleInspections", fields: [vehicleId], references: [id], onDelete: SetNull)
+  buyer        Buyer?                    @relation("BuyerInspections", fields: [buyerId], references: [id], onDelete: SetNull)
+  checklist    InspectionChecklistItem[]
   // Replaces the single specificRequest text — each item has its own note +
   // optional photo. specificRequest column is kept for backward compatibility.
-  requestItems    InspectionRequestItem[]
-  media           Media[]  @relation("InspectionMedia")
+  requestItems InspectionRequestItem[]
+  media        Media[]                   @relation("InspectionMedia")
   // Clients (users) granted read access to this inspection. Independent of
   // inspectorId (who performs it) — sharedWith governs who can VIEW it.
-  sharedWith      User[]   @relation("InspectionSharedWith")
+  sharedWith   User[]                    @relation("InspectionSharedWith")
 
   @@index([tenantId])
   @@index([vehicleId])
@@ -3124,15 +3187,16 @@ model VehicleInspection {
   @@index([status])
   @@index([requestedAt])
   @@index([dueAt])
+  @@index([yardId])
   @@map("vehicle_inspections")
 }
 
 model InspectionChecklistItem {
-  id                     String   @id @default(uuid())
-  inspectionId           String
+  id           String @id @default(uuid())
+  inspectionId String
 
   category               ChecklistCategory
-  part                   String                  // free text: "Hood", "Radiator support", "A-Pillar L", ...
+  part                   String // free text: "Hood", "Radiator support", "A-Pillar L", ...
   // 1 = RED (problem), 2 = YELLOW (review), 3 = GREEN (ok). Null = not yet evaluated.
   quality                Int?
   notes                  String?
@@ -3140,12 +3204,12 @@ model InspectionChecklistItem {
   // `media` below with mediaType = 'audio').
   voiceNoteTranscription String?
 
-  sortOrder              Int      @default(0)
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  inspection             VehicleInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
-  media                  Media[] @relation("ChecklistItemMedia")
+  inspection VehicleInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  media      Media[]           @relation("ChecklistItemMedia")
 
   @@index([inspectionId])
   @@index([category])
@@ -3164,8 +3228,8 @@ model InspectionRequestItem {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  inspection   VehicleInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
-  media        Media[]           @relation("RequestItemMedia")
+  inspection VehicleInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  media      Media[]           @relation("RequestItemMedia")
 
   @@index([inspectionId])
   @@map("inspection_request_items")

@@ -254,6 +254,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.vehicleInspection;
   }
 
+  get yard() {
+    return this.prisma.yard;
+  }
+
   get inspectionChecklistItem() {
     return this.prisma.inspectionChecklistItem;
   }

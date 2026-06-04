@@ -40,6 +40,7 @@ import { BuyersModule } from './buyers/buyers.module';
 import { BuyerAuctionBidsModule } from './buyer-auction-bids/buyer-auction-bids.module';
 import { BuyerVehiclePreferencesModule } from './buyer-vehicle-preferences/buyer-vehicle-preferences.module';
 import { VehicleInspectionsModule } from './vehicle-inspections/vehicle-inspections.module';
+import { YardsModule } from './yards/yards.module';
 import { EmailModule } from './email/email.module';
 import { TasksModule } from './tasks/tasks.module';
 import { NotesModule } from './notes/notes.module';
@@ -121,6 +122,7 @@ import { CloudflareModule } from './cloudflare/cloudflare.module';
     BuyerAuctionBidsModule,
     BuyerVehiclePreferencesModule,
     VehicleInspectionsModule,
+    YardsModule,
     EmailModule,
     TasksModule,
     NotesModule,

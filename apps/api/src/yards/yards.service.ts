@@ -24,6 +24,7 @@ export class YardsService {
     const where: Prisma.YardWhereInput = {
       ...(query.source && { source: query.source }),
       ...(query.state && { state: query.state }),
+      ...(query.yardNumber !== undefined && { yardNumber: query.yardNumber }),
       ...(query.physicalInspectionAvailable !== undefined && {
         physicalInspectionAvailable: query.physicalInspectionAvailable,
       }),

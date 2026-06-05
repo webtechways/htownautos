@@ -197,6 +197,7 @@ export class VehicleInspectionsService {
     userId: string | null,
     dto: CreateVehicleInspectionDto,
   ) {
+    await this.validateYardPhysicalInspection(dto);
     await this.validateRequestedWindow(dto);
 
     const row = await this.prisma.vehicleInspection.create({
@@ -471,6 +472,91 @@ export class VehicleInspectionsService {
   }
 
   // ─── helpers ──────────────────────────────────────────────────────
+
+  /**
+   * Enforce: the inspection's yard must support on-site (physical)
+   * inspection. Resolves the yard through the auction listing (preferred,
+   * because the listing has been linked by the trigger) and falls back to
+   * the inspection's own yardNumber when the listing isn't in our DB.
+   *
+   * Throws BadRequestException when:
+   * - The yard is known and has physicalInspectionAvailable = false.
+   * - A lotNumber / yardNumber was provided but no matching yard exists
+   *   (we can't promise on-site coverage for a yard we don't have on file).
+   *
+   * Returns silently when no yard reference is available at all — that
+   * covers manual inspections for vehicles outside the auction pipeline.
+   */
+  private async validateYardPhysicalInspection(
+    dto: CreateVehicleInspectionDto,
+  ): Promise<void> {
+    // Try the listing → yard chain first.
+    let yard: { physicalInspectionAvailable: boolean; name: string } | null =
+      null;
+
+    if (dto.lotNumber) {
+      let lotKey: bigint | null = null;
+      try {
+        lotKey = BigInt(dto.lotNumber);
+      } catch {
+        lotKey = null;
+      }
+      if (lotKey !== null) {
+        const listing = await this.prisma.auctionListing.findUnique({
+          where: { lotNumber: lotKey },
+          select: {
+            yardNumber: true,
+            yard: {
+              select: { physicalInspectionAvailable: true, name: true },
+            },
+          },
+        });
+        if (listing?.yard) {
+          yard = listing.yard;
+        } else if (listing?.yardNumber != null) {
+          // Listing exists but yardId wasn't filled (very unusual since
+          // the trigger fills it on insert/update). Do the join ourselves.
+          yard = await this.prisma.yard.findUnique({
+            where: {
+              source_yardNumber: {
+                source: 'COPART',
+                yardNumber: listing.yardNumber,
+              },
+            },
+            select: { physicalInspectionAvailable: true, name: true },
+          });
+        }
+      }
+    }
+
+    // Last-resort lookup directly by the inspection's own yardNumber.
+    if (!yard && dto.yardNumber) {
+      const yardNumberInt = parseInt(dto.yardNumber, 10);
+      if (Number.isFinite(yardNumberInt)) {
+        yard = await this.prisma.yard.findUnique({
+          where: {
+            source_yardNumber: { source: 'COPART', yardNumber: yardNumberInt },
+          },
+          select: { physicalInspectionAvailable: true, name: true },
+        });
+      }
+    }
+
+    // No yard ref at all — manual / non-auction inspection, allow.
+    if (!yard && !dto.lotNumber && !dto.yardNumber) return;
+
+    if (!yard) {
+      throw new BadRequestException(
+        "This vehicle's yard is not in our system. Add the yard from Settings → Yards (with the physical-inspection flag) before creating an inspection.",
+      );
+    }
+
+    if (!yard.physicalInspectionAvailable) {
+      throw new BadRequestException(
+        `Inspection cannot be created: ${yard.name} does not offer on-site inspection. Mark the yard as physical-inspection-available from Settings → Yards if this is wrong.`,
+      );
+    }
+  }
 
   // Enforce: dueAt must (a) fall on a weekday — Copart closed Sat/Sun —
   // (b) be at least 48 *business* hours from now (weekend hours don't count),

@@ -39,4 +39,8 @@ export class QueryYardsDto {
   @ApiPropertyOptional({ description: 'Filter by isActive' })
   @IsOptional() @Type(() => Boolean) @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ description: 'Filter by exact yardNumber (used with source)' })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1)
+  yardNumber?: number;
 }

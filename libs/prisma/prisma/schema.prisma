@@ -3178,6 +3178,7 @@ model VehicleInspection {
   // Clients (users) granted read access to this inspection. Independent of
   // inspectorId (who performs it) — sharedWith governs who can VIEW it.
   sharedWith   User[]                    @relation("InspectionSharedWith")
+  shareLinks   InspectionShareLink[]
 
   @@index([tenantId])
   @@index([vehicleId])
@@ -3189,6 +3190,28 @@ model VehicleInspection {
   @@index([dueAt])
   @@index([yardId])
   @@map("vehicle_inspections")
+}
+
+/// Public read-only share link for an inspection. The URL embeds the
+/// VIN + token; the backend resolves the token to its inspection and
+/// verifies the VIN matches before serving anything.
+model InspectionShareLink {
+  id             String            @id @default(uuid())
+  token          String            @unique
+  inspectionId   String
+  inspection     VehicleInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  /// null = never expires.
+  expiresAt      DateTime?
+  revoked        Boolean           @default(false)
+  /// User id of whoever generated the link (audit trail).
+  createdBy      String?
+  createdAt      DateTime          @default(now())
+  /// Updated every time someone hits the public endpoint with this token.
+  lastAccessedAt DateTime?
+
+  @@index([inspectionId])
+  @@index([revoked])
+  @@map("inspection_share_links")
 }
 
 model InspectionChecklistItem {

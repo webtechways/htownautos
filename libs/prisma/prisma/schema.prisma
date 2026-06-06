@@ -3208,6 +3208,10 @@ model InspectionShareLink {
   createdAt      DateTime          @default(now())
   /// Updated every time someone hits the public endpoint with this token.
   lastAccessedAt DateTime?
+  /// ShortUrl.code companion — populated at creation so the admin gets a
+  /// short link to share without an extra round-trip. Null when the
+  /// shortener failed at create time (the share link still works).
+  shortUrlCode   String?
 
   @@index([inspectionId])
   @@index([revoked])

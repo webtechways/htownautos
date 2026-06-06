@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
@@ -9,15 +10,30 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
 import { S3Service } from '@htownautos/common';
 import { CreateShareLinkDto } from './dto/create-share-link.dto';
+import { ShortUrlService } from '../short-url/short-url.service';
 
 const MEDIA_SIGNED_URL_TTL = 60 * 60 * 6; // 6 hours
 
 @Injectable()
 export class InspectionShareLinksService {
+  private readonly logger = new Logger(InspectionShareLinksService.name);
+  private readonly appBaseUrl: string;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly s3: S3Service,
-  ) {}
+    private readonly shortUrl: ShortUrlService,
+  ) {
+    this.appBaseUrl = (
+      process.env.APP_BASE_URL || 'https://app.htownautos.com'
+    ).replace(/\/+$/, '');
+  }
+
+  /** Construct the full long URL that the share token resolves to. */
+  private buildLongUrl(vin: string, token: string): string {
+    const qs = new URLSearchParams({ vin, token });
+    return `${this.appBaseUrl}/dashboard/inspection/shared?${qs.toString()}`;
+  }
 
   // ─── admin (authenticated) ─────────────────────────────────────────
 
@@ -27,28 +43,78 @@ export class InspectionShareLinksService {
     userId: string | null,
     dto: CreateShareLinkDto,
   ) {
-    await this.ensureInspection(inspectionId, tenantId);
+    // ensureInspection also gives us back the VIN we need for the long URL.
+    const inspection = await this.prisma.vehicleInspection.findFirst({
+      where: { id: inspectionId, tenantId: tenantId || undefined },
+      select: { id: true, vin: true },
+    });
+    if (!inspection) {
+      throw new NotFoundException(`Inspection ${inspectionId} not found`);
+    }
+
     const expiresAt = dto.expiresInHours
       ? new Date(Date.now() + dto.expiresInHours * 60 * 60 * 1000)
       : null;
-    return this.prisma.inspectionShareLink.create({
+
+    // 32 URL-safe random bytes → 43 chars (base64url, no padding).
+    // 256 bits of entropy — overkill but cheap.
+    const token = randomBytes(32).toString('base64url');
+
+    const link = await this.prisma.inspectionShareLink.create({
       data: {
-        // 32 URL-safe random bytes → 43 chars (base64url, no padding).
-        // 256 bits of entropy — overkill but cheap.
-        token: randomBytes(32).toString('base64url'),
+        token,
         inspectionId,
         expiresAt,
         createdBy: userId,
       },
     });
+
+    // Generate the companion short URL. Best-effort: if the shortener
+    // throws (e.g. no tenant, DB issue) the share link still works via
+    // its long URL — we just don't populate shortUrlCode.
+    let shortUrlCode: string | null = null;
+    if (tenantId) {
+      try {
+        const longUrl = this.buildLongUrl(inspection.vin, token);
+        const res = await this.shortUrl.create(
+          longUrl,
+          tenantId,
+          userId ?? undefined,
+          expiresAt ?? undefined,
+        );
+        shortUrlCode = res.code;
+        await this.prisma.inspectionShareLink.update({
+          where: { id: link.id },
+          data: { shortUrlCode },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Short URL creation failed for share link ${link.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    return {
+      ...link,
+      shortUrlCode,
+      shortUrl: shortUrlCode
+        ? this.shortUrl.buildShortUrl(shortUrlCode)
+        : null,
+    };
   }
 
   async listForInspection(inspectionId: string, tenantId: string) {
     await this.ensureInspection(inspectionId, tenantId);
-    return this.prisma.inspectionShareLink.findMany({
+    const rows = await this.prisma.inspectionShareLink.findMany({
       where: { inspectionId },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map((r) => ({
+      ...r,
+      shortUrl: r.shortUrlCode
+        ? this.shortUrl.buildShortUrl(r.shortUrlCode)
+        : null,
+    }));
   }
 
   async revoke(linkId: string, tenantId: string) {

@@ -29,6 +29,11 @@ export class ShortUrlService {
     };
   }
 
+  /** Compose a public short URL for an existing code. */
+  buildShortUrl(code: string): string {
+    return `${this.baseUrl}/${code}`;
+  }
+
   async resolve(code: string): Promise<string> {
     const record = await this.prisma.shortUrl.findUnique({ where: { code } });
 

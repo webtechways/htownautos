@@ -13,6 +13,7 @@ export class CopartService {
       limit = 20,
       search,
       make,
+      model,
       year,
       damageDescription,
       saleStatus,
@@ -55,6 +56,16 @@ export class CopartService {
 
         // Make filter
         make ? { make: { equals: make, mode: 'insensitive' } } : {},
+
+        // Model filter (matches modelGroup or modelDetail)
+        model
+          ? {
+              OR: [
+                { modelGroup: { contains: model, mode: 'insensitive' } },
+                { modelDetail: { contains: model, mode: 'insensitive' } },
+              ],
+            }
+          : {},
 
         // Year filter
         year ? { year } : {},

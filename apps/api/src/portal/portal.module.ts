@@ -3,6 +3,7 @@ import { PrismaModule } from '@htownautos/prisma';
 import { CustomerGuard } from '@htownautos/auth';
 import { CopartModule } from '../copart/copart.module';
 import { VehicleInspectionsModule } from '../vehicle-inspections/vehicle-inspections.module';
+import { OpenSearchModule } from '../opensearch/opensearch.module';
 import { PortalController } from './portal.controller';
 import { PortalPublicController } from './portal-public.controller';
 import { PortalService } from './portal.service';
@@ -18,7 +19,7 @@ import { PortalSettingsController } from './portal-settings.controller';
  * PortalPricingService is exported so other modules can read pricing if needed.
  */
 @Module({
-  imports: [PrismaModule, CopartModule, VehicleInspectionsModule],
+  imports: [PrismaModule, CopartModule, VehicleInspectionsModule, OpenSearchModule],
   controllers: [PortalPublicController, PortalController, PortalSettingsController],
   providers: [PortalService, PortalPricingService, CustomerGuard],
   exports: [PortalService, PortalPricingService],

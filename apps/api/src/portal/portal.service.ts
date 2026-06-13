@@ -10,6 +10,7 @@ import type { PortalBuyer } from '@htownautos/auth';
 import { PORTAL_TENANT_ID } from '@htownautos/auth';
 import { CopartService } from '../copart/copart.service';
 import { QueryCopartDto } from '../copart/dto/query-copart.dto';
+import { AuctionSearchService } from '../opensearch/auction-search.service';
 import { VehicleInspectionsService } from '../vehicle-inspections/vehicle-inspections.service';
 import { UpdatePortalProfileDto } from './dto/update-portal-profile.dto';
 import { CreateDepositDto } from './dto/create-deposit.dto';
@@ -79,6 +80,7 @@ export class PortalService {
     private readonly copartService: CopartService,
     private readonly inspectionsService: VehicleInspectionsService,
     private readonly pricingService: PortalPricingService,
+    private readonly auctionSearchService: AuctionSearchService,
   ) {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
   }
@@ -126,6 +128,32 @@ export class PortalService {
       );
     }
     return listing;
+  }
+
+  /**
+   * Returns distinct filter option lists from the auction_listings table.
+   * Used to populate public-facing dropdowns (makes, years, damage types, etc.).
+   */
+  getFilters() {
+    return this.copartService.getFilterOptions();
+  }
+
+  /**
+   * Returns the full image gallery for a lot.
+   * Reads galleryCache from Postgres (TTL 30d); on miss, fetches from Copart
+   * via ProxyService and queues a background cache write.
+   * Returns { lotNumber, imageCount: 0, images: [] } for unknown lots.
+   */
+  async getListingGallery(lotNumber: string) {
+    try {
+      return await this.auctionSearchService.getCopartGallery(lotNumber);
+    } catch (err) {
+      // NotFoundException means the lot doesn't exist in our DB — return empty gallery.
+      if ((err as any)?.status === 404 || err?.constructor?.name === 'NotFoundException') {
+        return { lotNumber, imageCount: 0, images: [] };
+      }
+      throw err;
+    }
   }
 
   // ── Pricing ───────────────────────────────────────────────────────────────

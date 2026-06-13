@@ -31,10 +31,22 @@ export class PortalPublicController {
     private readonly pricingService: PortalPricingService,
   ) {}
 
+  /** GET /api/v1/portal/filters — distinct filter options for public dropdowns. */
+  @Get('filters')
+  getFilters() {
+    return this.portalService.getFilters();
+  }
+
   /** GET /api/v1/portal/listings — public auction listings. */
   @Get('listings')
   getListings(@Query() query: QueryCopartDto) {
     return this.portalService.getListings(query);
+  }
+
+  /** GET /api/v1/portal/listings/:lotNumber/gallery — full image gallery for a lot. */
+  @Get('listings/:lotNumber/gallery')
+  getListingGallery(@Param('lotNumber') lotNumber: string) {
+    return this.portalService.getListingGallery(lotNumber);
   }
 
   /** GET /api/v1/portal/listings/:lotNumber */

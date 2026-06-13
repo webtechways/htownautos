@@ -88,5 +88,9 @@ export class QueryCopartDto {
 
   @IsOptional()
   @IsString()
+  model?: string;
+
+  @IsOptional()
+  @IsString()
   ids?: string; // Comma-separated list of IDs to filter by (for favorites)
 }

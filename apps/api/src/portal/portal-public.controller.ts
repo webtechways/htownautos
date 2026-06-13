@@ -1,5 +1,5 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
-import { PORTAL_TENANT_ID } from '@htownautos/auth';
+import { PORTAL_TENANT_ID, Public, TenantOptional } from '@htownautos/auth';
 import { PortalService } from './portal.service';
 import { PortalPricingService } from './portal-pricing.service';
 import { QueryCopartDto } from '../copart/dto/query-copart.dto';
@@ -12,6 +12,8 @@ import { QueryCopartDto } from '../copart/dto/query-copart.dto';
  * Intentionally NOT guarded by CustomerGuard. Tenant-scoped data uses the
  * canonical HtownAutos tenant.
  */
+@Public()
+@TenantOptional()
 @Controller('portal')
 export class PortalPublicController {
   constructor(

@@ -70,21 +70,7 @@ export class PortalController {
     return this.portalService.getInspection(id, buyer);
   }
 
-  /**
-   * POST /api/v1/portal/inspections/quote
-   * Computes and returns the pricing breakdown for a cart WITHOUT creating
-   * any records. Safe to call multiple times.
-   *
-   * Body: { items: [{ lotNumber, vin?, yardId, yardName? }, ...] }
-   */
-  @Post('inspections/quote')
-  @HttpCode(HttpStatus.OK)
-  quoteInspections(
-    @CurrentBuyer() buyer: PortalBuyer,
-    @Body() dto: InspectionCartDto,
-  ) {
-    return this.portalService.quoteInspections(buyer, dto);
-  }
+  // inspections/quote is PUBLIC — see PortalPublicController.
 
   /**
    * POST /api/v1/portal/inspections/checkout

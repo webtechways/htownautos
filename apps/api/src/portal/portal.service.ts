@@ -7,6 +7,7 @@ import Stripe from 'stripe';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
 import type { PortalBuyer } from '@htownautos/auth';
+import { PORTAL_TENANT_ID } from '@htownautos/auth';
 import { CopartService } from '../copart/copart.service';
 import { QueryCopartDto } from '../copart/dto/query-copart.dto';
 import { VehicleInspectionsService } from '../vehicle-inspections/vehicle-inspections.service';
@@ -171,6 +172,15 @@ export class PortalService {
     dto: InspectionCartDto,
   ): Promise<InspectionQuote> {
     const pricing = await this.pricingService.getPricing(buyer.tenantId);
+    return this.computeQuote(dto.items, pricing);
+  }
+
+  /**
+   * Public quote — same breakdown, no auth, using the canonical tenant's fees.
+   * Lets the cart show the price before the customer signs in. Creates nothing.
+   */
+  async quotePublic(dto: InspectionCartDto): Promise<InspectionQuote> {
+    const pricing = await this.pricingService.getPricing(PORTAL_TENANT_ID);
     return this.computeQuote(dto.items, pricing);
   }
 

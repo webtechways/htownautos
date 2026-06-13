@@ -9,13 +9,16 @@ import {
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
-import { CustomerGuard, CurrentBuyer } from '@htownautos/auth';
+import { CustomerGuard, CurrentBuyer, TenantOptional } from '@htownautos/auth';
 import type { PortalBuyer } from '@htownautos/auth';
 import { PortalService } from './portal.service';
 import { UpdatePortalProfileDto } from './dto/update-portal-profile.dto';
 import { InspectionCartDto } from './dto/inspection-cart.dto';
 import { CreateDepositDto } from './dto/create-deposit.dto';
 
+// CustomerGuard resolves the tenant from the Buyer, so the global TenantGuard
+// must not require an org-based tenant on these routes.
+@TenantOptional()
 @UseGuards(CustomerGuard)
 @Controller('portal')
 export class PortalController {

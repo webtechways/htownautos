@@ -5,7 +5,6 @@ import {
   Post,
   Param,
   Body,
-  Query,
   HttpCode,
   HttpStatus,
   UseGuards,
@@ -16,7 +15,6 @@ import { PortalService } from './portal.service';
 import { UpdatePortalProfileDto } from './dto/update-portal-profile.dto';
 import { InspectionCartDto } from './dto/inspection-cart.dto';
 import { CreateDepositDto } from './dto/create-deposit.dto';
-import { QueryCopartDto } from '../copart/dto/query-copart.dto';
 
 @UseGuards(CustomerGuard)
 @Controller('portal')
@@ -47,37 +45,7 @@ export class PortalController {
     return this.portalService.updateProfile(buyer, dto);
   }
 
-  // ── Listings ──────────────────────────────────────────────────────────────
-
-  /**
-   * GET /api/v1/portal/listings
-   * Proxies to CopartService.findAll — public auction listings.
-   */
-  @Get('listings')
-  getListings(@Query() query: QueryCopartDto) {
-    return this.portalService.getListings(query);
-  }
-
-  /**
-   * GET /api/v1/portal/listings/:lotNumber
-   * Proxies to CopartService.findByLotNumber.
-   */
-  @Get('listings/:lotNumber')
-  getListingByLotNumber(@Param('lotNumber') lotNumber: string) {
-    return this.portalService.getListingByLotNumber(lotNumber);
-  }
-
-  // ── Pricing ───────────────────────────────────────────────────────────────
-
-  /**
-   * GET /api/v1/portal/pricing
-   * Returns the tenant's current {inspectionFeeCents, travelFeeCents} so the
-   * cart can display fees before checkout.
-   */
-  @Get('pricing')
-  getPricing(@CurrentBuyer() buyer: PortalBuyer) {
-    return this.portalService.getPricingForBuyer(buyer);
-  }
+  // Listings + pricing are PUBLIC — see PortalPublicController.
 
   // ── Inspections ───────────────────────────────────────────────────────────
 

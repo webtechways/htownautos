@@ -4,6 +4,7 @@ import { CustomerGuard } from '@htownautos/auth';
 import { CopartModule } from '../copart/copart.module';
 import { VehicleInspectionsModule } from '../vehicle-inspections/vehicle-inspections.module';
 import { PortalController } from './portal.controller';
+import { PortalPublicController } from './portal-public.controller';
 import { PortalService } from './portal.service';
 import { PortalPricingService } from './portal-pricing.service';
 import { PortalSettingsController } from './portal-settings.controller';
@@ -18,7 +19,7 @@ import { PortalSettingsController } from './portal-settings.controller';
  */
 @Module({
   imports: [PrismaModule, CopartModule, VehicleInspectionsModule],
-  controllers: [PortalController, PortalSettingsController],
+  controllers: [PortalPublicController, PortalController, PortalSettingsController],
   providers: [PortalService, PortalPricingService, CustomerGuard],
   exports: [PortalService, PortalPricingService],
 })

@@ -1,60 +1,35 @@
-name: Deploy Backend
+name: Deploy Backend (Coolify)
+
+# Coolify clones this repo (read-only deploy key) and builds the single
+# multi-process image from ./Dockerfile (api + image-service + ai-services +
+# data-sync, started by scripts/start-prod.sh) on every deploy. This workflow
+# just triggers that deploy. Traefik (in Coolify) terminates TLS and routes
+# api.htownautos.com / link.htownautos.com by FQDN — no SCP/SSH, no GHCR,
+# no Cloudflare Tunnel. Env vars live in Coolify, not here.
+#
+# Required GitHub secrets (set via gh / repo settings):
+#   COOLIFY_URL           http://163.192.211.13:8000   (no trailing slash)
+#   COOLIFY_TOKEN         Coolify API token
+#   COOLIFY_BACKEND_UUID  z1d4qr4dsv6a0vlbmzaa5qer
 
 on:
   push:
     branches: [main]
+  workflow_dispatch: {}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image (amd64)
+      - name: Trigger Coolify deploy
         run: |
-          docker build --platform linux/amd64 -t htownautos-backend:latest .
-
-      - name: Save Docker image
-        run: docker save htownautos-backend:latest | gzip > backend.tar.gz
-
-      - name: Copy image to VPS
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          source: "backend.tar.gz"
-          target: "/tmp"
-
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            docker load < /tmp/backend.tar.gz
-            rm /tmp/backend.tar.gz
-
-            docker stop app 2>/dev/null || true
-            docker rm app 2>/dev/null || true
-
-            docker run -d \
-              --name app \
-              --restart unless-stopped \
-              --network htownautos_appnet \
-              --env-file ~/htownautos/htownautos-backend/.env.production \
-              -p 3000:3000 \
-              -p 3002:3002 \
-              -p 3003:3003 \
-              -p 3004:3004 \
-              htownautos-backend:latest
-
-            sleep 15
-            docker ps | grep app
-            docker image prune -f
-            echo "Backend deployed successfully!"
+          set -euo pipefail
+          echo "Triggering Coolify deploy for ${COOLIFY_BACKEND_UUID}…"
+          curl --fail-with-body -sS -X GET \
+            "${COOLIFY_URL}/api/v1/deploy?uuid=${COOLIFY_BACKEND_UUID}&force=true" \
+            -H "Authorization: Bearer ${COOLIFY_TOKEN}"
+          echo
+        env:
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_BACKEND_UUID: ${{ secrets.COOLIFY_BACKEND_UUID }}

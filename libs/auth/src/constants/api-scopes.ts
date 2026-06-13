@@ -15,22 +15,49 @@ export interface ApiScopeResource {
 }
 
 export const API_SCOPE_RESOURCES: ApiScopeResource[] = [
+  // — Parts & inventory —
   { slug: 'orders', label: 'Part Orders', description: 'Customer orders for parts (list, read, create, charge, ship)' },
   { slug: 'parts', label: 'Parts', description: 'Parts catalog and inventory' },
+  { slug: 'parts-pricing', label: 'Parts Pricing', description: 'Parts pricing rules and lookups' },
   { slug: 'vehicles', label: 'Vehicles', description: 'Vehicle inventory' },
-  { slug: 'deals', label: 'Deals', description: 'Sales deals' },
-  { slug: 'buyers', label: 'Buyers / Customers', description: 'Customer records' },
-  { slug: 'leads', label: 'Leads', description: 'Sales leads and lead sources' },
   { slug: 'inventory-assets', label: 'Inventory Assets', description: 'Media and assets attached to inventory' },
-  { slug: 'shippo', label: 'Shipping (Shippo)', description: 'Addresses, rates, labels, tracking, pickups' },
-  { slug: 'parcel-templates', label: 'Parcel Templates', description: 'Packaging templates' },
+
+  // — Sales —
+  { slug: 'deals', label: 'Deals', description: 'Sales deals' },
+  { slug: 'leads', label: 'Leads', description: 'Sales leads and lead sources' },
+  { slug: 'buyers', label: 'Buyers / Customers', description: 'Customer records' },
+  { slug: 'buyer-preferences', label: 'Buyer Preferences', description: 'Buyer vehicle preferences and saved criteria' },
+  { slug: 'extra-expense', label: 'Extra Expenses', description: 'Extra expenses attached to deals/vehicles' },
+  { slug: 'title', label: 'Titles', description: 'Vehicle title records and status' },
+
+  // — Auctions (Copart) —
+  { slug: 'auction-listings', label: 'Auction Listings', description: 'Copart auction inventory, search and facets (read-only)' },
+  { slug: 'auction-bids', label: 'Auction Bids', description: 'Buyer auction bids and max-bid orders' },
+  { slug: 'listing-groups', label: 'Listing Groups', description: 'Curated groups of auction listings' },
+  { slug: 'listing-reviews', label: 'Listing Reviews', description: 'Reviews and analyses on auction listings' },
+  { slug: 'vehicle-inspections', label: 'Vehicle Inspections', description: 'Inspection requests, checklists and results' },
+  { slug: 'inspection-share-links', label: 'Inspection Share Links', description: 'Public share links for inspections' },
+  { slug: 'favorites', label: 'Favorites', description: 'Favorited listings and entities' },
+
+  // — Communications —
   { slug: 'tasks', label: 'Tasks', description: 'Tasks / to-dos' },
   { slug: 'notes', label: 'Notes', description: 'Free-form notes on entities' },
   { slug: 'phone-calls', label: 'Phone Calls', description: 'Call history and dispositions' },
   { slug: 'sms', label: 'SMS', description: 'SMS messages' },
   { slug: 'email-messages', label: 'Email Messages', description: 'Email thread history' },
   { slug: 'social-accounts', label: 'Social Accounts', description: 'Connected social media accounts' },
+
+  // — Shipping —
+  { slug: 'shippo', label: 'Shipping (Shippo)', description: 'Addresses, rates, labels, tracking, pickups' },
+  { slug: 'parcel-templates', label: 'Parcel Templates', description: 'Packaging templates' },
+
+  // — Administration & reference —
+  { slug: 'users', label: 'Users / Staff', description: 'Internal staff users and tenant membership' },
+  { slug: 'roles', label: 'Roles & Permissions', description: 'RBAC roles and permissions (read-only recommended)' },
   { slug: 'tenant', label: 'Tenant / Business', description: 'Tenant configuration (read-only recommended)' },
+  { slug: 'nomenclators', label: 'Reference Data', description: 'Enums, makes/models, lookups (read-only)' },
+  { slug: 'marketcheck', label: 'Market Data', description: 'MarketCheck vehicle market pricing (read-only)' },
+  { slug: 'audit-log', label: 'Audit Logs', description: 'Activity and audit history (read-only)' },
 ];
 
 /** Flat list of every valid scope string. */

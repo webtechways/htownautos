@@ -306,6 +306,14 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.apiKey;
   }
 
+  get customerLedgerEntry() {
+    return this.prisma.customerLedgerEntry;
+  }
+
+  get portalOrder() {
+    return this.prisma.portalOrder;
+  }
+
   get $transaction() {
     return this.prisma.$transaction.bind(this.prisma);
   }

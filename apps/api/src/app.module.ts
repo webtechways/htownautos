@@ -67,6 +67,7 @@ import { PartOrdersModule } from './part-orders/part-orders.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PostmarkModule } from './postmark/postmark.module';
 import { CloudflareModule } from './cloudflare/cloudflare.module';
+import { PortalModule } from './portal/portal.module';
 
 /**
  * API Gateway Module
@@ -150,6 +151,7 @@ import { CloudflareModule } from './cloudflare/cloudflare.module';
     ApiKeysModule,
     PostmarkModule,
     CloudflareModule,
+    PortalModule,
   ],
   controllers: [AppController],
   providers: [

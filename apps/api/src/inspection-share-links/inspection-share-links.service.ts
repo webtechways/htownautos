@@ -134,6 +134,20 @@ export class InspectionShareLinksService {
     });
   }
 
+  /** Hard-delete the row from the table (used to clean up old revoked/expired entries). */
+  async remove(linkId: string, tenantId: string) {
+    const link = await this.prisma.inspectionShareLink.findUnique({
+      where: { id: linkId },
+      include: { inspection: { select: { tenantId: true } } },
+    });
+    if (!link) throw new NotFoundException('Share link not found');
+    if (tenantId && link.inspection.tenantId !== tenantId) {
+      throw new ForbiddenException('Cannot delete another tenant share link');
+    }
+    await this.prisma.inspectionShareLink.delete({ where: { id: linkId } });
+    return { deleted: true };
+  }
+
   // ─── public (no auth) ──────────────────────────────────────────────
 
   /**

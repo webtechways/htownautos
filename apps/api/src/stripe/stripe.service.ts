@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import Stripe from 'stripe';
 import { PrismaService } from '@htownautos/prisma';
@@ -10,6 +11,9 @@ import { StripeEventsService } from '../presence/stripe-events.service';
 import { SmsService } from '../sms/sms.service';
 import { EmailService } from '../email/email.service';
 import { ShortUrlService } from '../short-url/short-url.service';
+// Lazy import to avoid circular dependency — resolved at runtime.
+// PortalService is injected via forwardRef on the module side.
+import type { PortalService } from '../portal/portal.service';
 
 @Injectable()
 export class StripeService {
@@ -22,6 +26,7 @@ export class StripeService {
     private readonly smsService: SmsService,
     private readonly emailService: EmailService,
     private readonly shortUrlService: ShortUrlService,
+    @Optional() private readonly portalService?: PortalService,
   ) {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
   }
@@ -762,6 +767,12 @@ export class StripeService {
           this.logger.log(
             `Checkout session completed: ${session.id} — $${((session.amount_total ?? 0) / 100).toFixed(2)}`,
           );
+
+          // Portal order fulfillment (inspection or deposit).
+          if (session.metadata?.portalOrderId && this.portalService) {
+            await this.portalService.fulfillPortalOrder(session);
+          }
+
           const piId =
             typeof session.payment_intent === 'string'
               ? session.payment_intent

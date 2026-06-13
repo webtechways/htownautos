@@ -14,7 +14,11 @@ import { RedisIoAdapter } from './websocket/redis-io.adapter';
  */
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['https://app.htownautos.com'];
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+    'https://app.htownautos.com',
+    'https://htownautos.com',
+    'https://www.htownautos.com',
+  ];
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug'], // Logging completo para auditoría
     cors: {

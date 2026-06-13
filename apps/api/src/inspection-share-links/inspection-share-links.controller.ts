@@ -68,6 +68,20 @@ export class InspectionShareLinksController {
     return this.service.revoke(linkId, tenantId);
   }
 
+  @Delete('vehicle-inspections/share-links/:linkId/permanent')
+  @UseGuards(ClerkJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Permanently delete a share link row (use after revoke).',
+  })
+  @ApiParam({ name: 'linkId', description: 'Share link UUID' })
+  remove(
+    @CurrentTenant() tenantId: string,
+    @Param('linkId', ParseUUIDPipe) linkId: string,
+  ) {
+    return this.service.remove(linkId, tenantId);
+  }
+
   // ─── public (no auth) ──────────────────────────────────────────────
 
   @Get('public/inspections/shared')

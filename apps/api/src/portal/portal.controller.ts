@@ -3,6 +3,7 @@ import {
   Get,
   Patch,
   Post,
+  Delete,
   Param,
   Body,
   HttpCode,
@@ -12,6 +13,8 @@ import {
 import { CustomerGuard, CurrentBuyer, TenantOptional } from '@htownautos/auth';
 import type { PortalBuyer } from '@htownautos/auth';
 import { PortalService } from './portal.service';
+import { BuyerFavoritesService } from '../buyer-favorites/buyer-favorites.service';
+import { ToggleBuyerFavoriteDto } from '../buyer-favorites/dto/toggle-buyer-favorite.dto';
 import { UpdatePortalProfileDto } from './dto/update-portal-profile.dto';
 import { InspectionCartDto } from './dto/inspection-cart.dto';
 import { CreateDepositDto } from './dto/create-deposit.dto';
@@ -22,7 +25,10 @@ import { CreateDepositDto } from './dto/create-deposit.dto';
 @UseGuards(CustomerGuard)
 @Controller('portal')
 export class PortalController {
-  constructor(private readonly portalService: PortalService) {}
+  constructor(
+    private readonly portalService: PortalService,
+    private readonly favoritesService: BuyerFavoritesService,
+  ) {}
 
   // ── Profile ───────────────────────────────────────────────────────────────
 
@@ -90,6 +96,52 @@ export class PortalController {
     @Body() dto: InspectionCartDto,
   ) {
     return this.portalService.checkoutInspections(buyer, dto);
+  }
+
+  // ── Favorites ─────────────────────────────────────────────────────────────
+
+  /**
+   * GET /api/v1/portal/favorites
+   * The calling buyer's favorite auction lots, with full listing detail.
+   */
+  @Get('favorites')
+  getFavorites(@CurrentBuyer() buyer: PortalBuyer) {
+    return this.favoritesService.list(buyer.id, buyer.tenantId);
+  }
+
+  /**
+   * GET /api/v1/portal/favorites/ids
+   * Lot numbers the buyer favorited — used by the web to paint heart state.
+   */
+  @Get('favorites/ids')
+  async getFavoriteIds(@CurrentBuyer() buyer: PortalBuyer) {
+    return { ids: await this.favoritesService.getIds(buyer.id) };
+  }
+
+  /**
+   * POST /api/v1/portal/favorites  { lotNumber }
+   * Adds a lot to the buyer's favorites (idempotent).
+   */
+  @Post('favorites')
+  @HttpCode(HttpStatus.CREATED)
+  addFavorite(
+    @CurrentBuyer() buyer: PortalBuyer,
+    @Body() dto: ToggleBuyerFavoriteDto,
+  ) {
+    return this.favoritesService.add(buyer.id, buyer.tenantId, dto.lotNumber);
+  }
+
+  /**
+   * DELETE /api/v1/portal/favorites/:lotNumber
+   * Removes a lot from the buyer's favorites (idempotent).
+   */
+  @Delete('favorites/:lotNumber')
+  @HttpCode(HttpStatus.OK)
+  removeFavorite(
+    @CurrentBuyer() buyer: PortalBuyer,
+    @Param('lotNumber') lotNumber: string,
+  ) {
+    return this.favoritesService.remove(buyer.id, lotNumber);
   }
 
   // ── Ledger ────────────────────────────────────────────────────────────────

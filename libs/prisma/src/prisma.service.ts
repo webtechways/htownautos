@@ -150,6 +150,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.auctionFavorite;
   }
 
+  get buyerFavorite() {
+    return this.prisma.buyerFavorite;
+  }
+
   get task() {
     return this.prisma.task;
   }

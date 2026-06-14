@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsInt, Min, Max } from 'class-validator';
+import { IsOptional, IsString, IsInt, IsBoolean, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class QueryCopartDto {
@@ -93,4 +93,9 @@ export class QueryCopartDto {
   @IsOptional()
   @IsString()
   ids?: string; // Comma-separated list of IDs to filter by (for favorites)
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  inspectableOnly?: boolean; // Only listings whose yard offers on-site inspection
 }

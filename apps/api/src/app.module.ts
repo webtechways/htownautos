@@ -39,6 +39,7 @@ import { FavoritesModule } from './favorites/favorites.module';
 import { BuyersModule } from './buyers/buyers.module';
 import { BuyerAuctionBidsModule } from './buyer-auction-bids/buyer-auction-bids.module';
 import { BuyerVehiclePreferencesModule } from './buyer-vehicle-preferences/buyer-vehicle-preferences.module';
+import { BuyerFavoritesModule } from './buyer-favorites/buyer-favorites.module';
 import { VehicleInspectionsModule } from './vehicle-inspections/vehicle-inspections.module';
 import { InspectionShareLinksModule } from './inspection-share-links/inspection-share-links.module';
 import { YardsModule } from './yards/yards.module';
@@ -123,6 +124,7 @@ import { PortalModule } from './portal/portal.module';
     BuyersModule,
     BuyerAuctionBidsModule,
     BuyerVehiclePreferencesModule,
+    BuyerFavoritesModule,
     VehicleInspectionsModule,
     InspectionShareLinksModule,
     YardsModule,

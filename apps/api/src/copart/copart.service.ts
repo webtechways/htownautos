@@ -30,6 +30,7 @@ export class CopartService {
       sortBy = 'createdAt',
       sortOrder = 'desc',
       ids,
+      inspectableOnly,
     } = query;
 
     const skip = (page - 1) * limit;
@@ -127,6 +128,11 @@ export class CopartService {
               },
             }
           : {},
+
+        // Inspectable filter — only listings whose yard offers on-site inspection
+        inspectableOnly === true
+          ? { yard: { is: { physicalInspectionAvailable: true } } }
+          : {},
       ],
     };
 
@@ -154,14 +160,19 @@ export class CopartService {
         skip,
         take: limit,
         orderBy,
+        include: {
+          yard: { select: { physicalInspectionAvailable: true } },
+        },
       }),
       this.prisma.auctionListing.count({ where }),
     ]);
 
-    // Convert BigInt to string for JSON serialization
-    const serializedListings = listings.map((listing) => ({
+    // Convert BigInt to string for JSON serialization and surface a flat
+    // `inspectable` flag derived from the yard's on-site inspection availability.
+    const serializedListings = listings.map(({ yard, ...listing }) => ({
       ...listing,
       lotNumber: listing.lotNumber.toString(),
+      inspectable: yard?.physicalInspectionAvailable ?? false,
     }));
 
     return {
@@ -180,30 +191,36 @@ export class CopartService {
   async findOne(id: string) {
     const listing = await this.prisma.auctionListing.findUnique({
       where: { lotNumber: BigInt(id) },
+      include: { yard: { select: { physicalInspectionAvailable: true } } },
     });
 
     if (!listing) {
       return null;
     }
 
+    const { yard, ...rest } = listing;
     return {
-      ...listing,
+      ...rest,
       lotNumber: listing.lotNumber.toString(),
+      inspectable: yard?.physicalInspectionAvailable ?? false,
     };
   }
 
   async findByLotNumber(lotNumber: string) {
     const listing = await this.prisma.auctionListing.findUnique({
       where: { lotNumber: BigInt(lotNumber) },
+      include: { yard: { select: { physicalInspectionAvailable: true } } },
     });
 
     if (!listing) {
       return null;
     }
 
+    const { yard, ...rest } = listing;
     return {
-      ...listing,
+      ...rest,
       lotNumber: listing.lotNumber.toString(),
+      inspectable: yard?.physicalInspectionAvailable ?? false,
     };
   }
 

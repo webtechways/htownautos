@@ -533,6 +533,7 @@ model Tenant {
   vehicleStatuses         VehicleStatus[]
   vehicles                Vehicle[]
   auctionFavorites        AuctionFavorite[]
+  buyerFavorites          BuyerFavorite[]
   vehicleInspections      VehicleInspection[]
   auctionListingGroups    AuctionListingGroup[]
   auctionListingReviews   AuctionListingReview[]
@@ -896,6 +897,7 @@ model Buyer {
   partOrders               PartOrder[]
   auctionBids              BuyerAuctionBid[]
   vehiclePreferences       BuyerVehiclePreference[]
+  favorites                BuyerFavorite[]
   inspections              VehicleInspection[]      @relation("BuyerInspections")
   ledgerEntries            CustomerLedgerEntry[]
   portalOrders             PortalOrder[]
@@ -2120,6 +2122,25 @@ model AuctionFavorite {
   @@index([tenantId, userId])
   @@index([lotNumber])
   @@map("auction_favorites")
+}
+
+/// Customer-facing favorites. Unlike AuctionFavorite (staff/userId-scoped), these are
+/// scoped to a Buyer and are shared between the public portal (htownautos-web) and the
+/// CRM dashboard so staff can see what each customer saved.
+model BuyerFavorite {
+  id        String   @id @default(uuid())
+  tenantId  String?
+  buyerId   String
+  lotNumber BigInt
+  createdAt DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  buyer  Buyer   @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@unique([buyerId, lotNumber])
+  @@index([tenantId, buyerId])
+  @@index([lotNumber])
+  @@map("buyer_favorites")
 }
 
 model Task {

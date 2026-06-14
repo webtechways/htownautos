@@ -164,6 +164,30 @@ export class CustomerGuard implements CanActivate {
       );
     }
 
+    // Link path: a Buyer with this email already exists in the CRM (e.g. created
+    // by staff) but isn't linked to a Clerk login yet. Adopt it instead of
+    // creating a duplicate, so the website and the dashboard share ONE customer
+    // record (favorites, inspections, deposits all land on the same buyer).
+    const byEmail = await this.prisma.buyer.findFirst({
+      where: {
+        tenantId: PORTAL_TENANT_ID,
+        clerkUserId: null,
+        email: { equals: email, mode: 'insensitive' },
+      },
+      select: { id: true },
+    });
+    if (byEmail) {
+      this.logger.log(
+        `Linking portal login to existing buyer ${byEmail.id} (${email})`,
+      );
+      const linked = await this.prisma.buyer.update({
+        where: { id: byEmail.id },
+        data: { clerkUserId },
+        select,
+      });
+      return linked as PortalBuyer;
+    }
+
     this.logger.log(
       `Auto-provisioning portal buyer: ${email} (Clerk: ${clerkUserId})`,
     );

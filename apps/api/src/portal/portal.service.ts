@@ -6,6 +6,7 @@ import {
 import Stripe from 'stripe';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
+import { S3Service } from '@htownautos/common';
 import type { PortalBuyer } from '@htownautos/auth';
 import { PORTAL_TENANT_ID } from '@htownautos/auth';
 import { CopartService } from '../copart/copart.service';
@@ -81,6 +82,7 @@ export class PortalService {
     private readonly inspectionsService: VehicleInspectionsService,
     private readonly pricingService: PortalPricingService,
     private readonly auctionSearchService: AuctionSearchService,
+    private readonly s3: S3Service,
   ) {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
   }
@@ -186,7 +188,32 @@ export class PortalService {
     if ((inspection as any).buyerId !== buyer.id) {
       throw new NotFoundException(`Inspection ${id} not found`);
     }
+    await this.signInspectionMedia(inspection);
     return inspection;
+  }
+
+  /**
+   * Pre-sign every media URL (6h TTL) so the website can render the photos/
+   * videos directly — mirrors the public share-link view. Best-effort: a
+   * broken storageKey just won't display.
+   */
+  private async signInspectionMedia(inspection: any): Promise<void> {
+    const MEDIA_SIGNED_URL_TTL = 60 * 60 * 6;
+    const allMedia: { storageKey?: string | null; url?: string }[] = [
+      ...(inspection.media ?? []),
+      ...((inspection.checklist ?? []).flatMap((c: any) => c.media ?? [])),
+      ...((inspection.requestItems ?? []).flatMap((r: any) => r.media ?? [])),
+    ];
+    await Promise.all(
+      allMedia.map(async (m) => {
+        if (!m.storageKey) return;
+        try {
+          m.url = await this.s3.getSignedUrl(m.storageKey, MEDIA_SIGNED_URL_TTL);
+        } catch {
+          /* swallow — broken keys just don't display */
+        }
+      }),
+    );
   }
 
   // ── Quote ─────────────────────────────────────────────────────────────────

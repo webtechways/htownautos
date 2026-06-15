@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@htownautos/prisma';
+import { S3Service } from '@htownautos/common';
 import { CustomerGuard } from '@htownautos/auth';
 import { CopartModule } from '../copart/copart.module';
 import { VehicleInspectionsModule } from '../vehicle-inspections/vehicle-inspections.module';
@@ -22,7 +23,7 @@ import { PortalSettingsController } from './portal-settings.controller';
 @Module({
   imports: [PrismaModule, CopartModule, VehicleInspectionsModule, OpenSearchModule, BuyerFavoritesModule],
   controllers: [PortalPublicController, PortalController, PortalSettingsController],
-  providers: [PortalService, PortalPricingService, CustomerGuard],
+  providers: [PortalService, PortalPricingService, CustomerGuard, S3Service],
   exports: [PortalService, PortalPricingService],
 })
 export class PortalModule {}

@@ -5,14 +5,18 @@ import {
   Post,
   Delete,
   Param,
+  Query,
   Body,
   HttpCode,
   HttpStatus,
   UseGuards,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { CustomerGuard, CurrentBuyer, TenantOptional } from '@htownautos/auth';
 import type { PortalBuyer } from '@htownautos/auth';
 import { PortalService } from './portal.service';
+import { StripeService } from '../stripe/stripe.service';
 import { BuyerFavoritesService } from '../buyer-favorites/buyer-favorites.service';
 import { ToggleBuyerFavoriteDto } from '../buyer-favorites/dto/toggle-buyer-favorite.dto';
 import { UpdatePortalProfileDto } from './dto/update-portal-profile.dto';
@@ -29,6 +33,8 @@ export class PortalController {
   constructor(
     private readonly portalService: PortalService,
     private readonly favoritesService: BuyerFavoritesService,
+    @Inject(forwardRef(() => StripeService))
+    private readonly stripeService: StripeService,
   ) {}
 
   // ── Profile ───────────────────────────────────────────────────────────────
@@ -202,5 +208,38 @@ export class PortalController {
     @Body() dto: CreateDepositDto,
   ) {
     return this.portalService.createDeposit(buyer, dto);
+  }
+
+  // ── Billing ───────────────────────────────────────────────────────────────
+
+  /**
+   * GET /api/v1/portal/payment-summary
+   * Returns deposit balance, total deposited, and payment counts for the buyer.
+   */
+  @Get('payment-summary')
+  getPaymentSummary(@CurrentBuyer() buyer: PortalBuyer) {
+    return this.stripeService.getPaymentSummary(buyer.id, buyer.tenantId);
+  }
+
+  /**
+   * GET /api/v1/portal/payment-methods
+   * Returns saved Stripe payment methods (cards) for the buyer.
+   */
+  @Get('payment-methods')
+  listPaymentMethods(@CurrentBuyer() buyer: PortalBuyer) {
+    return this.stripeService.listPaymentMethods(buyer.id, buyer.tenantId);
+  }
+
+  /**
+   * GET /api/v1/portal/payments?startingAfter=<cursor>
+   * Returns paginated Stripe payment events with order/receipt enrichment.
+   * Default page size: 50. Use `startingAfter` (Stripe event ID) to page forward.
+   */
+  @Get('payments')
+  listPayments(
+    @CurrentBuyer() buyer: PortalBuyer,
+    @Query('startingAfter') startingAfter?: string,
+  ) {
+    return this.stripeService.listPayments(buyer.id, buyer.tenantId, 50, startingAfter);
   }
 }

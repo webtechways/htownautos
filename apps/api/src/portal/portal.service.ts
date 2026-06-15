@@ -708,6 +708,8 @@ export class PortalService {
       ],
       payment_intent_data: {
         description,
+        // Save the card so the buyer can see and reuse it later.
+        setup_future_usage: 'off_session',
         metadata: {
           portalOrderId: order.id,
           buyerId: buyer.id,
@@ -836,6 +838,8 @@ export class PortalService {
       ],
       payment_intent_data: {
         description: 'Portal account deposit',
+        // Save the card so the buyer can see and reuse it later.
+        setup_future_usage: 'off_session',
         metadata: {
           portalOrderId: order.id,
           buyerId: buyer.id,

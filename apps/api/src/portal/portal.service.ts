@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import Stripe from 'stripe';
@@ -50,6 +51,13 @@ interface YardGroup {
   cars: CartItemDto[];
 }
 
+/** Resolved yard fee data from the DB. */
+interface YardFeeData {
+  travelFeeCents: number;
+  minCars: number;
+  name: string;
+}
+
 /** Full quote breakdown. */
 export interface InspectionQuote {
   items: CartItemDto[];
@@ -58,6 +66,7 @@ export interface InspectionQuote {
     yardName?: string;
     cars: number;
     travelFeeCents: number;
+    minCars: number;
   }>;
   carsCount: number;
   yardsCount: number;
@@ -67,6 +76,8 @@ export interface InspectionQuote {
   travelSubtotalCents: number;
   totalCents: number;
   currency: 'usd';
+  /** Present only when checkout=true and a yard fails minCars; empty array at quote time. */
+  minCarsViolations: Array<{ yardId: string; yardName: string; required: number; actual: number }>;
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -189,7 +200,14 @@ export class PortalService {
       throw new NotFoundException(`Inspection ${id} not found`);
     }
     await this.signInspectionMedia(inspection);
-    return inspection;
+
+    // Fetch and attach Carfax reports — same shape the dashboard expects.
+    const carfax = await this.fetchAndSignCarfax(
+      (inspection as any).vin,
+      (inspection as any).lotNumber,
+    );
+
+    return { ...inspection, carfax };
   }
 
   /**
@@ -214,6 +232,84 @@ export class PortalService {
         }
       }),
     );
+  }
+
+  /**
+   * Fetch Carfax reports for a vehicle (by VIN and optionally lot number) and
+   * pre-sign any S3-stored PDF keys. Reuses the same query logic as
+   * InspectionShareLinksService.fetchCarfaxForVehicle (kept private there, so
+   * we duplicate the minimal query here rather than exposing an internal method).
+   */
+  private async fetchAndSignCarfax(
+    vin: string,
+    lotNumber: string | null,
+  ): Promise<any[]> {
+    const CARFAX_SIGNED_URL_TTL = 60 * 60 * 6;
+    const orClauses: Prisma.CarfaxReportWhereInput[] = [{ vin }];
+    if (lotNumber) {
+      try {
+        orClauses.push({ auctionListingId: BigInt(lotNumber) });
+      } catch {
+        /* non-numeric lot */
+      }
+    }
+    const reports = await this.prisma.carfaxReport.findMany({
+      where: { OR: orClauses },
+      orderBy: { createdAt: 'desc' },
+    });
+    await Promise.all(
+      reports.map(async (r: any) => {
+        if (!r.s3Key) return;
+        try {
+          r.signedUrl = await this.s3.getSignedUrl(r.s3Key, CARFAX_SIGNED_URL_TTL);
+        } catch {
+          /* swallow */
+        }
+      }),
+    );
+    return reports;
+  }
+
+  // ── Special requests ──────────────────────────────────────────────────────
+
+  /**
+   * Customer adds a special request note to an inspection that is still
+   * in REQUESTED status. Creates an InspectionRequestItem using the same
+   * model the staff dashboard uses.
+   *
+   * Validates:
+   *  1. The inspection belongs to the calling buyer (403/404 otherwise).
+   *  2. The inspection status === 'REQUESTED' (400 otherwise).
+   */
+  async addInspectionRequest(
+    id: string,
+    buyer: PortalBuyer,
+    text: string,
+  ) {
+    // Fetch lean fields only — avoid a heavy include on this write path.
+    const inspection = await this.prisma.vehicleInspection.findFirst({
+      where: { id, tenantId: buyer.tenantId },
+      select: { id: true, buyerId: true, status: true },
+    });
+
+    if (!inspection || inspection.buyerId !== buyer.id) {
+      throw new NotFoundException(`Inspection ${id} not found`);
+    }
+
+    if (inspection.status !== 'REQUESTED') {
+      throw new BadRequestException(
+        'Solo puedes agregar solicitudes mientras la inspección está en estado solicitada',
+      );
+    }
+
+    return this.prisma.inspectionRequestItem.create({
+      data: {
+        inspectionId: id,
+        note: text,
+        sortOrder: 0,
+      },
+      include: { media: true },
+    });
   }
 
   // ── Order receipt + payment confirmation ───────────────────────────────────
@@ -268,22 +364,27 @@ export class PortalService {
   /**
    * Computes a pricing breakdown for the cart WITHOUT creating any records.
    * Safe to call multiple times (read-only).
+   * Soft validation: minCars violations are returned in the response (not thrown)
+   * so the website can warn before the customer reaches checkout.
    */
   async quoteInspections(
     buyer: PortalBuyer,
     dto: InspectionCartDto,
   ): Promise<InspectionQuote> {
     const pricing = await this.pricingService.getPricing(buyer.tenantId);
-    return this.computeQuote(dto.items, pricing);
+    const yardFees = await this.resolveYardFees(dto.items);
+    return this.computeQuote(dto.items, pricing, yardFees, false);
   }
 
   /**
    * Public quote — same breakdown, no auth, using the canonical tenant's fees.
    * Lets the cart show the price before the customer signs in. Creates nothing.
+   * Soft validation: minCars violations returned but not thrown.
    */
   async quotePublic(dto: InspectionCartDto): Promise<InspectionQuote> {
     const pricing = await this.pricingService.getPricing(PORTAL_TENANT_ID);
-    return this.computeQuote(dto.items, pricing);
+    const yardFees = await this.resolveYardFees(dto.items);
+    return this.computeQuote(dto.items, pricing, yardFees, false);
   }
 
   // ── Checkout ──────────────────────────────────────────────────────────────
@@ -301,7 +402,9 @@ export class PortalService {
    */
   async checkoutInspections(buyer: PortalBuyer, dto: InspectionCartDto) {
     const pricing = await this.pricingService.getPricing(buyer.tenantId);
-    const quote = this.computeQuote(dto.items, pricing);
+    const yardFees = await this.resolveYardFees(dto.items);
+    // Hard validation: throws BadRequestException if any yard fails minCars.
+    const quote = this.computeQuote(dto.items, pricing, yardFees, true);
 
     const description = `Vehicle inspections — ${quote.carsCount} car${quote.carsCount !== 1 ? 's' : ''}, ${quote.yardsCount} yard${quote.yardsCount !== 1 ? 's' : ''}`;
 
@@ -711,15 +814,46 @@ export class PortalService {
   // ── Private: pricing computation ──────────────────────────────────────────
 
   /**
-   * Pure function — no DB calls. Groups items by yardId and computes totals.
+   * Resolve per-yard fee data from the DB for a set of cart items.
+   * Missing yards fall back to defaults (5000 cents, minCars=1).
+   */
+  private async resolveYardFees(
+    items: CartItemDto[],
+  ): Promise<Map<string, YardFeeData>> {
+    const yardIds = Array.from(new Set(items.map((i) => i.yardId)));
+    const rows = await this.prisma.yard.findMany({
+      where: { id: { in: yardIds } },
+      select: { id: true, name: true, travelFeeCents: true, minCars: true },
+    });
+    const map = new Map<string, YardFeeData>();
+    for (const r of rows) {
+      map.set(r.id, {
+        travelFeeCents: r.travelFeeCents,
+        minCars: r.minCars,
+        name: r.name,
+      });
+    }
+    return map;
+  }
+
+  /**
+   * Groups items by yardId and computes totals using per-yard travel fees.
    *
    * Formula:
-   *   total = (numberOfCars * inspectionFeeCents) + (numberOfDistinctYards * travelFeeCents)
+   *   total = (numberOfCars × inspectionFeeCents) + Σ over distinct yards (yard.travelFeeCents)
+   *
+   * @param hardValidate - when true, throws BadRequestException on minCars violations;
+   *                       when false, populates minCarsViolations[] instead.
    */
   private computeQuote(
     items: CartItemDto[],
     pricing: PortalPricing,
+    yardFees: Map<string, YardFeeData>,
+    hardValidate: boolean,
   ): InspectionQuote {
+    const DEFAULT_TRAVEL_FEE = 5000;
+    const DEFAULT_MIN_CARS = 1;
+
     // Group by yardId.
     const yardMap = new Map<string, YardGroup>();
     for (const item of items) {
@@ -733,17 +867,49 @@ export class PortalService {
       yardMap.get(item.yardId)!.cars.push(item);
     }
 
-    const byYard = Array.from(yardMap.values()).map((g) => ({
-      yardId: g.yardId,
-      yardName: g.yardName,
-      cars: g.cars.length,
-      travelFeeCents: pricing.travelFeeCents,
-    }));
+    const minCarsViolations: InspectionQuote['minCarsViolations'] = [];
+
+    const byYard = Array.from(yardMap.values()).map((g) => {
+      const fee = yardFees.get(g.yardId);
+      const travelFeeCents = fee?.travelFeeCents ?? DEFAULT_TRAVEL_FEE;
+      const minCars = fee?.minCars ?? DEFAULT_MIN_CARS;
+      const yardName = g.yardName ?? fee?.name ?? g.yardId;
+      const actual = g.cars.length;
+
+      if (actual < minCars) {
+        minCarsViolations.push({
+          yardId: g.yardId,
+          yardName,
+          required: minCars,
+          actual,
+        });
+      }
+
+      return {
+        yardId: g.yardId,
+        yardName: g.yardName ?? fee?.name,
+        cars: actual,
+        travelFeeCents,
+        minCars,
+      };
+    });
+
+    // Hard-block at checkout; soft-warn at quote.
+    if (hardValidate && minCarsViolations.length > 0) {
+      const msgs = minCarsViolations.map(
+        (v) =>
+          `${v.yardName} requiere mínimo ${v.required} vehículo${v.required !== 1 ? 's' : ''} para inspección (tienes ${v.actual})`,
+      );
+      throw new BadRequestException(msgs.join('. '));
+    }
 
     const carsCount = items.length;
     const yardsCount = yardMap.size;
     const inspectionSubtotalCents = carsCount * pricing.inspectionFeeCents;
-    const travelSubtotalCents = yardsCount * pricing.travelFeeCents;
+    const travelSubtotalCents = byYard.reduce(
+      (sum, y) => sum + y.travelFeeCents,
+      0,
+    );
     const totalCents = inspectionSubtotalCents + travelSubtotalCents;
 
     return {
@@ -752,11 +918,12 @@ export class PortalService {
       carsCount,
       yardsCount,
       inspectionFeeCents: pricing.inspectionFeeCents,
-      travelFeeCents: pricing.travelFeeCents,
+      travelFeeCents: travelSubtotalCents, // aggregate for legacy compat
       inspectionSubtotalCents,
       travelSubtotalCents,
       totalCents,
       currency: 'usd',
+      minCarsViolations,
     };
   }
 

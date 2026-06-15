@@ -74,6 +74,14 @@ export class CreateYardDto {
   @IsOptional() @IsString() @MaxLength(5000)
   notes?: string;
 
+  @ApiPropertyOptional({ description: 'Per-yard travel/transport fee in cents (default 5000 = $50)', default: 5000 })
+  @IsOptional() @IsInt() @Min(0)
+  travelFeeCents?: number;
+
+  @ApiPropertyOptional({ description: 'Minimum cars required per inspection visit (default 1)', default: 1 })
+  @IsOptional() @IsInt() @Min(1)
+  minCars?: number;
+
   @ApiPropertyOptional({ default: true })
   @IsOptional() @IsBoolean()
   isActive?: boolean;

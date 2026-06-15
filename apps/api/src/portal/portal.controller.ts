@@ -18,6 +18,7 @@ import { ToggleBuyerFavoriteDto } from '../buyer-favorites/dto/toggle-buyer-favo
 import { UpdatePortalProfileDto } from './dto/update-portal-profile.dto';
 import { InspectionCartDto } from './dto/inspection-cart.dto';
 import { CreateDepositDto } from './dto/create-deposit.dto';
+import { AddInspectionRequestDto } from './dto/add-inspection-request.dto';
 
 // CustomerGuard resolves the tenant from the Buyer, so the global TenantGuard
 // must not require an org-based tenant on these routes.
@@ -70,6 +71,7 @@ export class PortalController {
   /**
    * GET /api/v1/portal/inspections/:id
    * Returns a single inspection — 404 if it belongs to another buyer.
+   * Response includes `carfax` array (same shape as dashboard CarfaxBlock).
    */
   @Get('inspections/:id')
   getInspection(
@@ -77,6 +79,21 @@ export class PortalController {
     @CurrentBuyer() buyer: PortalBuyer,
   ) {
     return this.portalService.getInspection(id, buyer);
+  }
+
+  /**
+   * POST /api/v1/portal/inspections/:id/requests
+   * Customer adds a special request note while inspection is REQUESTED.
+   * Returns the created InspectionRequestItem.
+   */
+  @Post('inspections/:id/requests')
+  @HttpCode(HttpStatus.CREATED)
+  addInspectionRequest(
+    @Param('id') id: string,
+    @CurrentBuyer() buyer: PortalBuyer,
+    @Body() dto: AddInspectionRequestDto,
+  ) {
+    return this.portalService.addInspectionRequest(id, buyer, dto.text);
   }
 
   // inspections/quote is PUBLIC — see PortalPublicController.

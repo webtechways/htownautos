@@ -107,6 +107,8 @@ export class YardsService {
           physicalInspectionAvailable: dto.physicalInspectionAvailable ?? false,
           hours: (dto.hours as Prisma.InputJsonValue | undefined) ?? undefined,
           notes: dto.notes,
+          travelFeeCents: dto.travelFeeCents ?? 5000,
+          minCars: dto.minCars ?? 1,
           isActive: dto.isActive ?? true,
         },
       });
@@ -147,6 +149,8 @@ export class YardsService {
             hours: dto.hours as Prisma.InputJsonValue,
           }),
           ...(dto.notes !== undefined && { notes: dto.notes }),
+          ...(dto.travelFeeCents !== undefined && { travelFeeCents: dto.travelFeeCents }),
+          ...(dto.minCars !== undefined && { minCars: dto.minCars }),
           ...(dto.isActive !== undefined && { isActive: dto.isActive }),
         },
       });

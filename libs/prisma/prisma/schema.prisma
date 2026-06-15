@@ -1974,6 +1974,10 @@ model Yard {
   hours                       Json?
   // Internal notes: access instructions, key handling, photo policy, etc.
   notes                       String?
+  // Per-yard travel/transport fee in cents charged on each inspection order.
+  travelFeeCents              Int     @default(5000)
+  // Minimum number of cars required per inspection visit to this yard.
+  minCars                     Int     @default(1)
 
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())

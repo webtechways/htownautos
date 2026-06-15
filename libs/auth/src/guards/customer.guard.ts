@@ -35,6 +35,26 @@ export interface PortalBuyer {
   updatedAt: Date;
 }
 
+const BUYER_SELECT = {
+  id: true,
+  tenantId: true,
+  clerkUserId: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  phoneMain: true,
+  phoneMobile: true,
+  phoneSecondary: true,
+  currentAddress: true,
+  currentCity: true,
+  currentState: true,
+  currentZipCode: true,
+  currentCountry: true,
+  stripeCustomerId: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 /**
  * CustomerGuard — protects all portal endpoints.
  *
@@ -117,6 +137,147 @@ export class CustomerGuard implements CanActivate {
   }
 
   /**
+   * Detect and merge duplicate Buyer rows in PORTAL_TENANT_ID that share the
+   * same email (case-insensitive) as the authenticated buyer but have a
+   * different id.
+   *
+   * Survivor selection:
+   *   1. The buyer that has the most complete profile (non-empty currentAddress
+   *      AND non-empty phoneMain — typical of a staff-created record).
+   *   2. If tied, keep the oldest (smallest createdAt).
+   *
+   * Child rows re-pointed: VehicleInspection, BuyerFavorite, PortalOrder,
+   * CustomerLedgerEntry. All done in a single transaction.
+   *
+   * Best-effort: any error is logged and the original buyer is returned — we
+   * never break a login because of a failed merge.
+   */
+  private async mergeEmailDuplicates(
+    authenticatedBuyer: PortalBuyer,
+  ): Promise<PortalBuyer> {
+    try {
+      // Find all buyers in the portal tenant with the same email (excluding self).
+      const duplicates = await this.prisma.buyer.findMany({
+        where: {
+          tenantId: PORTAL_TENANT_ID,
+          id: { not: authenticatedBuyer.id },
+          email: { equals: authenticatedBuyer.email, mode: 'insensitive' },
+        },
+        select: {
+          id: true,
+          currentAddress: true,
+          phoneMain: true,
+          clerkUserId: true,
+          createdAt: true,
+        },
+      });
+
+      if (duplicates.length === 0) return authenticatedBuyer;
+
+      this.logger.log(
+        `mergeEmailDuplicates: found ${duplicates.length} duplicate(s) for buyer ${authenticatedBuyer.id} (${authenticatedBuyer.email})`,
+      );
+
+      // Determine the survivor: all candidates including the authenticated buyer.
+      const candidates = [
+        {
+          id: authenticatedBuyer.id,
+          hasCompleteProfile:
+            !!authenticatedBuyer.currentAddress && !!authenticatedBuyer.phoneMain,
+          createdAt: authenticatedBuyer.createdAt,
+          clerkUserId: authenticatedBuyer.clerkUserId,
+        },
+        ...duplicates.map((d) => ({
+          id: d.id,
+          hasCompleteProfile:
+            !!d.currentAddress && d.currentAddress.length > 0 &&
+            !!d.phoneMain && d.phoneMain.length > 0,
+          createdAt: d.createdAt,
+          clerkUserId: d.clerkUserId,
+        })),
+      ];
+
+      // Sort: complete-profile first, then oldest first.
+      candidates.sort((a, b) => {
+        if (a.hasCompleteProfile !== b.hasCompleteProfile) {
+          return a.hasCompleteProfile ? -1 : 1;
+        }
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      });
+
+      const survivorId = candidates[0].id;
+      const dupeIds = candidates.slice(1).map((c) => c.id);
+
+      if (survivorId === authenticatedBuyer.id && dupeIds.length === 0) {
+        return authenticatedBuyer;
+      }
+
+      this.logger.log(
+        `mergeEmailDuplicates: survivor=${survivorId}, dupes=[${dupeIds.join(', ')}]`,
+      );
+
+      await this.prisma.$transaction(async (tx) => {
+        // Ensure survivor has the clerkUserId (may be on a dupe row).
+        const survivorHasClerk = candidates[0].clerkUserId != null;
+        if (!survivorHasClerk) {
+          // Find which candidate has the clerkUserId and set it on the survivor.
+          const withClerk = candidates.find((c) => c.clerkUserId != null);
+          if (withClerk) {
+            await tx.buyer.update({
+              where: { id: survivorId },
+              data: { clerkUserId: withClerk.clerkUserId },
+            });
+          }
+        }
+
+        // Re-point child rows from each dupe to the survivor.
+        for (const dupeId of dupeIds) {
+          await tx.vehicleInspection.updateMany({
+            where: { buyerId: dupeId },
+            data: { buyerId: survivorId },
+          });
+          await tx.buyerFavorite.updateMany({
+            where: { buyerId: dupeId },
+            data: { buyerId: survivorId },
+          });
+          await tx.portalOrder.updateMany({
+            where: { buyerId: dupeId },
+            data: { buyerId: survivorId },
+          });
+          await tx.customerLedgerEntry.updateMany({
+            where: { buyerId: dupeId },
+            data: { buyerId: survivorId },
+          });
+        }
+
+        // Delete duplicate rows — child FKs are all re-pointed or cascade-deleted.
+        await tx.buyer.deleteMany({
+          where: { id: { in: dupeIds }, tenantId: PORTAL_TENANT_ID },
+        });
+      });
+
+      // Return the survivor's fresh data.
+      const survivor = await this.prisma.buyer.findUnique({
+        where: { id: survivorId },
+        select: BUYER_SELECT,
+      });
+      if (!survivor) {
+        this.logger.warn(
+          `mergeEmailDuplicates: survivor ${survivorId} not found after merge — returning original`,
+        );
+        return authenticatedBuyer;
+      }
+      return survivor as PortalBuyer;
+    } catch (err) {
+      this.logger.error(
+        `mergeEmailDuplicates: failed for buyer ${authenticatedBuyer.id} — ${(err as Error).message}`,
+      );
+      // Never break login because of a failed merge.
+      return authenticatedBuyer;
+    }
+  }
+
+  /**
    * Find the Buyer by clerkUserId.  When none exists, auto-provision one in
    * the canonical portal tenant using the token's metadata.  This is
    * idempotent: if two concurrent requests race, the second upsert is a no-op
@@ -126,32 +287,16 @@ export class CustomerGuard implements CanActivate {
     clerkUserId: string,
     meta: { email?: string; first_name?: string; last_name?: string } | null,
   ): Promise<PortalBuyer> {
-    const select = {
-      id: true,
-      tenantId: true,
-      clerkUserId: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      phoneMain: true,
-      phoneMobile: true,
-      phoneSecondary: true,
-      currentAddress: true,
-      currentCity: true,
-      currentState: true,
-      currentZipCode: true,
-      currentCountry: true,
-      stripeCustomerId: true,
-      createdAt: true,
-      updatedAt: true,
-    } as const;
-
     // Fast path: buyer already exists.
     const existing = await this.prisma.buyer.findUnique({
       where: { clerkUserId },
-      select,
+      select: BUYER_SELECT,
     });
-    if (existing) return existing as PortalBuyer;
+    if (existing) {
+      // Check for duplicate buyer rows with the same email and merge them.
+      const survivor = await this.mergeEmailDuplicates(existing as PortalBuyer);
+      return survivor;
+    }
 
     // Slow path: first login — provision a minimal Buyer record.
     const email = meta?.email ?? '';
@@ -183,7 +328,7 @@ export class CustomerGuard implements CanActivate {
       const linked = await this.prisma.buyer.update({
         where: { id: byEmail.id },
         data: { clerkUserId },
-        select,
+        select: BUYER_SELECT,
       });
       return linked as PortalBuyer;
     }
@@ -209,7 +354,7 @@ export class CustomerGuard implements CanActivate {
           currentZipCode: '',
           currentCountry: 'USA',
         },
-        select,
+        select: BUYER_SELECT,
       });
       return created as PortalBuyer;
     } catch (err: any) {
@@ -217,7 +362,7 @@ export class CustomerGuard implements CanActivate {
       if (err?.code === 'P2002') {
         const retry = await this.prisma.buyer.findUnique({
           where: { clerkUserId },
-          select,
+          select: BUYER_SELECT,
         });
         if (retry) return retry as PortalBuyer;
       }

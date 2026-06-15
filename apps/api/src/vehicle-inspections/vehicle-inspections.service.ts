@@ -58,6 +58,15 @@ const SHARED_USER_SELECT = {
   avatar: true,
 } satisfies Prisma.UserSelect;
 
+// Brief buyer shape attached to every inspection so the dashboard can show
+// who requested / purchased the inspection (list column + detail field).
+const BUYER_BRIEF_SELECT = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+} satisfies Prisma.BuyerSelect;
+
 // Pulled in by every "get inspection" call. Includes the checklist (ordered)
 // with each item's media, plus the inspection-level media (top-level videos).
 const INSPECTION_INCLUDE = {
@@ -81,6 +90,7 @@ const INSPECTION_INCLUDE = {
     },
   },
   sharedWith: { select: SHARED_USER_SELECT },
+  buyer: { select: BUYER_BRIEF_SELECT },
 } satisfies Prisma.VehicleInspectionInclude;
 
 // Treat Sat/Sun as if they didn't exist when measuring lead time. Adding
@@ -167,6 +177,7 @@ export class VehicleInspectionsService {
         orderBy: { requestedAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
+        include: { buyer: { select: BUYER_BRIEF_SELECT } },
       }),
       this.prisma.vehicleInspection.count({ where }),
     ]);

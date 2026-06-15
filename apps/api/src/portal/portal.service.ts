@@ -80,6 +80,52 @@ export interface InspectionQuote {
   minCarsViolations: Array<{ yardId: string; yardName: string; required: number; actual: number }>;
 }
 
+/**
+ * Enriched, itemized receipt for a PortalOrder. Shared contract consumed by:
+ *  - the web payment-success receipt (confirmOrderBySession)
+ *  - the dashboard customer transactions view (StripeService.listPayments)
+ * Returns null for non-INSPECTION orders (deposits have no per-car breakdown).
+ */
+export interface OrderReceiptDetail {
+  id: string;
+  type: 'INSPECTION' | 'DEPOSIT' | 'SERVICE';
+  receiptNumber: string;
+  status: string;
+  description: string | null;
+  totalCents: number;
+  carsCount: number;
+  yardsCount: number;
+  inspectionSubtotalCents: number;
+  travelSubtotalCents: number;
+  inspectionFeeCents: number;
+  byYard: Array<{
+    yardId: string;
+    yardName: string | null;
+    location: { city: string | null; state: string | null } | null;
+    cars: number;
+    inspectionFeeCents: number;
+    inspectionSubtotalCents: number;
+    travelFeeCents: number;
+    vehicles: Array<{
+      inspectionId: string | null;
+      lotNumber: string | null;
+      vin: string | null;
+      year: number | null;
+      make: string | null;
+      model: string | null;
+    }>;
+  }>;
+  inspections: Array<{
+    id: string;
+    vin: string | null;
+    lotNumber: string | null;
+    year: number | null;
+    make: string | null;
+    model: string | null;
+    yardName: string | null;
+  }>;
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -345,6 +391,7 @@ export class PortalService {
         where: { id: order.id },
       })) ?? order;
     const meta: any = fresh.metadata ?? {};
+    const breakdown = await this.buildOrderReceiptDetail(fresh as any);
     return {
       orderId: fresh.id,
       receiptNumber: fresh.id.slice(0, 8).toUpperCase(),
@@ -354,9 +401,205 @@ export class PortalService {
       currency: fresh.currency,
       description: fresh.description,
       items: meta.items ?? [],
-      breakdown: meta.pricing ?? meta.breakdown ?? null,
+      breakdown,
       createdAt: fresh.createdAt,
     };
+  }
+
+  /**
+   * Build an enriched, itemized receipt from a PortalOrder. Reused by the web
+   * receipt and the dashboard transactions view. Returns null for non-INSPECTION
+   * orders. Best-effort: any DB miss degrades to nulls, never throws — this runs
+   * on read paths only.
+   */
+  async buildOrderReceiptDetail(order: {
+    id: string;
+    type: string;
+    status: string;
+    description: string | null;
+    amount: Prisma.Decimal | number | string;
+    tenantId: string | null;
+    metadata: unknown;
+  }): Promise<OrderReceiptDetail | null> {
+    if (order.type !== 'INSPECTION') return null;
+
+    try {
+      const DEFAULT_TRAVEL_FEE = 5000;
+      const meta = (order.metadata ?? {}) as Record<string, any>;
+      const items: CartItemDto[] = Array.isArray(meta.items) ? meta.items : [];
+      if (items.length === 0) return null;
+
+      // Per-yard travel fees stored on the order at checkout time.
+      const quoteByYard: Array<{ yardId: string; travelFeeCents?: number }> =
+        Array.isArray(meta.quote?.byYard) ? meta.quote.byYard : [];
+      const travelByYard = new Map<string, number>();
+      for (const y of quoteByYard) {
+        if (y?.yardId != null) travelByYard.set(String(y.yardId), y.travelFeeCents ?? DEFAULT_TRAVEL_FEE);
+      }
+
+      // Inspection fee per car (price the customer actually paid).
+      let inspectionFeeCents: number | undefined = meta.pricing?.inspectionFeeCents;
+      if (typeof inspectionFeeCents !== 'number') {
+        const pricing = await this.pricingService
+          .getPricing(order.tenantId ?? PORTAL_TENANT_ID)
+          .catch(() => null);
+        inspectionFeeCents = pricing?.inspectionFeeCents ?? 0;
+      }
+
+      // ── Resolve yard locations ──────────────────────────────────────────
+      const yardIds = Array.from(new Set(items.map((i) => i.yardId).filter(Boolean)));
+      const yardRows = yardIds.length
+        ? await this.prisma.yard.findMany({
+            where: { id: { in: yardIds } },
+            select: { id: true, name: true, city: true, state: true, travelFeeCents: true },
+          })
+        : [];
+      const yardMap = new Map(yardRows.map((y) => [y.id, y]));
+
+      // ── Resolve vehicle year/make/model from auction listings ───────────
+      const lotBigints: bigint[] = [];
+      for (const i of items) {
+        if (!i.lotNumber) continue;
+        try {
+          lotBigints.push(BigInt(i.lotNumber));
+        } catch {
+          /* non-numeric lot — skip */
+        }
+      }
+      const listings = lotBigints.length
+        ? await this.prisma.auctionListing.findMany({
+            where: { lotNumber: { in: lotBigints } },
+            select: { lotNumber: true, vin: true, year: true, make: true, modelGroup: true, modelDetail: true },
+          })
+        : [];
+      const composeModel = (mg: string | null, md: string | null) =>
+        [mg, md].filter(Boolean).join(' ') || null;
+      const byLot = new Map<string, { year: number | null; make: string | null; model: string | null; vin: string | null }>();
+      const byVin = new Map<string, { year: number | null; make: string | null; model: string | null }>();
+      for (const l of listings) {
+        const model = composeModel(l.modelGroup, l.modelDetail);
+        byLot.set(l.lotNumber.toString(), { year: l.year, make: l.make, model, vin: l.vin });
+        if (l.vin) byVin.set(l.vin, { year: l.year, make: l.make, model });
+      }
+
+      // ── Link created inspections (id by lot/vin) ────────────────────────
+      const fulfilledIds: string[] = Array.isArray(meta.fulfilledInspectionIds)
+        ? meta.fulfilledInspectionIds
+        : [];
+      const inspectionRows = fulfilledIds.length
+        ? await this.prisma.vehicleInspection.findMany({
+            where: { id: { in: fulfilledIds } },
+            select: { id: true, vin: true, lotNumber: true, yardName: true },
+          })
+        : [];
+      const inspByLot = new Map<string, { id: string; yardName: string | null }>();
+      const inspByVin = new Map<string, { id: string; yardName: string | null }>();
+      for (const r of inspectionRows) {
+        if (r.lotNumber) inspByLot.set(r.lotNumber, { id: r.id, yardName: r.yardName });
+        if (r.vin) inspByVin.set(r.vin, { id: r.id, yardName: r.yardName });
+      }
+
+      const vehInfo = (item: CartItemDto) => {
+        const fromLot = item.lotNumber ? byLot.get(item.lotNumber) : undefined;
+        const fromVin = item.vin ? byVin.get(item.vin) : undefined;
+        const src = fromLot ?? fromVin;
+        return {
+          year: src?.year ?? null,
+          make: src?.make ?? null,
+          model: src?.model ?? null,
+          vin: item.vin ?? fromLot?.vin ?? null,
+        };
+      };
+      const inspIdFor = (item: CartItemDto) => {
+        const m =
+          (item.lotNumber && inspByLot.get(item.lotNumber)) ||
+          (item.vin && inspByVin.get(item.vin)) ||
+          null;
+        return m ? m.id : null;
+      };
+
+      // ── Group by yard ───────────────────────────────────────────────────
+      const groups = new Map<string, CartItemDto[]>();
+      for (const item of items) {
+        const key = item.yardId;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(item);
+      }
+
+      const byYard: OrderReceiptDetail['byYard'] = [];
+      let travelSubtotalCents = 0;
+      for (const [yardId, cars] of groups) {
+        const yard = yardMap.get(yardId);
+        const travelFeeCents = travelByYard.get(yardId) ?? yard?.travelFeeCents ?? DEFAULT_TRAVEL_FEE;
+        travelSubtotalCents += travelFeeCents;
+        const location =
+          yard && (yard.city || yard.state) ? { city: yard.city, state: yard.state } : null;
+        byYard.push({
+          yardId,
+          yardName: cars[0]?.yardName ?? yard?.name ?? null,
+          location,
+          cars: cars.length,
+          inspectionFeeCents: inspectionFeeCents!,
+          inspectionSubtotalCents: cars.length * inspectionFeeCents!,
+          travelFeeCents,
+          vehicles: cars.map((c) => {
+            const v = vehInfo(c);
+            return {
+              inspectionId: inspIdFor(c),
+              lotNumber: c.lotNumber ?? null,
+              vin: v.vin,
+              year: v.year,
+              make: v.make,
+              model: v.model,
+            };
+          }),
+        });
+      }
+
+      const carsCount = items.length;
+      const inspectionSubtotalCents = carsCount * inspectionFeeCents!;
+      const totalCents =
+        typeof meta.quote?.totalCents === 'number'
+          ? meta.quote.totalCents
+          : Math.round(Number(order.amount) * 100);
+
+      const inspections: OrderReceiptDetail['inspections'] = inspectionRows.map((r) => {
+        const src =
+          (r.lotNumber && byLot.get(r.lotNumber)) ||
+          (r.vin && byVin.get(r.vin)) ||
+          null;
+        return {
+          id: r.id,
+          vin: r.vin,
+          lotNumber: r.lotNumber,
+          year: src?.year ?? null,
+          make: src?.make ?? null,
+          model: src?.model ?? null,
+          yardName: r.yardName,
+        };
+      });
+
+      return {
+        id: order.id,
+        type: 'INSPECTION',
+        receiptNumber: order.id.slice(0, 8).toUpperCase(),
+        status: order.status,
+        description: order.description,
+        totalCents,
+        carsCount,
+        yardsCount: groups.size,
+        inspectionSubtotalCents,
+        travelSubtotalCents,
+        inspectionFeeCents: inspectionFeeCents!,
+        byYard,
+        inspections,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `buildOrderReceiptDetail: failed for order ${order.id} — ${(err as Error).message}`,
+      );
+      return null;
+    }
   }
 
   // ── Quote ─────────────────────────────────────────────────────────────────

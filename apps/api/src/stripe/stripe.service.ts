@@ -13,7 +13,7 @@ import { EmailService } from '../email/email.service';
 import { ShortUrlService } from '../short-url/short-url.service';
 // Lazy import to avoid circular dependency — resolved at runtime.
 // PortalService is injected via forwardRef on the module side.
-import type { PortalService } from '../portal/portal.service';
+import type { PortalService, OrderReceiptDetail } from '../portal/portal.service';
 
 @Injectable()
 export class StripeService {
@@ -274,6 +274,8 @@ export class StripeService {
       refundId: string | null;
       amountRefunded: number;
       relatedPaymentId: string | null;
+      orderType: string | null;
+      order: OrderReceiptDetail | null;
     }> = [];
 
     for (const pi of paymentIntents.data) {
@@ -302,6 +304,8 @@ export class StripeService {
         refundId: latestRefund?.id ?? null,
         amountRefunded: charge?.amount_refunded ?? 0,
         relatedPaymentId: null,
+        orderType: null,
+        order: null,
       });
 
       // Individual refund events
@@ -323,9 +327,42 @@ export class StripeService {
             refundId: null,
             amountRefunded: 0,
             relatedPaymentId: pi.id,
+            orderType: null,
+            order: null,
           });
         }
       }
+    }
+
+    // Enrich payment events with the underlying PortalOrder receipt (itemized
+    // breakdown + links to the inspections it created). Best-effort: never let
+    // a failure here break the payments list.
+    try {
+      const piIds = events.filter((e) => e.type === 'payment').map((e) => e.id);
+      if (piIds.length > 0 && this.portalService) {
+        const orders = await this.prisma.portalOrder.findMany({
+          where: { buyerId, stripePaymentIntentId: { in: piIds } },
+        });
+        const orderByPi = new Map(
+          orders
+            .filter((o) => o.stripePaymentIntentId)
+            .map((o) => [o.stripePaymentIntentId as string, o]),
+        );
+        await Promise.all(
+          events
+            .filter((e) => e.type === 'payment' && orderByPi.has(e.id))
+            .map(async (e) => {
+              const order = orderByPi.get(e.id)!;
+              e.orderType = order.type;
+              e.order =
+                (await this.portalService!.buildOrderReceiptDetail(order as any)) ?? null;
+            }),
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `listPayments: order enrichment failed for buyer ${buyerId} — ${(err as Error).message}`,
+      );
     }
 
     // Sort by created descending
@@ -428,8 +465,46 @@ export class StripeService {
 
   // ── Summary ───────────────────────────────────────────
 
+  /**
+   * Compute the buyer's true deposit figures from the ledger.
+   * "Deposit" = money the customer added to their account for future services —
+   * NOT one-off inspection/service payments. depositBalanceCents is the spendable
+   * account balance; depositTotalCents is the lifetime sum of DEPOSIT entries.
+   */
+  private async computeBuyerDeposits(
+    buyerId: string,
+  ): Promise<{ depositTotalCents: number; depositBalanceCents: number }> {
+    try {
+      const entries = await this.prisma.customerLedgerEntry.findMany({
+        where: { buyerId },
+        select: { type: true, status: true, amount: true },
+      });
+      let depositTotalCents = 0;
+      let depositBalanceCents = 0;
+      for (const e of entries) {
+        if (e.status !== 'COMPLETED') continue;
+        const cents = Math.round(Number(e.amount) * 100);
+        if (e.type === 'DEPOSIT') {
+          depositTotalCents += cents;
+          depositBalanceCents += cents;
+        } else if (e.type === 'REFUND' || e.type === 'ADJUSTMENT') {
+          depositBalanceCents += cents;
+        } else if (e.type === 'CHARGE' || e.type === 'APPLIED') {
+          depositBalanceCents -= cents;
+        }
+      }
+      return {
+        depositTotalCents,
+        depositBalanceCents: Math.max(0, depositBalanceCents),
+      };
+    } catch {
+      return { depositTotalCents: 0, depositBalanceCents: 0 };
+    }
+  }
+
   async getPaymentSummary(buyerId: string, tenantId: string) {
     const buyer = await this.getBuyer(buyerId, tenantId);
+    const deposits = await this.computeBuyerDeposits(buyerId);
 
     if (!buyer.stripeCustomerId) {
       return {
@@ -439,6 +514,7 @@ export class StripeService {
         lastPaymentAmount: null,
         defaultPaymentMethod: null,
         hasPaymentMethods: false,
+        ...deposits,
       };
     }
 
@@ -485,6 +561,7 @@ export class StripeService {
       lastPaymentAmount: lastPayment ? lastPayment.amount : null,
       defaultPaymentMethod: defaultPmSummary,
       hasPaymentMethods: paymentMethods.data.length > 0,
+      ...deposits,
     };
   }
 

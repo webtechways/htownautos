@@ -10,7 +10,11 @@ import {
   HttpStatus,
   ParseUUIDPipe,
   BadRequestException,
+  Inject,
+  forwardRef,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { StripeService } from './stripe.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -19,11 +23,19 @@ import { AuditLog } from '@htownautos/common';
 import { CurrentTenant } from '@htownautos/auth';
 import { CurrentUser } from '@htownautos/auth';
 import type { AuthenticatedUser } from '@htownautos/auth';
+import { PrismaService } from '@htownautos/prisma';
+import { ReceiptPdfService } from '../portal/receipt-pdf.service';
+import { DecisionNoteDto } from './dto/decision-note.dto';
 
 @ApiTags('Stripe')
 @Controller('stripe')
 export class StripeController {
-  constructor(private readonly stripeService: StripeService) {}
+  constructor(
+    private readonly stripeService: StripeService,
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => ReceiptPdfService))
+    private readonly receiptPdfService: ReceiptPdfService,
+  ) {}
 
   // ── SetupIntent ───────────────────────────────────────
 
@@ -242,5 +254,105 @@ export class StripeController {
     @Param('buyerId', ParseUUIDPipe) buyerId: string,
   ) {
     return this.stripeService.getPaymentSummary(buyerId, tenantId);
+  }
+
+  // ── Order Receipt PDF (staff) ─────────────────────────
+
+  /**
+   * GET /stripe/customers/:buyerId/orders/:orderId/receipt.pdf
+   * Streams a PDF receipt for any PortalOrder belonging to the buyer.
+   * Staff only — tenant-scoped via :tenantId resolved by ClerkJwtGuard.
+   */
+  @Get('customers/:buyerId/orders/:orderId/receipt.pdf')
+  @ApiOperation({ summary: 'Download PDF receipt for a buyer order' })
+  @ApiParam({ name: 'buyerId', description: 'Buyer UUID' })
+  @ApiParam({ name: 'orderId', description: 'PortalOrder UUID' })
+  @AuditLog({ action: 'read', resource: 'portal-order-receipt-pdf', level: 'medium', pii: true })
+  async getOrderReceiptPdf(
+    @CurrentTenant() tenantId: string,
+    @Param('buyerId', ParseUUIDPipe) buyerId: string,
+    @Param('orderId') orderId: string,
+    @Res() res: Response,
+  ) {
+    // getBuyer (private) enforces tenant membership — reuse via listPaymentMethods shape.
+    // We call listPaymentMethods then swap; simpler: query buyer directly here.
+    const buyer = await this.prisma.buyer.findFirst({
+      where: { id: buyerId, tenantId },
+      select: { id: true, firstName: true, lastName: true, email: true },
+    });
+    if (!buyer) throw new BadRequestException('Buyer not found');
+
+    const order = await this.prisma.portalOrder.findFirst({
+      where: { id: orderId, buyerId, tenantId },
+    });
+    if (!order) throw new BadRequestException('Order not found');
+
+    const receiptNumber = order.id.slice(0, 8).toUpperCase();
+    const bytes = await this.receiptPdfService.buildOrderReceiptPdf(order as any, {
+      buyerName: `${buyer.firstName} ${buyer.lastName}`.trim(),
+      buyerEmail: buyer.email ?? '',
+    });
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="recibo-${receiptNumber}.pdf"`,
+    });
+    res.end(Buffer.from(bytes));
+  }
+
+  // ── Deposit Release Requests (staff) ──────────────────
+
+  /**
+   * GET /stripe/customers/:buyerId/deposit-release-requests
+   * Lists all DepositReleaseRequests for a buyer, newest first.
+   */
+  @Get('customers/:buyerId/deposit-release-requests')
+  @ApiOperation({ summary: 'List deposit release requests for a buyer' })
+  @ApiParam({ name: 'buyerId', description: 'Buyer UUID' })
+  @AuditLog({ action: 'read', resource: 'deposit-release-requests', level: 'medium', pii: false })
+  async listDepositReleaseRequests(
+    @CurrentTenant() tenantId: string,
+    @Param('buyerId', ParseUUIDPipe) buyerId: string,
+  ) {
+    return this.stripeService.listDepositReleaseRequests(buyerId, tenantId);
+  }
+
+  /**
+   * POST /stripe/customers/:buyerId/deposit-release-requests/:id/approve
+   * Approves a PENDING request: creates ledger debit + best-effort Stripe refund.
+   */
+  @Post('customers/:buyerId/deposit-release-requests/:id/approve')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Approve a deposit release request' })
+  @ApiParam({ name: 'buyerId', description: 'Buyer UUID' })
+  @ApiParam({ name: 'id', description: 'DepositReleaseRequest UUID' })
+  @AuditLog({ action: 'update', resource: 'deposit-release-request', level: 'critical', pii: true })
+  async approveDepositRelease(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('buyerId', ParseUUIDPipe) buyerId: string,
+    @Param('id') id: string,
+    @Body() dto: DecisionNoteDto,
+  ) {
+    return this.stripeService.approveDepositRelease(buyerId, tenantId, id, user.id, dto.note);
+  }
+
+  /**
+   * POST /stripe/customers/:buyerId/deposit-release-requests/:id/reject
+   * Rejects a PENDING request. No ledger change; no Stripe refund.
+   */
+  @Post('customers/:buyerId/deposit-release-requests/:id/reject')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reject a deposit release request' })
+  @ApiParam({ name: 'buyerId', description: 'Buyer UUID' })
+  @ApiParam({ name: 'id', description: 'DepositReleaseRequest UUID' })
+  @AuditLog({ action: 'update', resource: 'deposit-release-request', level: 'high', pii: false })
+  async rejectDepositRelease(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('buyerId', ParseUUIDPipe) buyerId: string,
+    @Param('id') id: string,
+    @Body() dto: DecisionNoteDto,
+  ) {
+    return this.stripeService.rejectDepositRelease(buyerId, tenantId, id, user.id, dto.note);
   }
 }

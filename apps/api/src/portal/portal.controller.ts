@@ -12,17 +12,22 @@ import {
   UseGuards,
   Inject,
   forwardRef,
+  Res,
+  NotFoundException,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { CustomerGuard, CurrentBuyer, TenantOptional } from '@htownautos/auth';
 import type { PortalBuyer } from '@htownautos/auth';
 import { PortalService } from './portal.service';
 import { StripeService } from '../stripe/stripe.service';
 import { BuyerFavoritesService } from '../buyer-favorites/buyer-favorites.service';
+import { ReceiptPdfService } from './receipt-pdf.service';
 import { ToggleBuyerFavoriteDto } from '../buyer-favorites/dto/toggle-buyer-favorite.dto';
 import { UpdatePortalProfileDto } from './dto/update-portal-profile.dto';
 import { InspectionCartDto } from './dto/inspection-cart.dto';
 import { CreateDepositDto } from './dto/create-deposit.dto';
 import { AddInspectionRequestDto } from './dto/add-inspection-request.dto';
+import { CreateDepositReleaseRequestDto } from './dto/create-deposit-release-request.dto';
 
 // CustomerGuard resolves the tenant from the Buyer, so the global TenantGuard
 // must not require an org-based tenant on these routes.
@@ -33,6 +38,7 @@ export class PortalController {
   constructor(
     private readonly portalService: PortalService,
     private readonly favoritesService: BuyerFavoritesService,
+    private readonly receiptPdfService: ReceiptPdfService,
     @Inject(forwardRef(() => StripeService))
     private readonly stripeService: StripeService,
   ) {}
@@ -241,5 +247,94 @@ export class PortalController {
     @Query('startingAfter') startingAfter?: string,
   ) {
     return this.stripeService.listPayments(buyer.id, buyer.tenantId, 50, startingAfter);
+  }
+
+  // ── Payment method management ─────────────────────────────────────────────
+
+  /**
+   * POST /api/v1/portal/payment-methods/setup-intent
+   * Creates a Stripe SetupIntent so the web can collect a card via Stripe.js.
+   */
+  @Post('payment-methods/setup-intent')
+  @HttpCode(HttpStatus.CREATED)
+  createSetupIntent(@CurrentBuyer() buyer: PortalBuyer) {
+    return this.stripeService.createSetupIntent(buyer.id, buyer.tenantId);
+  }
+
+  /**
+   * DELETE /api/v1/portal/payment-methods/:id
+   * Detaches a saved card from the buyer's Stripe customer.
+   */
+  @Delete('payment-methods/:id')
+  @HttpCode(HttpStatus.OK)
+  detachPaymentMethod(
+    @CurrentBuyer() buyer: PortalBuyer,
+    @Param('id') id: string,
+  ) {
+    return this.stripeService.detachPaymentMethod(buyer.id, id, buyer.tenantId);
+  }
+
+  /**
+   * POST /api/v1/portal/payment-methods/:id/default
+   * Sets a saved card as the buyer's default payment method.
+   */
+  @Post('payment-methods/:id/default')
+  @HttpCode(HttpStatus.OK)
+  setDefaultPaymentMethod(
+    @CurrentBuyer() buyer: PortalBuyer,
+    @Param('id') id: string,
+  ) {
+    return this.stripeService.setDefaultPaymentMethod(buyer.id, id, buyer.tenantId);
+  }
+
+  // ── Receipt PDF ───────────────────────────────────────────────────────────
+
+  /**
+   * GET /api/v1/portal/orders/:orderId/receipt.pdf
+   * Generates and streams a PDF receipt for the given order.
+   * 404 if the order does not belong to the calling buyer.
+   */
+  @Get('orders/:orderId/receipt.pdf')
+  async getOrderReceiptPdf(
+    @CurrentBuyer() buyer: PortalBuyer,
+    @Param('orderId') orderId: string,
+    @Res() res: Response,
+  ) {
+    const order = await this.portalService.getOrderForBuyer(orderId, buyer);
+    const receiptNumber = order.id.slice(0, 8).toUpperCase();
+    const bytes = await this.receiptPdfService.buildOrderReceiptPdf(order as any, {
+      buyerName: `${buyer.firstName} ${buyer.lastName}`.trim(),
+      buyerEmail: buyer.email ?? '',
+    });
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="recibo-${receiptNumber}.pdf"`,
+    });
+    res.end(Buffer.from(bytes));
+  }
+
+  // ── Deposit release requests ───────────────────────────────────────────────
+
+  /**
+   * POST /api/v1/portal/deposits/release-request
+   * Buyer requests a release of their deposit balance.
+   * Idempotent: returns existing PENDING request if one exists.
+   */
+  @Post('deposits/release-request')
+  @HttpCode(HttpStatus.CREATED)
+  createDepositReleaseRequest(
+    @CurrentBuyer() buyer: PortalBuyer,
+    @Body() dto: CreateDepositReleaseRequestDto,
+  ) {
+    return this.portalService.createDepositReleaseRequest(buyer, dto.note);
+  }
+
+  /**
+   * GET /api/v1/portal/deposits/release-request
+   * Returns the most recent DepositReleaseRequest for the buyer (or null).
+   */
+  @Get('deposits/release-request')
+  getLatestDepositReleaseRequest(@CurrentBuyer() buyer: PortalBuyer) {
+    return this.portalService.getLatestDepositReleaseRequest(buyer);
   }
 }

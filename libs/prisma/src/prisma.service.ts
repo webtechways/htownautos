@@ -318,6 +318,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.portalOrder;
   }
 
+  get depositReleaseRequest() {
+    return this.prisma.depositReleaseRequest;
+  }
+
   get $transaction() {
     return this.prisma.$transaction.bind(this.prisma);
   }

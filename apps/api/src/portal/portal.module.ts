@@ -12,6 +12,7 @@ import { PortalPublicController } from './portal-public.controller';
 import { PortalService } from './portal.service';
 import { PortalPricingService } from './portal-pricing.service';
 import { PortalSettingsController } from './portal-settings.controller';
+import { ReceiptPdfService } from './receipt-pdf.service';
 
 /**
  * PortalModule — customer-facing portal endpoints + staff pricing settings.
@@ -21,13 +22,16 @@ import { PortalSettingsController } from './portal-settings.controller';
  *
  * PortalPricingService is exported so other modules can read pricing if needed.
  *
+ * ReceiptPdfService is exported so StripeModule can inject it for the staff
+ * receipt PDF endpoint.
+ *
  * StripeModule is imported via forwardRef to break the mutual dependency cycle
  * (StripeModule → forwardRef(PortalModule) ↔ PortalModule → forwardRef(StripeModule)).
  */
 @Module({
   imports: [PrismaModule, CopartModule, VehicleInspectionsModule, OpenSearchModule, BuyerFavoritesModule, forwardRef(() => StripeModule)],
   controllers: [PortalPublicController, PortalController, PortalSettingsController],
-  providers: [PortalService, PortalPricingService, CustomerGuard, S3Service],
-  exports: [PortalService, PortalPricingService],
+  providers: [PortalService, PortalPricingService, CustomerGuard, S3Service, ReceiptPdfService],
+  exports: [PortalService, PortalPricingService, ReceiptPdfService],
 })
 export class PortalModule {}

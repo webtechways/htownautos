@@ -558,6 +558,7 @@ model Tenant {
   unmatchedInboundEmails  UnmatchedInboundEmail[]
   ledgerEntries           CustomerLedgerEntry[]
   portalOrders            PortalOrder[]
+  depositReleaseRequests  DepositReleaseRequest[]
 
   @@index([clerkOrgId])
   @@index([slug])
@@ -617,7 +618,8 @@ model User {
   sentInvitations   TenantInvitation[]
   paidExpenses      ExtraExpense[]      @relation("ExpensePaidBy")
   sharedInspections VehicleInspection[] @relation("InspectionSharedWith")
-  ledgerEntriesCreated CustomerLedgerEntry[]
+  ledgerEntriesCreated     CustomerLedgerEntry[]
+  decidedDepositReleases   DepositReleaseRequest[] @relation("DepositReleaseDecidedBy")
 
   @@index([clerkUserId])
   @@index([email])
@@ -901,6 +903,7 @@ model Buyer {
   inspections              VehicleInspection[]      @relation("BuyerInspections")
   ledgerEntries            CustomerLedgerEntry[]
   portalOrders             PortalOrder[]
+  depositReleaseRequests   DepositReleaseRequest[]
 
   @@unique([tenantId, phoneMain])
   @@index([tenantId])
@@ -3417,4 +3420,51 @@ model PortalOrder {
   @@index([relatedInspectionId])
   @@index([stripePaymentIntentId])
   @@map("portal_orders")
+}
+
+// ─── Deposit Release ───────────────────────────────────────────────────────────
+// Customer-initiated request to release account deposit balance back to their
+// card. A staff admin approves or rejects in the dashboard. Approved requests
+// trigger a Stripe refund; the refund ID is stored for reconciliation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum DepositReleaseStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Customer-initiated request to release (refund) their account deposit balance.
+/// Staff approves or rejects; approval triggers a Stripe refund captured in stripeRefundId.
+model DepositReleaseRequest {
+  id       String  @id @default(uuid())
+  tenantId String?
+  buyerId  String
+
+  amount   Decimal @db.Decimal(12, 2)
+  currency String  @default("usd")
+
+  status DepositReleaseStatus @default(PENDING)
+
+  note         String? // optional customer note submitted with request
+  decisionNote String? // optional admin note on approve/reject
+
+  stripeRefundId String? @map("stripe_refund_id") // set when approved + refunded via Stripe
+
+  decidedById String?   // staff User who approved or rejected
+  decidedAt   DateTime? // timestamp of the approve/reject action
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  buyer     Buyer   @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  decidedBy User?   @relation("DepositReleaseDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, buyerId])
+  @@index([buyerId])
+  @@index([status])
+  @@index([tenantId])
+  @@index([decidedById])
+  @@map("deposit_release_requests")
 }

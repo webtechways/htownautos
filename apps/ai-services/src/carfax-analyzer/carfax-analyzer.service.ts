@@ -37,6 +37,7 @@ export class CarfaxAnalyzerService {
       data: {
         auctionListingId: BigInt(auctionListingId),
         s3Key,
+        vin: listing.vin ?? undefined,
       },
     });
 

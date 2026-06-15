@@ -1174,6 +1174,65 @@ export class PortalService {
     };
   }
 
+  // ── Deposit release requests (buyer-facing) ───────────────────────────────
+
+  /**
+   * Idempotent: if a PENDING request already exists for this buyer, return it.
+   * Otherwise create a new one from the current ledger balance.
+   * Throws 400 when balance is <= 0.
+   */
+  async createDepositReleaseRequest(buyer: PortalBuyer, note?: string) {
+    const { balanceCents } = await this.getLedger(buyer);
+    if (balanceCents <= 0) {
+      throw new BadRequestException('No tienes saldo disponible para liberar');
+    }
+
+    // Idempotency: return existing PENDING request if one exists.
+    const existing = await this.prisma.depositReleaseRequest.findFirst({
+      where: { buyerId: buyer.id, tenantId: buyer.tenantId, status: 'PENDING' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existing) {
+      return { ...existing, amount: existing.amount.toString() };
+    }
+
+    const created = await this.prisma.depositReleaseRequest.create({
+      data: {
+        tenantId: buyer.tenantId,
+        buyerId: buyer.id,
+        amount: new Prisma.Decimal(balanceCents / 100),
+        currency: 'usd',
+        status: 'PENDING',
+        note,
+      },
+    });
+    return { ...created, amount: created.amount.toString() };
+  }
+
+  /** Returns the most recent DepositReleaseRequest for the buyer, or null. */
+  async getLatestDepositReleaseRequest(buyer: PortalBuyer) {
+    const req = await this.prisma.depositReleaseRequest.findFirst({
+      where: { buyerId: buyer.id, tenantId: buyer.tenantId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!req) return null;
+    return { ...req, amount: req.amount.toString() };
+  }
+
+  // ── Orders (buyer-facing, for receipt PDF) ────────────────────────────────
+
+  /** Load a single PortalOrder scoped to the buyer's tenant. */
+  async getOrderForBuyer(
+    orderId: string,
+    buyer: PortalBuyer,
+  ) {
+    const order = await this.prisma.portalOrder.findFirst({
+      where: { id: orderId, buyerId: buyer.id, tenantId: buyer.tenantId },
+    });
+    if (!order) throw new NotFoundException(`Order ${orderId} not found`);
+    return order;
+  }
+
   // ── Private: Stripe helpers ───────────────────────────────────────────────
 
   private portalBaseUrl(): string {

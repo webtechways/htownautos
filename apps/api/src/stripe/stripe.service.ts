@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import Stripe from 'stripe';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
 import { StripeEventsService } from '../presence/stripe-events.service';
 import { SmsService } from '../sms/sms.service';
@@ -703,6 +704,124 @@ export class StripeService {
   </table>
 </body>
 </html>`.trim();
+  }
+
+  // ── Deposit release requests (staff-facing) ──────────
+
+  /** List all DepositReleaseRequests for a buyer (newest first). */
+  async listDepositReleaseRequests(buyerId: string, tenantId: string) {
+    await this.getBuyer(buyerId, tenantId); // tenant-scope check
+    const rows = await this.prisma.depositReleaseRequest.findMany({
+      where: { buyerId, tenantId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((r) => ({ ...r, amount: r.amount.toString() }));
+  }
+
+  /** Approve a PENDING DepositReleaseRequest: create ledger debit + attempt Stripe refund. */
+  async approveDepositRelease(
+    buyerId: string,
+    tenantId: string,
+    id: string,
+    staffUserId: string | null,
+    note?: string,
+  ) {
+    await this.getBuyer(buyerId, tenantId);
+
+    const req = await this.prisma.depositReleaseRequest.findFirst({
+      where: { id, buyerId, tenantId },
+    });
+    if (!req) throw new NotFoundException(`DepositReleaseRequest ${id} not found`);
+    if (req.status !== 'PENDING') {
+      throw new BadRequestException(`Request is already ${req.status}`);
+    }
+
+    const amountDecimal = req.amount;
+    const amountCents = Math.round(Number(amountDecimal) * 100);
+
+    // 1) Ledger debit — NEGATIVE amount reduces balance.
+    await this.prisma.customerLedgerEntry.create({
+      data: {
+        tenantId,
+        buyerId,
+        type: 'ADJUSTMENT',
+        status: 'COMPLETED',
+        amount: new Prisma.Decimal(-amountCents / 100),
+        currency: req.currency,
+        description: 'Liberación de depósito aprobada',
+        source: 'manual',
+        createdById: staffUserId ?? undefined,
+      },
+    });
+
+    // 2) Best-effort Stripe refund against most recent DEPOSIT PortalOrder.
+    let stripeRefundId: string | null = null;
+    try {
+      const depositOrder = await this.prisma.portalOrder.findFirst({
+        where: { buyerId, tenantId, type: 'DEPOSIT', stripePaymentIntentId: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        select: { stripePaymentIntentId: true, amount: true },
+      });
+      if (depositOrder?.stripePaymentIntentId) {
+        const piAmountCents = Math.round(Number(depositOrder.amount) * 100);
+        const refundAmount = Math.min(amountCents, piAmountCents);
+        const refund = await this.stripe.refunds.create({
+          payment_intent: depositOrder.stripePaymentIntentId,
+          amount: refundAmount,
+        });
+        stripeRefundId = refund.id;
+        this.logger.log(
+          `approveDepositRelease: Stripe refund ${refund.id} for $${(refundAmount / 100).toFixed(2)} (request ${id})`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `approveDepositRelease: Stripe refund failed for request ${id} — ${(err as Error).message}. Ledger debit already applied; approval proceeds.`,
+      );
+    }
+
+    // 3) Mark APPROVED.
+    const updated = await this.prisma.depositReleaseRequest.update({
+      where: { id },
+      data: {
+        status: 'APPROVED',
+        decidedById: staffUserId ?? undefined,
+        decidedAt: new Date(),
+        decisionNote: note,
+        stripeRefundId,
+      },
+    });
+    return { ...updated, amount: updated.amount.toString() };
+  }
+
+  /** Reject a PENDING DepositReleaseRequest — no ledger change, no Stripe call. */
+  async rejectDepositRelease(
+    buyerId: string,
+    tenantId: string,
+    id: string,
+    staffUserId: string | null,
+    note?: string,
+  ) {
+    await this.getBuyer(buyerId, tenantId);
+
+    const req = await this.prisma.depositReleaseRequest.findFirst({
+      where: { id, buyerId, tenantId },
+    });
+    if (!req) throw new NotFoundException(`DepositReleaseRequest ${id} not found`);
+    if (req.status !== 'PENDING') {
+      throw new BadRequestException(`Request is already ${req.status}`);
+    }
+
+    const updated = await this.prisma.depositReleaseRequest.update({
+      where: { id },
+      data: {
+        status: 'REJECTED',
+        decidedById: staffUserId ?? undefined,
+        decidedAt: new Date(),
+        decisionNote: note,
+      },
+    });
+    return { ...updated, amount: updated.amount.toString() };
   }
 
   // ── Webhook Processing ────────────────────────────────

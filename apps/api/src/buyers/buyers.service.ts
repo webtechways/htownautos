@@ -1,12 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
+import { ClerkService, PORTAL_TENANT_ID } from '@htownautos/auth';
 import { CreateBuyerDto } from './dto/create-buyer.dto';
 import { UpdateBuyerDto } from './dto/update-buyer.dto';
 import { QueryBuyerDto } from './dto/query-buyer.dto';
 import { BuyerEntity } from './entities/buyer.entity';
 import { PaginatedResponseDto } from '@htownautos/common';
 import { normalizePhoneNumber } from '@htownautos/common';
+import { randomBytes } from 'crypto';
 
 /** Shared include for buyer queries */
 const BUYER_INCLUDE = {
@@ -32,12 +34,17 @@ const BUYER_INCLUDE = {
   },
 } as const;
 
+/** Minimum password length for auto-generated Clerk passwords. */
+const GENERATED_PASSWORD_BYTES = 32;
+
 @Injectable()
 export class BuyersService {
+  private readonly logger = new Logger(BuyersService.name);
   private readonly buyer: ReturnType<PrismaService['getModel']>;
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly clerkService: ClerkService,
   ) {
     this.buyer = prisma.getModel('buyer');
   }
@@ -118,6 +125,19 @@ export class BuyersService {
       data,
       include: BUYER_INCLUDE,
     });
+
+    // For the canonical portal tenant, auto-create a Clerk account so the
+    // customer can sign in to htownautos.com immediately.  This is best-effort:
+    // a Clerk failure must NOT block the staff workflow.
+    if (tenantId === PORTAL_TENANT_ID && record.email) {
+      await this.linkClerkAccount(record.id, record.email, record.firstName, record.lastName);
+      // Re-fetch to pick up the clerkUserId if it was just written.
+      const updated = await this.buyer.findUnique({
+        where: { id: record.id },
+        include: BUYER_INCLUDE,
+      });
+      if (updated) return new BuyerEntity(updated);
+    }
 
     return new BuyerEntity(record);
   }
@@ -290,6 +310,17 @@ export class BuyersService {
       include: BUYER_INCLUDE,
     });
 
+    // Best-effort: if this buyer is in the portal tenant and still has no
+    // clerkUserId but now has an email, attempt to create/link a Clerk account.
+    if (tenantId === PORTAL_TENANT_ID && record.email && !record.clerkUserId) {
+      await this.linkClerkAccount(record.id, record.email, record.firstName, record.lastName);
+      const updated = await this.buyer.findUnique({
+        where: { id: record.id },
+        include: BUYER_INCLUDE,
+      });
+      if (updated) return new BuyerEntity(updated);
+    }
+
     return new BuyerEntity(record);
   }
 
@@ -324,6 +355,64 @@ export class BuyersService {
   }
 
   // ── Private helpers ──────────────────────────────────────────
+
+  /**
+   * Attempt to create (or link) a Clerk standalone account for a portal buyer.
+   *
+   * Rules:
+   *  - Generates a cryptographically strong random password.  The customer
+   *    never uses it — they authenticate via Clerk email-code or password-reset.
+   *  - ClerkService.createUser() transparently handles "email already exists"
+   *    by returning the existing user's id (via handleExistingUser).
+   *  - If another Buyer row already owns the returned clerkUserId (dedup edge
+   *    case), we log and skip to avoid violating the unique constraint.
+   *  - All Clerk / DB errors are swallowed here: staff workflow continues.
+   */
+  private async linkClerkAccount(
+    buyerId: string,
+    email: string,
+    firstName: string,
+    lastName: string,
+  ): Promise<void> {
+    try {
+      const password = randomBytes(GENERATED_PASSWORD_BYTES).toString('hex');
+
+      const { clerkUserId } = await this.clerkService.createUser({
+        email,
+        password,
+        firstName,
+        lastName,
+      });
+
+      // Guard: check whether another buyer already holds this clerkUserId
+      // (can happen when Clerk deduplication returns an id already linked
+      //  to a different row in this tenant).
+      const conflict = await this.prisma.buyer.findUnique({
+        where: { clerkUserId },
+        select: { id: true },
+      });
+
+      if (conflict && conflict.id !== buyerId) {
+        this.logger.warn(
+          `Clerk account ${clerkUserId} (${email}) is already linked to buyer ${conflict.id} — skipping link for buyer ${buyerId}`,
+        );
+        return;
+      }
+
+      await this.prisma.buyer.update({
+        where: { id: buyerId },
+        data: { clerkUserId },
+      });
+
+      this.logger.log(
+        `Linked Clerk account ${clerkUserId} to buyer ${buyerId} (${email})`,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Best-effort Clerk account creation failed for buyer ${buyerId} (${email}): ${err?.message ?? String(err)}`,
+      );
+    }
+  }
 
   private async ensureBuyerExists(id: string, tenantId: string): Promise<void> {
     const exists = await this.buyer.findFirst({

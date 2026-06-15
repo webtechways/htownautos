@@ -216,6 +216,53 @@ export class PortalService {
     );
   }
 
+  // ── Order receipt + payment confirmation ───────────────────────────────────
+
+  /**
+   * Confirm a checkout by Stripe session id and return receipt data.
+   * Acts as a FALLBACK to the webhook: if the order is still PENDING but Stripe
+   * says the session is paid, fulfil it here (idempotent) so the inspections /
+   * deposit get created even when the webhook didn't deliver.
+   */
+  async confirmOrderBySession(buyer: PortalBuyer, sessionId: string) {
+    const order = await this.prisma.portalOrder.findFirst({
+      where: { stripeCheckoutSessionId: sessionId, buyerId: buyer.id },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+
+    if (order.status === 'PENDING') {
+      try {
+        const session =
+          await this.stripe.checkout.sessions.retrieve(sessionId);
+        if (session.payment_status === 'paid') {
+          await this.fulfillPortalOrder(session);
+        }
+      } catch (err) {
+        this.logger.warn(
+          `confirmOrderBySession ${sessionId}: ${(err as any)?.message}`,
+        );
+      }
+    }
+
+    const fresh =
+      (await this.prisma.portalOrder.findUnique({
+        where: { id: order.id },
+      })) ?? order;
+    const meta: any = fresh.metadata ?? {};
+    return {
+      orderId: fresh.id,
+      receiptNumber: fresh.id.slice(0, 8).toUpperCase(),
+      type: fresh.type,
+      status: fresh.status,
+      amountCents: Math.round(Number(fresh.amount) * 100),
+      currency: fresh.currency,
+      description: fresh.description,
+      items: meta.items ?? [],
+      breakdown: meta.pricing ?? meta.breakdown ?? null,
+      createdAt: fresh.createdAt,
+    };
+  }
+
   // ── Quote ─────────────────────────────────────────────────────────────────
 
   /**

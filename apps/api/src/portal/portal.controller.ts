@@ -144,6 +144,22 @@ export class PortalController {
     return this.favoritesService.remove(buyer.id, lotNumber);
   }
 
+  // ── Orders / receipt ────────────────────────────────────────────────────────
+
+  /**
+   * GET /api/v1/portal/orders/by-session/:sessionId
+   * Returns the receipt for a Stripe checkout session and, as a fallback to the
+   * webhook, fulfils the order (creates inspections / credits deposit) if Stripe
+   * confirms the session is paid. Used by the payment-success page.
+   */
+  @Get('orders/by-session/:sessionId')
+  getOrderBySession(
+    @CurrentBuyer() buyer: PortalBuyer,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.portalService.confirmOrderBySession(buyer, sessionId);
+  }
+
   // ── Ledger ────────────────────────────────────────────────────────────────
 
   /**

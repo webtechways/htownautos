@@ -316,6 +316,7 @@ export class PortalService {
 
     return {
       orderId: order.id,
+      url: session.url,
       checkoutUrl: session.url,
       totalCents: quote.totalCents,
       currency: 'usd' as const,
@@ -442,6 +443,7 @@ export class PortalService {
 
     return {
       orderId: order.id,
+      url: session.url,
       checkoutUrl: session.url,
       amountCents: dto.amountCents,
     };

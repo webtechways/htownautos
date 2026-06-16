@@ -7,34 +7,37 @@ import { RECEIPT_LOGO_PNG_BASE64 } from './receipt-logo';
 // ── Company constants ─────────────────────────────────────────────────────────
 const COMPANY = {
   name: 'HTown Autos',
-  addressLines: ['Houston, TX'], // <-- replace with real street address
+  addressLines: ['Houston, TX'],
   phone: '+1 (832) 308-8092',
   website: 'htownautos.com',
 };
 
 // ── Layout constants ──────────────────────────────────────────────────────────
-const PAGE_WIDTH = 612;  // US Letter, points
+const PAGE_WIDTH = 612;   // US Letter, points
 const PAGE_HEIGHT = 792;
 const MARGIN = 48;
 const LINE_H = 15;
 const SECTION_GAP = 10;
-const HEADER_BAND_H = 96;
-const LOGO_MAX_H = 58;
-const LOGO_MAX_W = 140;
 
-// Table column x-positions and widths
+// Logo sizing
+const LOGO_MAX_W = 130;
+const LOGO_MAX_H = 64;
+
+// Table column geometry — generous description column so nothing truncates
 const COL_QTY_X = MARGIN;
-const COL_QTY_W = 32;
-const COL_DESC_X = COL_QTY_X + COL_QTY_W + 6;
-const COL_UNIT_W = 72;
+const COL_QTY_W = 28;
+const COL_DESC_X = COL_QTY_X + COL_QTY_W + 8;
+const COL_UNIT_W = 76;
 const COL_AMT_W = 72;
 const COL_AMT_X = PAGE_WIDTH - MARGIN - COL_AMT_W;
-const COL_UNIT_X = COL_AMT_X - COL_UNIT_W - 4;
-const COL_DESC_W = COL_UNIT_X - COL_DESC_X - 4;
+const COL_UNIT_X = COL_AMT_X - COL_UNIT_W - 6;
+const COL_DESC_W = COL_UNIT_X - COL_DESC_X - 6;
 
-// Table header fill color (dark slate)
-const TABLE_HEADER_COLOR = rgb(0.12, 0.15, 0.22);
-const TABLE_ROW_ALT_COLOR = rgb(0.97, 0.97, 0.98);
+// ── Palette — pure white, no fills ───────────────────────────────────────────
+const C_BLACK   = rgb(0.067, 0.067, 0.067);   // #111
+const C_GRAY    = rgb(0.40, 0.40, 0.40);       // #666
+const C_LIGHT   = rgb(0.60, 0.60, 0.60);       // labels / secondary
+const C_RULE    = rgb(0.80, 0.80, 0.80);       // #cccccc hairline
 
 // ── Money helper ──────────────────────────────────────────────────────────────
 function fmtMoney(cents: number): string {
@@ -42,7 +45,6 @@ function fmtMoney(cents: number): string {
 }
 
 function fmtDate(d: Date): string {
-  // "16 jun 2026" — Spanish locale, e.g. "16 jun. 2026"
   return d.toLocaleDateString('es-MX', {
     day: '2-digit',
     month: 'short',
@@ -59,6 +61,28 @@ function fmtStatus(status: string): string {
     REFUNDED: 'Reembolsado',
   };
   return map[status] ?? status;
+}
+
+/**
+ * De-duplicate model string.
+ * "ALTIMA ALTIMA" → "ALTIMA"
+ * "RAM 1500 1500" → "RAM 1500"
+ * Works by checking whether the second word-group is already contained in the first.
+ */
+function dedupeModel(model: string | null | undefined): string {
+  if (!model) return '';
+  const parts = model.trim().split(/\s+/);
+  if (parts.length <= 1) return model.trim();
+  // Build the deduplicated sequence
+  const result: string[] = [];
+  for (const part of parts) {
+    // Skip if this token already appears in the accumulated result (case-insensitive)
+    const accumulated = result.join(' ').toUpperCase();
+    if (!accumulated.includes(part.toUpperCase())) {
+      result.push(part);
+    }
+  }
+  return result.join(' ');
 }
 
 // ── Drawing context ───────────────────────────────────────────────────────────
@@ -90,7 +114,7 @@ function drawText(
   y: number,
   fontSize: number,
   font: PDFFont,
-  color = rgb(0, 0, 0),
+  color = C_BLACK,
 ): void {
   ctx.page.drawText(text, { x, y, size: fontSize, font, color });
 }
@@ -102,14 +126,14 @@ function drawLine(
   x: number,
   fontSize: number,
   font: PDFFont,
-  color = rgb(0, 0, 0),
+  color = C_BLACK,
 ): void {
   ensureSpace(ctx, LINE_H * 3);
   ctx.page.drawText(text, { x, y: ctx.y, size: fontSize, font, color });
   ctx.y -= LINE_H;
 }
 
-/** Draw right-aligned text at a fixed right edge. */
+/** Draw right-aligned text at a fixed right edge. Does NOT move ctx.y. */
 function drawTextRight(
   ctx: Ctx,
   text: string,
@@ -117,13 +141,13 @@ function drawTextRight(
   y: number,
   fontSize: number,
   font: PDFFont,
-  color = rgb(0, 0, 0),
+  color = C_BLACK,
 ): void {
   const w = font.widthOfTextAtSize(text, fontSize);
   ctx.page.drawText(text, { x: rightEdge - w, y, size: fontSize, font, color });
 }
 
-/** Truncate text to fit within maxWidth points. */
+/** Truncate text to fit within maxWidth points (last resort only). */
 function truncateText(
   text: string,
   font: PDFFont,
@@ -138,14 +162,14 @@ function truncateText(
   return truncated + '…';
 }
 
-/** Draw a horizontal rule. */
-function drawRule(ctx: Ctx, color = rgb(0.82, 0.82, 0.82), thickness = 0.5): void {
+/** Draw a full-width hairline rule and advance ctx.y by SECTION_GAP. */
+function drawRule(ctx: Ctx, thickness = 0.5): void {
   ensureSpace(ctx, LINE_H * 2);
   ctx.page.drawLine({
     start: { x: MARGIN, y: ctx.y + 3 },
-    end: { x: PAGE_WIDTH - MARGIN, y: ctx.y + 3 },
+    end:   { x: PAGE_WIDTH - MARGIN, y: ctx.y + 3 },
     thickness,
-    color,
+    color: C_RULE,
   });
   ctx.y -= SECTION_GAP;
 }
@@ -160,11 +184,12 @@ export interface ReceiptPdfOpts {
 
 interface LineItem {
   qty: number;
+  /** Primary description text (black). */
   description: string;
+  /** Optional second line rendered in gray/small below the primary text. */
+  subline?: string;
   unitCents: number;
   amountCents: number;
-  /** When set, renders a small italic note below the description cell. */
-  note?: string;
 }
 
 @Injectable()
@@ -199,36 +224,40 @@ export class ReceiptPdfService {
       detail = await this.portalService.buildOrderReceiptDetail(order);
       if (detail) {
         for (const yard of detail.byYard) {
-          const cityState =
-            yard.location?.city || yard.location?.state
-              ? ` (${[yard.location?.city, yard.location?.state].filter(Boolean).join(', ')})`
-              : '';
           const yardLabel = yard.yardName ?? yard.yardId;
 
           for (const v of yard.vehicles) {
+            // Primary line: "{year} {make} {model}" — model de-duped
+            const yearMake = [v.year, v.make].filter(Boolean).join(' ');
+            const modelClean = dedupeModel(v.model);
+            const primaryDesc = [yearMake, modelClean].filter(Boolean).join(' ') || '—';
+
+            // Sub-line: "VIN {vin} · {yardName}" or "Lote {lotNumber} · {yardName}"
             const identifier = v.vin
-              ? v.vin
+              ? `VIN ${v.vin}`
               : v.lotNumber
                 ? `Lote ${v.lotNumber}`
-                : '—';
-            const vehicleDesc =
-              [v.year, v.make, v.model].filter(Boolean).join(' ') || '—';
-            const description = `${identifier} · ${vehicleDesc} — ${yardLabel}${cityState}`;
+                : null;
+            const subline = [identifier, yardLabel].filter(Boolean).join(' · ');
+
             lineItems.push({
               qty: 1,
-              description,
+              description: primaryDesc,
+              subline,
               unitCents: yard.inspectionFeeCents,
               amountCents: yard.inspectionFeeCents,
             });
           }
 
-          // Travel fee row per yard
-          lineItems.push({
-            qty: 1,
-            description: `Tarifa de traslado — ${yardLabel}`,
-            unitCents: yard.travelFeeCents,
-            amountCents: yard.travelFeeCents,
-          });
+          // Travel fee row per yard — only when non-zero
+          if (yard.travelFeeCents > 0) {
+            lineItems.push({
+              qty: 1,
+              description: `Tarifa de traslado — ${yardLabel}`,
+              unitCents: yard.travelFeeCents,
+              amountCents: yard.travelFeeCents,
+            });
+          }
         }
       }
     } else if (order.type === 'DEPOSIT') {
@@ -255,20 +284,13 @@ export class ReceiptPdfService {
       for (const p of prefs) {
         const models: string[] = Array.isArray(p['models']) ? p['models'] : [];
         const yearFrom = p['yearFrom'] != null ? String(p['yearFrom']) : null;
-        const yearTo = p['yearTo'] != null ? String(p['yearTo']) : null;
+        const yearTo   = p['yearTo']   != null ? String(p['yearTo'])   : null;
         const yearRange =
           yearFrom && yearTo ? `${yearFrom}-${yearTo}` : yearFrom ?? yearTo ?? null;
-        const parts = [
-          p['make'],
-          models.length ? models.join('/') : null,
-          yearRange,
-        ].filter(Boolean);
-        if (parts.length) {
-          servicePreferences.push(parts.join(' '));
-        }
+        const parts = [p['make'], models.length ? models.join('/') : null, yearRange].filter(Boolean);
+        if (parts.length) servicePreferences.push(parts.join(' '));
       }
     } else {
-      // Fallback for unknown types
       lineItems.push({
         qty: 1,
         description: order.description ?? 'Servicio',
@@ -280,7 +302,7 @@ export class ReceiptPdfService {
     // ── Create PDF ────────────────────────────────────────────────────────────
     const doc = await PDFDocument.create();
     const regular = await doc.embedFont(StandardFonts.Helvetica);
-    const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+    const bold    = await doc.embedFont(StandardFonts.HelveticaBold);
 
     const firstPage = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
     const ctx: Ctx = {
@@ -292,167 +314,168 @@ export class ReceiptPdfService {
       pages: [firstPage],
     };
 
-    // ── HEADER BAND ───────────────────────────────────────────────────────────
-    ctx.page.drawRectangle({
-      x: 0,
-      y: PAGE_HEIGHT - HEADER_BAND_H,
-      width: PAGE_WIDTH,
-      height: HEADER_BAND_H,
-      color: rgb(0.06, 0.08, 0.14),
-    });
+    // ── HEADER: logo (left) + company block (right) ───────────────────────────
+    // We'll track how tall the header area is so we can drop ctx.y below it.
+    const headerTopY = ctx.y; // = PAGE_HEIGHT - MARGIN
 
-    // Logo (left side of header)
+    // Logo
+    let logoH = 0;
     let logoW = 0;
     try {
       const logoBytes = Buffer.from(RECEIPT_LOGO_PNG_BASE64, 'base64');
-      const logoImg = await doc.embedPng(logoBytes);
-      const logoNat = logoImg.scale(1);
+      const logoImg   = await doc.embedPng(logoBytes);
+      const logoNat   = logoImg.scale(1);
       const scale = Math.min(LOGO_MAX_W / logoNat.width, LOGO_MAX_H / logoNat.height, 1);
-      logoW = logoNat.width * scale;
-      const logoH = logoNat.height * scale;
-      const logoY = PAGE_HEIGHT - HEADER_BAND_H + (HEADER_BAND_H - logoH) / 2;
-      ctx.page.drawImage(logoImg, { x: MARGIN, y: logoY, width: logoW, height: logoH });
+      logoW = logoNat.width  * scale;
+      logoH = logoNat.height * scale;
+      // Draw logo top-aligned with header top
+      ctx.page.drawImage(logoImg, {
+        x: MARGIN,
+        y: headerTopY - logoH,
+        width: logoW,
+        height: logoH,
+      });
     } catch {
       /* Logo embed failure is non-fatal */
     }
 
-    // "RECIBO / RECEIPT" big title — centered vertically in the header band
-    const titleText = 'RECIBO / RECEIPT';
-    const titleFontSize = 22;
-    const titleW = bold.widthOfTextAtSize(titleText, titleFontSize);
-    const titleX = (PAGE_WIDTH - titleW) / 2;
-    const titleY = PAGE_HEIGHT - HEADER_BAND_H + (HEADER_BAND_H - titleFontSize) / 2 + 2;
-    ctx.page.drawText(titleText, {
-      x: titleX,
-      y: titleY,
-      size: titleFontSize,
-      font: bold,
-      color: rgb(1, 1, 1),
-    });
+    // Company block — right-aligned
+    const companyLines: Array<{ text: string; size: number; isBold: boolean }> = [
+      { text: COMPANY.name,            size: 10, isBold: true  },
+      ...COMPANY.addressLines.map(l => ({ text: l, size: 8, isBold: false })),
+      { text: COMPANY.phone,           size: 8,  isBold: false },
+      { text: COMPANY.website,         size: 8,  isBold: false },
+    ];
 
-    // Company block (right side of header, white text)
-    const companyX = PAGE_WIDTH - MARGIN - 150;
-    let companyY = PAGE_HEIGHT - MARGIN - 4;
-    const companyLines = [COMPANY.name, ...COMPANY.addressLines, COMPANY.phone, COMPANY.website];
-    for (const line of companyLines) {
-      const isName = line === COMPANY.name;
-      ctx.page.drawText(line, {
-        x: companyX,
-        y: companyY,
-        size: isName ? 10 : 8,
-        font: isName ? bold : regular,
-        color: rgb(1, 1, 1),
-      });
-      companyY -= isName ? 13 : 11;
+    const COMPANY_RIGHT = PAGE_WIDTH - MARGIN;
+    let companyY = headerTopY;
+    for (const cl of companyLines) {
+      const f = cl.isBold ? bold : regular;
+      const color = cl.isBold ? C_BLACK : C_GRAY;
+      const w = f.widthOfTextAtSize(cl.text, cl.size);
+      ctx.page.drawText(cl.text, { x: COMPANY_RIGHT - w, y: companyY, size: cl.size, font: f, color });
+      companyY -= cl.isBold ? 14 : 12;
     }
 
-    ctx.y = PAGE_HEIGHT - HEADER_BAND_H - 18;
+    // Move ctx.y below the taller of the two columns
+    const companyBlockH = headerTopY - companyY;
+    ctx.y = headerTopY - Math.max(logoH, companyBlockH) - 14;
 
-    // ── BILL TO + META block (two-column layout) ──────────────────────────────
-    const metaLabelColor = rgb(0.38, 0.38, 0.42);
-    const metaValueColor = rgb(0.08, 0.08, 0.12);
-    const billToX = MARGIN;
-    const metaX = PAGE_WIDTH - MARGIN - 160;
-    const blockTopY = ctx.y;
+    // ── TITLE: "RECIBO" ───────────────────────────────────────────────────────
+    ensureSpace(ctx, 40);
+    ctx.page.drawText('RECIBO', {
+      x: MARGIN,
+      y: ctx.y,
+      size: 20,
+      font: bold,
+      color: C_BLACK,
+    });
+    ctx.y -= 26;
 
-    // Left column: FACTURAR A / BILL TO
-    drawText(ctx, 'FACTURAR A / BILL TO', billToX, blockTopY, 7.5, bold, rgb(0.45, 0.45, 0.50));
-    drawText(ctx, opts.buyerName || '—', billToX, blockTopY - 14, 11, bold, metaValueColor);
-    let billToY = blockTopY - 27;
+    // ── Hairline rule under title ─────────────────────────────────────────────
+    drawRule(ctx);
+
+    // ── BILL TO + META two-column band ───────────────────────────────────────
+    const bandTopY = ctx.y;
+
+    // Left: FACTURAR A
+    drawText(ctx, 'FACTURAR A', MARGIN, bandTopY, 7.5, bold, C_LIGHT);
+    drawText(ctx, opts.buyerName || '—', MARGIN, bandTopY - 14, 11, bold, C_BLACK);
+    let billY = bandTopY - 27;
     if (opts.buyerEmail) {
-      drawText(ctx, opts.buyerEmail, billToX, billToY, 9, regular, metaValueColor);
-      billToY -= 13;
+      drawText(ctx, opts.buyerEmail, MARGIN, billY, 9, regular, C_GRAY);
+      billY -= 13;
     }
     if (opts.buyerPhone) {
-      drawText(ctx, opts.buyerPhone, billToX, billToY, 9, regular, metaValueColor);
+      drawText(ctx, opts.buyerPhone, MARGIN, billY, 9, regular, C_GRAY);
     }
 
-    // Right column: meta rows
-    const metaRows: [string, string][] = [
+    // Right: RECIBO # / FECHA / ESTADO
+    const metaRows: Array<[string, string]> = [
       ['RECIBO #', receiptNumber],
-      ['FECHA', fmtDate(order.createdAt)],
-      ['ESTADO', fmtStatus(order.status)],
+      ['FECHA',    fmtDate(order.createdAt)],
+      ['ESTADO',   fmtStatus(order.status)],
     ];
-    let metaY = blockTopY;
+    // Labels right-aligned at a fixed point; values right-aligned at page right margin
+    const META_LABEL_RIGHT = PAGE_WIDTH - MARGIN - 100;
+    const META_VALUE_RIGHT = PAGE_WIDTH - MARGIN;
+    let metaY = bandTopY;
     for (const [label, value] of metaRows) {
-      drawText(ctx, label, metaX, metaY, 7.5, bold, rgb(0.45, 0.45, 0.50));
-      drawTextRight(ctx, value, PAGE_WIDTH - MARGIN, metaY, 9, regular, metaValueColor);
+      drawTextRight(ctx, label, META_LABEL_RIGHT, metaY, 7.5, bold, C_LIGHT);
+      drawTextRight(ctx, value, META_VALUE_RIGHT, metaY, 9, regular, C_BLACK);
       metaY -= 14;
     }
 
-    ctx.y = blockTopY - 54;
-    ctx.y -= SECTION_GAP;
-    drawRule(ctx, rgb(0.78, 0.78, 0.82), 0.8);
+    // Advance ctx.y to below the band (both columns)
+    const leftBottom  = opts.buyerPhone ? bandTopY - 53 : opts.buyerEmail ? bandTopY - 40 : bandTopY - 27;
+    const rightBottom = metaY;
+    ctx.y = Math.min(leftBottom, rightBottom) - SECTION_GAP;
 
-    // ── TABLE HEADER ──────────────────────────────────────────────────────────
-    const tableHeaderH = 18;
-    ensureSpace(ctx, tableHeaderH + LINE_H * 4);
+    // ── Hairline rule under band ──────────────────────────────────────────────
+    drawRule(ctx);
 
-    ctx.page.drawRectangle({
-      x: MARGIN,
-      y: ctx.y - tableHeaderH + 4,
-      width: PAGE_WIDTH - MARGIN * 2,
-      height: tableHeaderH,
-      color: TABLE_HEADER_COLOR,
+    // ── TABLE HEADER ROW (no fill) ────────────────────────────────────────────
+    const TABLE_FS = 7.5;
+    ensureSpace(ctx, LINE_H * 4);
+
+    const tblHdrY = ctx.y;
+    // Labels: CANT. (right-aligned in qty col), DESCRIPCIÓN, PRECIO UNIT. (right), IMPORTE (right)
+    drawTextRight(ctx, 'CANT.',       COL_QTY_X + COL_QTY_W, tblHdrY, TABLE_FS, bold, C_BLACK);
+    drawText(ctx,      'DESCRIPCIÓN', COL_DESC_X,             tblHdrY, TABLE_FS, bold, C_BLACK);
+    drawTextRight(ctx, 'PRECIO UNIT.', COL_UNIT_X + COL_UNIT_W, tblHdrY, TABLE_FS, bold, C_BLACK);
+    drawTextRight(ctx, 'IMPORTE',      COL_AMT_X  + COL_AMT_W,  tblHdrY, TABLE_FS, bold, C_BLACK);
+    ctx.y -= LINE_H - 2;
+
+    // Single hairline under header
+    ctx.page.drawLine({
+      start: { x: MARGIN, y: ctx.y + 4 },
+      end:   { x: PAGE_WIDTH - MARGIN, y: ctx.y + 4 },
+      thickness: 0.5,
+      color: C_RULE,
     });
-
-    const tableHeaderY = ctx.y - 10;
-    ctx.page.drawText('CANT.', { x: COL_QTY_X + 2, y: tableHeaderY, size: 7.5, font: bold, color: rgb(1, 1, 1) });
-    ctx.page.drawText('DESCRIPCIÓN', { x: COL_DESC_X, y: tableHeaderY, size: 7.5, font: bold, color: rgb(1, 1, 1) });
-    // Right-align PRECIO UNIT. and IMPORTE headers
-    const unitHdrW = bold.widthOfTextAtSize('PRECIO UNIT.', 7.5);
-    ctx.page.drawText('PRECIO UNIT.', { x: COL_UNIT_X + COL_UNIT_W - unitHdrW, y: tableHeaderY, size: 7.5, font: bold, color: rgb(1, 1, 1) });
-    const amtHdrW = bold.widthOfTextAtSize('IMPORTE', 7.5);
-    ctx.page.drawText('IMPORTE', { x: COL_AMT_X + COL_AMT_W - amtHdrW, y: tableHeaderY, size: 7.5, font: bold, color: rgb(1, 1, 1) });
-
-    ctx.y -= tableHeaderH + 2;
+    ctx.y -= 6;
 
     // ── TABLE ROWS ────────────────────────────────────────────────────────────
-    const rowFontSize = 8.5;
-    let rowIndex = 0;
+    const ROW_FS   = 9;
+    const SUB_FS   = 7.5;
+    const ROW_LINE_H = LINE_H + 1;   // primary line height
+    const SUB_LINE_H = 11;            // sub-line height
 
     for (const item of lineItems) {
-      const rowH = LINE_H + (item.note ? 11 : 0);
-      ensureSpace(ctx, rowH + 4);
-
-      // Alternate row fill
-      if (rowIndex % 2 === 1) {
-        ctx.page.drawRectangle({
-          x: MARGIN,
-          y: ctx.y - rowH + LINE_H - 1,
-          width: PAGE_WIDTH - MARGIN * 2,
-          height: rowH,
-          color: TABLE_ROW_ALT_COLOR,
-        });
-      }
+      const rowH = ROW_LINE_H + (item.subline ? SUB_LINE_H : 0);
+      ensureSpace(ctx, rowH + 8);
 
       const rowY = ctx.y;
-      // QTY
-      ctx.page.drawText(String(item.qty), { x: COL_QTY_X + 2, y: rowY, size: rowFontSize, font: regular });
-      // Description — truncate to column width
-      const descTruncated = truncateText(item.description, regular, rowFontSize, COL_DESC_W);
-      ctx.page.drawText(descTruncated, { x: COL_DESC_X, y: rowY, size: rowFontSize, font: regular });
-      // Unit price (right-aligned)
-      drawTextRight(ctx, fmtMoney(item.unitCents), COL_UNIT_X + COL_UNIT_W, rowY, rowFontSize, regular);
-      // Amount (right-aligned)
-      drawTextRight(ctx, fmtMoney(item.amountCents), COL_AMT_X + COL_AMT_W, rowY, rowFontSize, regular);
 
-      ctx.y -= LINE_H;
+      // QTY — right-aligned in qty column
+      drawTextRight(ctx, String(item.qty), COL_QTY_X + COL_QTY_W, rowY, ROW_FS, regular, C_BLACK);
 
-      // Optional note line inside the row
-      if (item.note) {
-        ensureSpace(ctx, 12);
-        ctx.page.drawText(item.note, {
-          x: COL_DESC_X,
-          y: ctx.y,
-          size: 7,
-          font: regular,
-          color: rgb(0.45, 0.45, 0.50),
-        });
-        ctx.y -= 11;
+      // Description primary line — black
+      const descPrimary = truncateText(item.description, bold, ROW_FS, COL_DESC_W);
+      drawText(ctx, descPrimary, COL_DESC_X, rowY, ROW_FS, bold, C_BLACK);
+
+      // Unit price and amount (right-aligned)
+      drawTextRight(ctx, fmtMoney(item.unitCents),   COL_UNIT_X + COL_UNIT_W, rowY, ROW_FS, regular, C_BLACK);
+      drawTextRight(ctx, fmtMoney(item.amountCents), COL_AMT_X  + COL_AMT_W,  rowY, ROW_FS, regular, C_BLACK);
+
+      ctx.y -= ROW_LINE_H;
+
+      // Sub-line (VIN / lot / yard) — gray, smaller
+      if (item.subline) {
+        ensureSpace(ctx, SUB_LINE_H + 4);
+        const subTrunc = truncateText(item.subline, regular, SUB_FS, COL_DESC_W + COL_UNIT_W + COL_AMT_W + 12);
+        drawText(ctx, subTrunc, COL_DESC_X, ctx.y, SUB_FS, regular, C_GRAY);
+        ctx.y -= SUB_LINE_H;
       }
 
-      rowIndex++;
+      // Light hairline between rows
+      ctx.page.drawLine({
+        start: { x: MARGIN, y: ctx.y + 4 },
+        end:   { x: PAGE_WIDTH - MARGIN, y: ctx.y + 4 },
+        thickness: 0.3,
+        color: C_RULE,
+      });
+      ctx.y -= 4;
     }
 
     // ── SERVICE extra notes ───────────────────────────────────────────────────
@@ -460,112 +483,94 @@ export class ReceiptPdfService {
       ctx.y -= 4;
       ensureSpace(ctx, LINE_H * 5);
 
-      // Preference list
       if (servicePreferences.length) {
-        ctx.y -= 4;
-        drawLine(ctx, 'Preferencias de vehículo:', COL_DESC_X, 7.5, bold, rgb(0.35, 0.35, 0.40));
+        drawLine(ctx, 'Preferencias de vehículo:', COL_DESC_X, 7.5, bold, C_GRAY);
         for (const pref of servicePreferences) {
-          drawLine(ctx, `  · ${pref}`, COL_DESC_X, 8, regular, rgb(0.3, 0.3, 0.35));
+          drawLine(ctx, `  · ${pref}`, COL_DESC_X, 8, regular, C_GRAY);
         }
       }
 
-      ctx.y -= 4;
-      // Note — wrap by sentences
+      ctx.y -= 2;
       const sentences = serviceNote.split(/(?<=\.) /);
       for (const sentence of sentences) {
-        drawLine(ctx, sentence.trim(), COL_DESC_X, 7.5, regular, rgb(0.40, 0.40, 0.45));
+        drawLine(ctx, sentence.trim(), COL_DESC_X, 7.5, regular, C_GRAY);
       }
     }
 
     // ── TOTALS block ──────────────────────────────────────────────────────────
     ctx.y -= SECTION_GAP;
-    drawRule(ctx, rgb(0.72, 0.72, 0.78), 0.8);
-    ctx.y -= 2;
+    drawRule(ctx);
 
-    const totalsLabelX = COL_UNIT_X;
+    const totalsLabelX   = COL_UNIT_X;
     const totalsRightEdge = PAGE_WIDTH - MARGIN;
 
     if (order.type === 'INSPECTION' && detail) {
-      ensureSpace(ctx, LINE_H * 3 + 8);
-      const subtotalRows: [string, number][] = [
+      ensureSpace(ctx, LINE_H * 4 + 10);
+      const subtotalRows: Array<[string, number]> = [
         ['Subtotal inspecciones', detail.inspectionSubtotalCents],
-        ['Subtotal traslados', detail.travelSubtotalCents],
-        ['Impuestos', 0],
+        ['Subtotal traslados',    detail.travelSubtotalCents],
+        ['Impuestos',             0],
       ];
       for (const [label, cents] of subtotalRows) {
         const rowY = ctx.y;
-        drawText(ctx, label, totalsLabelX, rowY, 8.5, regular, rgb(0.3, 0.3, 0.35));
-        drawTextRight(ctx, fmtMoney(cents), totalsRightEdge, rowY, 8.5, regular, rgb(0.3, 0.3, 0.35));
+        drawText(ctx,      label,            totalsLabelX,  rowY, 8.5, regular, C_GRAY);
+        drawTextRight(ctx, fmtMoney(cents),  totalsRightEdge, rowY, 8.5, regular, C_GRAY);
         ctx.y -= LINE_H;
       }
-    } else {
-      // DEPOSIT / SERVICE — just show a subtotal line
-      ensureSpace(ctx, LINE_H + 8);
-      const rowY = ctx.y;
-      drawText(ctx, 'Subtotal', totalsLabelX, rowY, 8.5, regular, rgb(0.3, 0.3, 0.35));
-      drawTextRight(ctx, fmtMoney(totalCents), totalsRightEdge, rowY, 8.5, regular, rgb(0.3, 0.3, 0.35));
+    } else if (order.type !== 'SERVICE') {
+      // DEPOSIT — show subtotal + taxes
+      ensureSpace(ctx, LINE_H * 2 + 10);
+      const subY = ctx.y;
+      drawText(ctx,      'Subtotal',      totalsLabelX,  subY, 8.5, regular, C_GRAY);
+      drawTextRight(ctx, fmtMoney(totalCents), totalsRightEdge, subY, 8.5, regular, C_GRAY);
       ctx.y -= LINE_H;
-
-      // Taxes = 0
       const taxY = ctx.y;
-      drawText(ctx, 'Impuestos', totalsLabelX, taxY, 8.5, regular, rgb(0.3, 0.3, 0.35));
-      drawTextRight(ctx, '$0.00', totalsRightEdge, taxY, 8.5, regular, rgb(0.3, 0.3, 0.35));
+      drawText(ctx,      'Impuestos',  totalsLabelX, taxY, 8.5, regular, C_GRAY);
+      drawTextRight(ctx, '$0.00', totalsRightEdge, taxY, 8.5, regular, C_GRAY);
       ctx.y -= LINE_H;
     }
 
-    // Total line — bold, larger
+    // Total line — hairline then bold larger text, NO fill
     ctx.y -= 4;
-    ensureSpace(ctx, 20);
+    drawRule(ctx, 0.6);
+    ensureSpace(ctx, 24);
+
     const totalDisplayCents =
       order.type === 'INSPECTION' && detail ? detail.totalCents : totalCents;
 
-    // Filled bar behind the total row (from totalsLabelX-8 to right margin)
-    ctx.page.drawRectangle({
-      x: totalsLabelX - 8,
-      y: ctx.y - 4,
-      width: totalsRightEdge - (totalsLabelX - 8),
-      height: 20,
-      color: TABLE_HEADER_COLOR,
-    });
-
-    drawText(ctx, 'TOTAL', totalsLabelX, ctx.y + 3, 11, bold, rgb(1, 1, 1));
-    drawTextRight(ctx, fmtMoney(totalDisplayCents), totalsRightEdge, ctx.y + 3, 13, bold, rgb(1, 1, 1));
-    ctx.y -= 24;
+    const totalY = ctx.y;
+    drawText(ctx,      'TOTAL',                        totalsLabelX,    totalY, 12, bold, C_BLACK);
+    drawTextRight(ctx, fmtMoney(totalDisplayCents),    totalsRightEdge, totalY, 14, bold, C_BLACK);
+    ctx.y -= 26;
 
     // ── TERMS / FOOTER ────────────────────────────────────────────────────────
     ctx.y -= SECTION_GAP + 4;
-    drawRule(ctx, rgb(0.82, 0.82, 0.82), 0.5);
+    drawRule(ctx, 0.5);
 
-    drawLine(ctx, 'TÉRMINOS Y CONDICIONES', MARGIN, 7.5, bold, rgb(0.38, 0.38, 0.42));
+    drawLine(ctx, 'TÉRMINOS Y CONDICIONES', MARGIN, 7.5, bold, C_LIGHT);
     drawLine(
       ctx,
       'Pago procesado de forma segura. Gracias por tu compra en HTown Autos.',
-      MARGIN,
-      8,
-      regular,
-      rgb(0.35, 0.35, 0.40),
+      MARGIN, 8, regular, C_GRAY,
     );
     if (order.type === 'SERVICE') {
       drawLine(
         ctx,
         'El servicio Find a Car for Me no incluye fee de Copart, brokeraje ni envío.',
-        MARGIN,
-        8,
-        regular,
-        rgb(0.35, 0.35, 0.40),
+        MARGIN, 8, regular, C_GRAY,
       );
     }
 
     // ── Page footers ──────────────────────────────────────────────────────────
     for (let i = 0; i < ctx.pages.length; i++) {
-      const pg = ctx.pages[i];
+      const pg      = ctx.pages[i];
       const footerY = MARGIN / 2;
       pg.drawText(`${COMPANY.name}  ·  ${COMPANY.website}`, {
         x: MARGIN,
         y: footerY,
         size: 7.5,
         font: regular,
-        color: rgb(0.62, 0.62, 0.65),
+        color: C_LIGHT,
       });
       const rightText =
         ctx.pages.length > 1
@@ -577,7 +582,7 @@ export class ReceiptPdfService {
         y: footerY,
         size: 7.5,
         font: regular,
-        color: rgb(0.62, 0.62, 0.65),
+        color: C_LIGHT,
       });
     }
 

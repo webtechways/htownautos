@@ -326,6 +326,7 @@ export class PortalController {
     const bytes = await this.receiptPdfService.buildOrderReceiptPdf(order as any, {
       buyerName: `${buyer.firstName} ${buyer.lastName}`.trim(),
       buyerEmail: buyer.email ?? '',
+      buyerPhone: buyer.phoneMain ?? undefined,
     });
     res.set({
       'Content-Type': 'application/pdf',

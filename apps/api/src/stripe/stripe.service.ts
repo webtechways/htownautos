@@ -283,6 +283,7 @@ export class StripeService {
       amountRefunded: number;
       relatedPaymentId: string | null;
       orderType: string | null;
+      orderId: string | null;
       order: OrderReceiptDetail | null;
     }> = [];
 
@@ -313,6 +314,7 @@ export class StripeService {
         amountRefunded: charge?.amount_refunded ?? 0,
         relatedPaymentId: null,
         orderType: null,
+        orderId: null,
         order: null,
       });
 
@@ -336,6 +338,7 @@ export class StripeService {
             amountRefunded: 0,
             relatedPaymentId: pi.id,
             orderType: null,
+            orderId: null,
             order: null,
           });
         }
@@ -383,6 +386,7 @@ export class StripeService {
                 orderById.get(piToOrderId.get(e.id) ?? '');
               if (!order) return;
               e.orderType = order.type;
+              e.orderId = order.id;
               e.order =
                 (await this.portalService!.buildOrderReceiptDetail(order as any)) ??
                 null;

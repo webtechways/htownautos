@@ -278,7 +278,7 @@ export class StripeController {
     // We call listPaymentMethods then swap; simpler: query buyer directly here.
     const buyer = await this.prisma.buyer.findFirst({
       where: { id: buyerId, tenantId },
-      select: { id: true, firstName: true, lastName: true, email: true },
+      select: { id: true, firstName: true, lastName: true, email: true, phoneMain: true },
     });
     if (!buyer) throw new BadRequestException('Buyer not found');
 
@@ -291,6 +291,7 @@ export class StripeController {
     const bytes = await this.receiptPdfService.buildOrderReceiptPdf(order as any, {
       buyerName: `${buyer.firstName} ${buyer.lastName}`.trim(),
       buyerEmail: buyer.email ?? '',
+      buyerPhone: buyer.phoneMain ?? undefined,
     });
     res.set({
       'Content-Type': 'application/pdf',

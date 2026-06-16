@@ -176,7 +176,9 @@ export class PortalService {
   // ── Listings (proxy to CopartService) ────────────────────────────────────
 
   async getListings(query: QueryCopartDto) {
-    return this.copartService.findAll(query);
+    // The public website only lists vehicles in yards that offer physical
+    // inspection — force it regardless of what the client sends.
+    return this.copartService.findAll({ ...query, inspectableOnly: true });
   }
 
   async getListingByLotNumber(lotNumber: string) {

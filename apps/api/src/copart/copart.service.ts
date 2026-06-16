@@ -364,8 +364,15 @@ export class CopartService {
       ? { trim: { equals: trim, mode: 'insensitive' as const } }
       : undefined;
 
+    // The web only surfaces vehicles in yards that offer physical inspection, so
+    // every facet count must be scoped to inspectable inventory too.
+    const inspectable: Prisma.AuctionListingWhereInput = {
+      yard: { is: { physicalInspectionAvailable: true } },
+    };
+
     // vehicleSel = all provided opts combined (used by the 5 non-vehicle facets)
     const vehicleSel: Prisma.AuctionListingWhereInput = {
+      ...inspectable,
       ...(yearClause ?? {}),
       ...(makeClause ?? {}),
       ...(modelClause ?? {}),
@@ -387,7 +394,7 @@ export class CopartService {
       // years — no vehicle filter; order desc
       this.prisma.auctionListing.groupBy({
         by: ['year'],
-        where: { year: { not: null } },
+        where: { ...inspectable, year: { not: null } },
         _count: { _all: true },
         orderBy: { year: 'desc' },
       }),
@@ -395,7 +402,7 @@ export class CopartService {
       // makes — filtered by year only
       this.prisma.auctionListing.groupBy({
         by: ['make'],
-        where: { ...(yearClause ?? {}), make: { not: null } },
+        where: { ...inspectable, ...(yearClause ?? {}), make: { not: null } },
         _count: { _all: true },
         orderBy: { make: 'asc' },
       }),
@@ -405,6 +412,7 @@ export class CopartService {
         ? this.prisma.auctionListing.groupBy({
             by: ['modelGroup'],
             where: {
+              ...inspectable,
               ...(yearClause ?? {}),
               ...(makeClause ?? {}),
               modelGroup: { not: null },
@@ -419,6 +427,7 @@ export class CopartService {
         ? this.prisma.auctionListing.groupBy({
             by: ['trim'],
             where: {
+              ...inspectable,
               ...(yearClause ?? {}),
               ...(makeClause ?? {}),
               ...(modelClause ?? {}),

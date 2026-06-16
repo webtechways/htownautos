@@ -34,6 +34,14 @@ function titleCase(s: string): string {
   return s.toLowerCase().replace(/(?:^|\s)\S/g, (c) => c.toUpperCase());
 }
 
+/** Split a comma-separated multi-select value into trimmed, non-empty parts. */
+function csv(s: string): string[] {
+  return s
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
 /**
  * Maps a raw saleTitleType value (case-insensitive) to a human-readable label.
  * Unknown values fall back to titleCase(rawValue).
@@ -124,17 +132,24 @@ export class CopartService {
             }
           : {},
 
-        // Make filter
-        make ? { make: { equals: make, mode: 'insensitive' } } : {},
+        // Make filter — comma-separated = multi-select (exact IN); single = insensitive equals
+        make
+          ? make.includes(',')
+            ? { make: { in: csv(make) } }
+            : { make: { equals: make, mode: 'insensitive' } }
+          : {},
 
-        // Model filter (matches modelGroup or modelDetail)
+        // Model filter — comma-separated = multi-select on modelGroup (exact IN);
+        // single value keeps the broad contains match on modelGroup/modelDetail
         model
-          ? {
-              OR: [
-                { modelGroup: { contains: model, mode: 'insensitive' } },
-                { modelDetail: { contains: model, mode: 'insensitive' } },
-              ],
-            }
+          ? model.includes(',')
+            ? { modelGroup: { in: csv(model) } }
+            : {
+                OR: [
+                  { modelGroup: { contains: model, mode: 'insensitive' } },
+                  { modelDetail: { contains: model, mode: 'insensitive' } },
+                ],
+              }
           : {},
 
         // Year filter
@@ -197,8 +212,12 @@ export class CopartService {
           ? { saleTitleType: { equals: saleTitleType, mode: 'insensitive' } }
           : {},
 
-        // Trim filter (cascades from model)
-        trim ? { trim: { equals: trim, mode: 'insensitive' } } : {},
+        // Trim filter (cascades from model) — comma-separated = multi-select
+        trim
+          ? trim.includes(',')
+            ? { trim: { in: csv(trim) } }
+            : { trim: { equals: trim, mode: 'insensitive' } }
+          : {},
 
         // Sale date range filter (saleDate is stored as YYYYMMDD integer)
         saleDateFrom || saleDateTo
@@ -353,15 +372,22 @@ export class CopartService {
     const { year, make, model, trim } = opts;
 
     // ── Vehicle selection where clauses ────────────────────────────────────────
+    // make/model/trim may be comma-separated (multi-select) → IN; single → equals.
     const yearClause = year ? { year } : undefined;
     const makeClause = make
-      ? { make: { equals: make, mode: 'insensitive' as const } }
+      ? make.includes(',')
+        ? { make: { in: csv(make) } }
+        : { make: { equals: make, mode: 'insensitive' as const } }
       : undefined;
     const modelClause = model
-      ? { modelGroup: { equals: model, mode: 'insensitive' as const } }
+      ? model.includes(',')
+        ? { modelGroup: { in: csv(model) } }
+        : { modelGroup: { equals: model, mode: 'insensitive' as const } }
       : undefined;
     const trimClause = trim
-      ? { trim: { equals: trim, mode: 'insensitive' as const } }
+      ? trim.includes(',')
+        ? { trim: { in: csv(trim) } }
+        : { trim: { equals: trim, mode: 'insensitive' as const } }
       : undefined;
 
     // The web only surfaces vehicles in yards that offer physical inspection, so

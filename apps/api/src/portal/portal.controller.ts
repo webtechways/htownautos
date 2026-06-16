@@ -28,6 +28,7 @@ import { InspectionCartDto } from './dto/inspection-cart.dto';
 import { CreateDepositDto } from './dto/create-deposit.dto';
 import { AddInspectionRequestDto } from './dto/add-inspection-request.dto';
 import { CreateDepositReleaseRequestDto } from './dto/create-deposit-release-request.dto';
+import { FindACarCheckoutDto } from './dto/find-a-car-checkout.dto';
 
 // CustomerGuard resolves the tenant from the Buyer, so the global TenantGuard
 // must not require an org-based tenant on these routes.
@@ -214,6 +215,26 @@ export class PortalController {
     @Body() dto: CreateDepositDto,
   ) {
     return this.portalService.createDeposit(buyer, dto);
+  }
+
+  // ── Find a Car for Me ─────────────────────────────────────────────────────
+
+  /**
+   * POST /api/v1/portal/find-a-car/checkout
+   * Creates a Stripe Checkout Session for the "Find a Car for Me" service ($500).
+   * Body: { preferences: WantedVehicleDto[], acceptedTerms: boolean }
+   * Returns: { orderId, url, checkoutUrl }
+   *
+   * Vehicle preferences are stored in PortalOrder.metadata until payment is
+   * confirmed; fulfillment creates BuyerVehiclePreference rows per preference.
+   */
+  @Post('find-a-car/checkout')
+  @HttpCode(HttpStatus.CREATED)
+  checkoutFindACar(
+    @CurrentBuyer() buyer: PortalBuyer,
+    @Body() dto: FindACarCheckoutDto,
+  ) {
+    return this.portalService.checkoutFindACar(buyer, dto);
   }
 
   // ── Billing ───────────────────────────────────────────────────────────────

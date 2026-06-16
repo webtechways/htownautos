@@ -18,11 +18,15 @@ import { UpdatePortalProfileDto } from './dto/update-portal-profile.dto';
 import { CreateDepositDto } from './dto/create-deposit.dto';
 import { InspectionCartDto, CartItemDto } from './dto/inspection-cart.dto';
 import { PortalPricingService, PortalPricing } from './portal-pricing.service';
+import { FindACarCheckoutDto } from './dto/find-a-car-checkout.dto';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /** Minimum deposit amount in cents ($10). */
 const MIN_DEPOSIT_CENTS = 1000;
+
+/** Fixed price for the "Find a Car for Me" service in cents ($500). */
+const FIND_A_CAR_PRICE_CENTS = 50_000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -884,6 +888,101 @@ export class PortalService {
     };
   }
 
+  // ── Find a Car for Me ─────────────────────────────────────────────────────
+
+  /**
+   * Create a Stripe Checkout Session for the "Find a Car for Me" service.
+   * Saves vehicle preferences in PortalOrder.metadata; actual BuyerVehiclePreference
+   * rows are created by fulfillFindACarOrder after successful payment.
+   */
+  async checkoutFindACar(
+    buyer: PortalBuyer,
+    dto: FindACarCheckoutDto,
+  ): Promise<{ orderId: string; url: string | null; checkoutUrl: string | null }> {
+    if (!dto.acceptedTerms) {
+      throw new BadRequestException(
+        'Debes aceptar los términos y condiciones',
+      );
+    }
+    if (!dto.preferences?.length) {
+      throw new BadRequestException(
+        'Debes especificar al menos una preferencia de vehículo',
+      );
+    }
+
+    const order = await this.prisma.portalOrder.create({
+      data: {
+        tenantId: buyer.tenantId,
+        buyerId: buyer.id,
+        type: 'SERVICE',
+        status: 'PENDING',
+        amount: new Prisma.Decimal(FIND_A_CAR_PRICE_CENTS / 100),
+        currency: 'usd',
+        description: `Find a Car for Me — ${dto.preferences.length} vehículo(s)`,
+        metadata: JSON.parse(
+          JSON.stringify({
+            service: 'find-a-car',
+            preferences: dto.preferences,
+            acceptedTerms: true,
+          }),
+        ),
+      },
+    });
+
+    const stripeCustomerId = await this.getOrCreateStripeCustomer(buyer);
+
+    const session = await this.stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer: stripeCustomerId,
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            unit_amount: FIND_A_CAR_PRICE_CENTS,
+            product_data: {
+              name: 'Find a Car for Me',
+              description:
+                'Inspección onsite de 6 vehículos + Carfax + búsqueda de historial + puja hasta ganar + tramitación de envío. No incluye fee de Copart, brokeraje ni envío.',
+            },
+          },
+          quantity: 1,
+        },
+      ],
+      payment_intent_data: {
+        description: 'Find a Car for Me service',
+        setup_future_usage: 'off_session',
+        metadata: {
+          portalOrderId: order.id,
+          buyerId: buyer.id,
+          tenantId: buyer.tenantId,
+        },
+      },
+      metadata: {
+        portalOrderId: order.id,
+        buyerId: buyer.id,
+        tenantId: buyer.tenantId,
+        orderType: 'SERVICE',
+      },
+      success_url: `${this.portalBaseUrl()}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${this.portalBaseUrl()}/payment/canceled?session_id={CHECKOUT_SESSION_ID}`,
+    });
+
+    await this.prisma.portalOrder.update({
+      where: { id: order.id },
+      data: { stripeCheckoutSessionId: session.id },
+    });
+
+    this.logger.log(
+      `Find-a-Car order ${order.id} created — Stripe session ${session.id}`,
+    );
+
+    return {
+      orderId: order.id,
+      url: session.url,
+      checkoutUrl: session.url,
+    };
+  }
+
   // ── Stripe fulfillment (called from StripeService webhook) ────────────────
 
   /**
@@ -930,6 +1029,8 @@ export class PortalService {
       await this.fulfillInspectionOrder(order, piId);
     } else if (order.type === 'DEPOSIT') {
       await this.fulfillDepositOrder(order, piId);
+    } else if (order.type === 'SERVICE') {
+      await this.fulfillFindACarOrder(order, piId);
     }
   }
 
@@ -1066,6 +1167,85 @@ export class PortalService {
 
     this.logger.log(
       `fulfillDepositOrder: order ${order.id} fulfilled — ledger entry created`,
+    );
+  }
+
+  private async fulfillFindACarOrder(
+    order: {
+      id: string;
+      buyerId: string;
+      tenantId: string | null;
+      metadata: unknown;
+    },
+    _piId: string | null,
+  ): Promise<void> {
+    const meta = (order.metadata ?? {}) as Record<string, unknown>;
+
+    if (meta['service'] !== 'find-a-car') {
+      // Unknown SERVICE sub-type — just mark fulfilled and log.
+      await this.prisma.portalOrder.update({
+        where: { id: order.id },
+        data: { status: 'FULFILLED' },
+      });
+      this.logger.warn(
+        `fulfillFindACarOrder: order ${order.id} has unknown service type "${String(meta['service'])}" — marked FULFILLED without side effects`,
+      );
+      return;
+    }
+
+    const preferences = Array.isArray(meta['preferences'])
+      ? (meta['preferences'] as Record<string, unknown>[])
+      : [];
+
+    const createdPreferenceIds: string[] = [];
+
+    for (const pref of preferences) {
+      try {
+        const created = await this.prisma.buyerVehiclePreference.create({
+          data: {
+            buyerId: order.buyerId,
+            tenantId: order.tenantId,
+            make: String(pref['make'] ?? ''),
+            yearFrom: pref['yearFrom'] != null ? Number(pref['yearFrom']) : null,
+            yearTo: pref['yearTo'] != null ? Number(pref['yearTo']) : null,
+            models: Array.isArray(pref['models']) ? (pref['models'] as string[]) : [],
+            trims: Array.isArray(pref['trims']) ? (pref['trims'] as string[]) : [],
+            maxMileage: pref['maxMileage'] != null ? Number(pref['maxMileage']) : null,
+            titleTypes: Array.isArray(pref['titleTypes']) ? (pref['titleTypes'] as string[]) : [],
+            colors: Array.isArray(pref['colors']) ? (pref['colors'] as string[]) : [],
+            maxCost: pref['maxCost'] != null ? new Prisma.Decimal(Number(pref['maxCost'])) : null,
+            notes: pref['notes'] != null ? String(pref['notes']) : null,
+            paid: true,
+            paidAt: new Date(),
+            source: 'web-find-a-car',
+            portalOrderId: order.id,
+          },
+        });
+        createdPreferenceIds.push(created.id);
+        this.logger.log(
+          `fulfillFindACarOrder: created BuyerVehiclePreference ${created.id} for order ${order.id}`,
+        );
+      } catch (err) {
+        this.logger.error(
+          `fulfillFindACarOrder: failed to create preference for order ${order.id}: ${(err as Error).message}`,
+        );
+        // Continue — do not abort the entire fulfillment for one failed preference.
+      }
+    }
+
+    await this.prisma.portalOrder.update({
+      where: { id: order.id },
+      data: {
+        status: 'FULFILLED',
+        metadata: {
+          ...(meta as object),
+          createdPreferenceIds,
+        },
+      },
+    });
+
+    this.logger.log(
+      `fulfillFindACarOrder: order ${order.id} FULFILLED — ${createdPreferenceIds.length}/${preferences.length} preferences created`,
     );
   }
 

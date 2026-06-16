@@ -44,21 +44,22 @@ function fmtMoney(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 function fmtDate(d: Date): string {
-  return d.toLocaleDateString('es-MX', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  const month = MONTH_ABBR[d.getMonth()];
+  const day   = String(d.getDate()).padStart(2, '0');
+  const year  = d.getFullYear();
+  return `${month} ${day}, ${year}`;
 }
 
 function fmtStatus(status: string): string {
   const map: Record<string, string> = {
-    PAID: 'Pagado',
-    FULFILLED: 'Completado',
-    PENDING: 'Pendiente',
-    CANCELED: 'Cancelado',
-    REFUNDED: 'Reembolsado',
+    PAID:      'Paid',
+    FULFILLED: 'Completed',
+    PENDING:   'Pending',
+    CANCELED:  'Canceled',
+    REFUNDED:  'Refunded',
   };
   return map[status] ?? status;
 }
@@ -232,11 +233,11 @@ export class ReceiptPdfService {
             const modelClean = dedupeModel(v.model);
             const primaryDesc = [yearMake, modelClean].filter(Boolean).join(' ') || '—';
 
-            // Sub-line: "VIN {vin} · {yardName}" or "Lote {lotNumber} · {yardName}"
+            // Sub-line: "VIN {vin} · {yardName}" or "Lot {lotNumber} · {yardName}"
             const identifier = v.vin
               ? `VIN ${v.vin}`
               : v.lotNumber
-                ? `Lote ${v.lotNumber}`
+                ? `Lot ${v.lotNumber}`
                 : null;
             const subline = [identifier, yardLabel].filter(Boolean).join(' · ');
 
@@ -253,7 +254,7 @@ export class ReceiptPdfService {
           if (yard.travelFeeCents > 0) {
             lineItems.push({
               qty: 1,
-              description: `Tarifa de traslado — ${yardLabel}`,
+              description: `Travel fee — ${yardLabel}`,
               unitCents: yard.travelFeeCents,
               amountCents: yard.travelFeeCents,
             });
@@ -263,21 +264,21 @@ export class ReceiptPdfService {
     } else if (order.type === 'DEPOSIT') {
       lineItems.push({
         qty: 1,
-        description: 'Depósito a cuenta',
+        description: 'Account deposit',
         unitCents: totalCents,
         amountCents: totalCents,
       });
     } else if (order.type === 'SERVICE') {
       lineItems.push({
         qty: 1,
-        description: 'Find a Car for Me — servicio',
+        description: 'Find a Car for Me — service',
         unitCents: totalCents,
         amountCents: totalCents,
       });
       serviceNote =
-        'Incluye: inspección onsite de 6 vehículos con tus requerimientos, Carfax de esos 6, ' +
-        'búsqueda de historial, puja hasta ganar alguno y tramitación de envío. ' +
-        'No incluye: fee de Copart, brokeraje ni envío.';
+        'Includes: on-site inspection of 6 vehicles matching your requirements, Carfax for those 6, ' +
+        'history search, bidding on each until one is won, and shipping handling. ' +
+        'Does not include: Copart fees, brokerage fees, or shipping fees.';
 
       // Vehicle preferences from metadata
       const prefs = Array.isArray(meta['preferences']) ? meta['preferences'] : [];
@@ -293,7 +294,7 @@ export class ReceiptPdfService {
     } else {
       lineItems.push({
         qty: 1,
-        description: order.description ?? 'Servicio',
+        description: order.description ?? 'Service',
         unitCents: totalCents,
         amountCents: totalCents,
       });
@@ -361,9 +362,9 @@ export class ReceiptPdfService {
     const companyBlockH = headerTopY - companyY;
     ctx.y = headerTopY - Math.max(logoH, companyBlockH) - 14;
 
-    // ── TITLE: "RECIBO" ───────────────────────────────────────────────────────
+    // ── TITLE: "RECEIPT" ─────────────────────────────────────────────────────
     ensureSpace(ctx, 40);
-    ctx.page.drawText('RECIBO', {
+    ctx.page.drawText('RECEIPT', {
       x: MARGIN,
       y: ctx.y,
       size: 20,
@@ -378,8 +379,8 @@ export class ReceiptPdfService {
     // ── BILL TO + META two-column band ───────────────────────────────────────
     const bandTopY = ctx.y;
 
-    // Left: FACTURAR A
-    drawText(ctx, 'FACTURAR A', MARGIN, bandTopY, 7.5, bold, C_LIGHT);
+    // Left: BILL TO
+    drawText(ctx, 'BILL TO', MARGIN, bandTopY, 7.5, bold, C_LIGHT);
     drawText(ctx, opts.buyerName || '—', MARGIN, bandTopY - 14, 11, bold, C_BLACK);
     let billY = bandTopY - 27;
     if (opts.buyerEmail) {
@@ -390,11 +391,11 @@ export class ReceiptPdfService {
       drawText(ctx, opts.buyerPhone, MARGIN, billY, 9, regular, C_GRAY);
     }
 
-    // Right: RECIBO # / FECHA / ESTADO
+    // Right: RECEIPT # / DATE / STATUS
     const metaRows: Array<[string, string]> = [
-      ['RECIBO #', receiptNumber],
-      ['FECHA',    fmtDate(order.createdAt)],
-      ['ESTADO',   fmtStatus(order.status)],
+      ['RECEIPT #', receiptNumber],
+      ['DATE',      fmtDate(order.createdAt)],
+      ['STATUS',    fmtStatus(order.status)],
     ];
     // Labels right-aligned at a fixed point; values right-aligned at page right margin
     const META_LABEL_RIGHT = PAGE_WIDTH - MARGIN - 100;
@@ -419,11 +420,11 @@ export class ReceiptPdfService {
     ensureSpace(ctx, LINE_H * 4);
 
     const tblHdrY = ctx.y;
-    // Labels: CANT. (right-aligned in qty col), DESCRIPCIÓN, PRECIO UNIT. (right), IMPORTE (right)
-    drawTextRight(ctx, 'CANT.',       COL_QTY_X + COL_QTY_W, tblHdrY, TABLE_FS, bold, C_BLACK);
-    drawText(ctx,      'DESCRIPCIÓN', COL_DESC_X,             tblHdrY, TABLE_FS, bold, C_BLACK);
-    drawTextRight(ctx, 'PRECIO UNIT.', COL_UNIT_X + COL_UNIT_W, tblHdrY, TABLE_FS, bold, C_BLACK);
-    drawTextRight(ctx, 'IMPORTE',      COL_AMT_X  + COL_AMT_W,  tblHdrY, TABLE_FS, bold, C_BLACK);
+    // Labels: QTY (right-aligned in qty col), DESCRIPTION, UNIT PRICE (right), AMOUNT (right)
+    drawTextRight(ctx, 'QTY',          COL_QTY_X + COL_QTY_W,    tblHdrY, TABLE_FS, bold, C_BLACK);
+    drawText(ctx,      'DESCRIPTION',  COL_DESC_X,                tblHdrY, TABLE_FS, bold, C_BLACK);
+    drawTextRight(ctx, 'UNIT PRICE',   COL_UNIT_X + COL_UNIT_W,   tblHdrY, TABLE_FS, bold, C_BLACK);
+    drawTextRight(ctx, 'AMOUNT',       COL_AMT_X  + COL_AMT_W,    tblHdrY, TABLE_FS, bold, C_BLACK);
     ctx.y -= LINE_H - 2;
 
     // Single hairline under header
@@ -484,7 +485,7 @@ export class ReceiptPdfService {
       ensureSpace(ctx, LINE_H * 5);
 
       if (servicePreferences.length) {
-        drawLine(ctx, 'Preferencias de vehículo:', COL_DESC_X, 7.5, bold, C_GRAY);
+        drawLine(ctx, 'Vehicle preferences:', COL_DESC_X, 7.5, bold, C_GRAY);
         for (const pref of servicePreferences) {
           drawLine(ctx, `  · ${pref}`, COL_DESC_X, 8, regular, C_GRAY);
         }
@@ -507,9 +508,9 @@ export class ReceiptPdfService {
     if (order.type === 'INSPECTION' && detail) {
       ensureSpace(ctx, LINE_H * 4 + 10);
       const subtotalRows: Array<[string, number]> = [
-        ['Subtotal inspecciones', detail.inspectionSubtotalCents],
-        ['Subtotal traslados',    detail.travelSubtotalCents],
-        ['Impuestos',             0],
+        ['Inspections subtotal', detail.inspectionSubtotalCents],
+        ['Travel subtotal',      detail.travelSubtotalCents],
+        ['Tax',                  0],
       ];
       for (const [label, cents] of subtotalRows) {
         const rowY = ctx.y;
@@ -521,11 +522,11 @@ export class ReceiptPdfService {
       // DEPOSIT — show subtotal + taxes
       ensureSpace(ctx, LINE_H * 2 + 10);
       const subY = ctx.y;
-      drawText(ctx,      'Subtotal',      totalsLabelX,  subY, 8.5, regular, C_GRAY);
+      drawText(ctx,      'Subtotal',           totalsLabelX,  subY, 8.5, regular, C_GRAY);
       drawTextRight(ctx, fmtMoney(totalCents), totalsRightEdge, subY, 8.5, regular, C_GRAY);
       ctx.y -= LINE_H;
       const taxY = ctx.y;
-      drawText(ctx,      'Impuestos',  totalsLabelX, taxY, 8.5, regular, C_GRAY);
+      drawText(ctx,      'Tax',         totalsLabelX, taxY, 8.5, regular, C_GRAY);
       drawTextRight(ctx, '$0.00', totalsRightEdge, taxY, 8.5, regular, C_GRAY);
       ctx.y -= LINE_H;
     }
@@ -547,16 +548,16 @@ export class ReceiptPdfService {
     ctx.y -= SECTION_GAP + 4;
     drawRule(ctx, 0.5);
 
-    drawLine(ctx, 'TÉRMINOS Y CONDICIONES', MARGIN, 7.5, bold, C_LIGHT);
+    drawLine(ctx, 'TERMS & CONDITIONS', MARGIN, 7.5, bold, C_LIGHT);
     drawLine(
       ctx,
-      'Pago procesado de forma segura. Gracias por tu compra en HTown Autos.',
+      'Payment processed securely. Thank you for your purchase at HTown Autos.',
       MARGIN, 8, regular, C_GRAY,
     );
     if (order.type === 'SERVICE') {
       drawLine(
         ctx,
-        'El servicio Find a Car for Me no incluye fee de Copart, brokeraje ni envío.',
+        'The Find a Car for Me service does not include Copart fees, brokerage fees, or shipping fees.',
         MARGIN, 8, regular, C_GRAY,
       );
     }
@@ -574,8 +575,8 @@ export class ReceiptPdfService {
       });
       const rightText =
         ctx.pages.length > 1
-          ? `Recibo ${receiptNumber}  ·  Pág. ${i + 1}/${ctx.pages.length}`
-          : `Recibo ${receiptNumber}  ·  ${fmtDate(order.createdAt)}`;
+          ? `Receipt ${receiptNumber}  ·  Page ${i + 1}/${ctx.pages.length}`
+          : `Receipt ${receiptNumber}  ·  ${fmtDate(order.createdAt)}`;
       const rightW = regular.widthOfTextAtSize(rightText, 7.5);
       pg.drawText(rightText, {
         x: PAGE_WIDTH - MARGIN - rightW,

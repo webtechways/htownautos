@@ -13,6 +13,7 @@ import { PortalService } from './portal.service';
 import { PortalPricingService } from './portal-pricing.service';
 import { QueryCopartDto } from '../copart/dto/query-copart.dto';
 import { InspectionCartDto } from './dto/inspection-cart.dto';
+import { PortalFiltersQueryDto } from './dto/portal-filters-query.dto';
 
 /**
  * Public (unauthenticated) portal endpoints. The marketing site lets anyone
@@ -31,10 +32,20 @@ export class PortalPublicController {
     private readonly pricingService: PortalPricingService,
   ) {}
 
-  /** GET /api/v1/portal/filters — distinct filter options for public dropdowns. */
+  /**
+   * GET /api/v1/portal/filters — faceted, cascading filter options.
+   * Accepts optional ?year=&make=&model=&trim= to narrow subsequent facets.
+   * Response: { years, makes, models, trims, damageTypes, saleStatuses, titleTypes, states, keys }
+   * Each facet is an array of { value, label, count }.
+   */
   @Get('filters')
-  getFilters() {
-    return this.portalService.getFilters();
+  getFilters(@Query() query: PortalFiltersQueryDto) {
+    return this.portalService.getPortalFilters({
+      year: query.year,
+      make: query.make,
+      model: query.model,
+      trim: query.trim,
+    });
   }
 
   /** GET /api/v1/portal/listings — public auction listings. */

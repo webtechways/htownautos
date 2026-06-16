@@ -3,6 +3,73 @@ import { PrismaService } from '@htownautos/prisma';
 import { QueryCopartDto } from './dto/query-copart.dto';
 import { Prisma } from '@prisma/client';
 
+// ── Portal filter helpers ──────────────────────────────────────────────────────
+
+export interface Facet {
+  value: string;
+  label: string;
+  count: number;
+}
+
+export interface FacetNum {
+  value: number;
+  label: string;
+  count: number;
+}
+
+export interface PortalFiltersResult {
+  years: FacetNum[];
+  makes: Facet[];
+  models: Facet[];
+  trims: Facet[];
+  damageTypes: Facet[];
+  saleStatuses: Facet[];
+  titleTypes: Facet[];
+  states: Facet[];
+  keys: Facet[];
+}
+
+/** Capitalises the first letter of every word. */
+function titleCase(s: string): string {
+  return s.toLowerCase().replace(/(?:^|\s)\S/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Maps a raw saleTitleType value (case-insensitive) to a human-readable label.
+ * Unknown values fall back to titleCase(rawValue).
+ */
+function titleTypeLabel(raw: string): string {
+  const u = raw.toUpperCase();
+  if (u.includes('CLEAR') || u.includes('CLEAN')) return 'Clean Title';
+  if (u.includes('SALVAGE')) return 'Salvage Title';
+  if (u === 'CERTIFICATE OF TITLE') return 'Certificate of Title';
+  if (u.includes('NONREPAIRABLE') || u.includes('NON-REPAIRABLE') || u.includes('NON REPAIRABLE')) return 'Non-Repairable';
+  if (u.includes('JUNK')) return 'Junk';
+  if (u.includes('REBUILT')) return 'Rebuilt';
+  if (u === 'BILL OF SALE') return 'Bill of Sale';
+  if (u.includes('PARTS ONLY')) return 'Parts Only';
+  return titleCase(raw);
+}
+
+/** US states + DC + common Canadian provinces that appear in Copart data. */
+const STATE_MAP: Record<string, string> = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California',
+  CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', DC: 'District of Columbia',
+  FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois',
+  IN: 'Indiana', IA: 'Iowa', KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana',
+  ME: 'Maine', MD: 'Maryland', MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota',
+  MS: 'Mississippi', MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada',
+  NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York',
+  NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon',
+  PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota',
+  TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont', VA: 'Virginia',
+  WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming',
+  // Canadian provinces that appear in Copart inventory
+  AB: 'Alberta', BC: 'British Columbia', MB: 'Manitoba', NB: 'New Brunswick',
+  NL: 'Newfoundland and Labrador', NS: 'Nova Scotia', ON: 'Ontario',
+  PE: 'Prince Edward Island', QC: 'Quebec', SK: 'Saskatchewan',
+};
+
 @Injectable()
 export class CopartService {
   constructor(private prisma: PrismaService) {}
@@ -24,7 +91,9 @@ export class CopartService {
       maxOdometer,
       hasKeys,
       runsDrives,
+      runsAndDrives,
       saleTitleType,
+      trim,
       saleDateFrom,
       saleDateTo,
       sortBy = 'createdAt',
@@ -109,15 +178,27 @@ export class CopartService {
         // Has keys filter
         hasKeys ? { hasKeys } : {},
 
-        // Runs/Drives filter
+        // Runs/Drives free-text filter
         runsDrives
           ? { runsDrives: { contains: runsDrives, mode: 'insensitive' } }
+          : {},
+
+        // runsAndDrives boolean filter — matches "Run and Drive" / "Run & Drive",
+        // excludes "Does Not Run". Uses two AND-clauses so both conditions hold.
+        runsAndDrives === true
+          ? { runsDrives: { contains: 'drive', mode: 'insensitive' } }
+          : {},
+        runsAndDrives === true
+          ? { NOT: { runsDrives: { contains: 'not', mode: 'insensitive' } } }
           : {},
 
         // Title type filter
         saleTitleType
           ? { saleTitleType: { equals: saleTitleType, mode: 'insensitive' } }
           : {},
+
+        // Trim filter (cascades from model)
+        trim ? { trim: { equals: trim, mode: 'insensitive' } } : {},
 
         // Sale date range filter (saleDate is stored as YYYYMMDD integer)
         saleDateFrom || saleDateTo
@@ -255,6 +336,224 @@ export class CopartService {
       years: years.map((y) => y.year),
       titleTypes: titleTypes.map((t) => t.saleTitleType),
     };
+  }
+
+  /**
+   * Faceted, cascading filter options for the customer portal.
+   * Cascades year → make → model → trim. Non-vehicle facets (damage, saleStatus,
+   * titleType, state, hasKeys) are always scoped to the current vehicle selection.
+   * Runs all queries in parallel; skips models/trims when their prerequisite is absent.
+   */
+  async getPortalFilters(opts: {
+    year?: number;
+    make?: string;
+    model?: string;
+    trim?: string;
+  }): Promise<PortalFiltersResult> {
+    const { year, make, model, trim } = opts;
+
+    // ── Vehicle selection where clauses ────────────────────────────────────────
+    const yearClause = year ? { year } : undefined;
+    const makeClause = make
+      ? { make: { equals: make, mode: 'insensitive' as const } }
+      : undefined;
+    const modelClause = model
+      ? { modelGroup: { equals: model, mode: 'insensitive' as const } }
+      : undefined;
+    const trimClause = trim
+      ? { trim: { equals: trim, mode: 'insensitive' as const } }
+      : undefined;
+
+    // vehicleSel = all provided opts combined (used by the 5 non-vehicle facets)
+    const vehicleSel: Prisma.AuctionListingWhereInput = {
+      ...(yearClause ?? {}),
+      ...(makeClause ?? {}),
+      ...(modelClause ?? {}),
+      ...(trimClause ?? {}),
+    };
+
+    // ── Run all feasible facet queries in parallel ─────────────────────────────
+    const [
+      yearsRaw,
+      makesRaw,
+      modelsRaw,
+      trimsRaw,
+      damageRaw,
+      statusRaw,
+      titleRaw,
+      stateRaw,
+      keysRaw,
+    ] = await Promise.all([
+      // years — no vehicle filter; order desc
+      this.prisma.auctionListing.groupBy({
+        by: ['year'],
+        where: { year: { not: null } },
+        _count: { _all: true },
+        orderBy: { year: 'desc' },
+      }),
+
+      // makes — filtered by year only
+      this.prisma.auctionListing.groupBy({
+        by: ['make'],
+        where: { ...(yearClause ?? {}), make: { not: null } },
+        _count: { _all: true },
+        orderBy: { make: 'asc' },
+      }),
+
+      // models — only when make is set
+      make
+        ? this.prisma.auctionListing.groupBy({
+            by: ['modelGroup'],
+            where: {
+              ...(yearClause ?? {}),
+              ...(makeClause ?? {}),
+              modelGroup: { not: null },
+            },
+            _count: { _all: true },
+            orderBy: { modelGroup: 'asc' },
+          })
+        : Promise.resolve([]),
+
+      // trims — only when make + model are set
+      make && model
+        ? this.prisma.auctionListing.groupBy({
+            by: ['trim'],
+            where: {
+              ...(yearClause ?? {}),
+              ...(makeClause ?? {}),
+              ...(modelClause ?? {}),
+              trim: { not: null },
+            },
+            _count: { _all: true },
+            orderBy: { trim: 'asc' },
+          })
+        : Promise.resolve([]),
+
+      // damageTypes — scoped to vehicleSel
+      this.prisma.auctionListing.groupBy({
+        by: ['damageDescription'],
+        where: { ...vehicleSel, damageDescription: { not: null } },
+        _count: { _all: true },
+        orderBy: { damageDescription: 'asc' },
+      }),
+
+      // saleStatuses — scoped to vehicleSel
+      this.prisma.auctionListing.groupBy({
+        by: ['saleStatus'],
+        where: { ...vehicleSel, saleStatus: { not: null } },
+        _count: { _all: true },
+        orderBy: { saleStatus: 'asc' },
+      }),
+
+      // titleTypes — scoped to vehicleSel
+      this.prisma.auctionListing.groupBy({
+        by: ['saleTitleType'],
+        where: { ...vehicleSel, saleTitleType: { not: null } },
+        _count: { _all: true },
+        orderBy: { saleTitleType: 'asc' },
+      }),
+
+      // states — scoped to vehicleSel; junk rows dropped via STATE_MAP
+      this.prisma.auctionListing.groupBy({
+        by: ['locationState'],
+        where: { ...vehicleSel, locationState: { not: null } },
+        _count: { _all: true },
+        orderBy: { locationState: 'asc' },
+      }),
+
+      // hasKeys — scoped to vehicleSel
+      this.prisma.auctionListing.groupBy({
+        by: ['hasKeys'],
+        where: { ...vehicleSel, hasKeys: { not: null } },
+        _count: { _all: true },
+        orderBy: { hasKeys: 'asc' },
+      }),
+    ]);
+
+    // ── Map raw groupBy results to Facet shapes ────────────────────────────────
+
+    const years: FacetNum[] = yearsRaw
+      .filter((r) => r.year !== null)
+      .map((r) => ({
+        value: r.year as number,
+        label: String(r.year),
+        count: r._count._all,
+      }));
+
+    const makes: Facet[] = makesRaw
+      .filter((r) => r.make !== null && r.make !== '')
+      .map((r) => ({
+        value: r.make as string,
+        label: titleCase(r.make as string),
+        count: r._count._all,
+      }));
+
+    const models: Facet[] = (modelsRaw as Array<{ modelGroup: string | null; _count: { _all: number } }>)
+      .filter((r) => r.modelGroup !== null && r.modelGroup !== '')
+      .map((r) => ({
+        value: r.modelGroup as string,
+        label: titleCase(r.modelGroup as string),
+        count: r._count._all,
+      }));
+
+    const trims: Facet[] = (trimsRaw as Array<{ trim: string | null; _count: { _all: number } }>)
+      .filter((r) => r.trim !== null && r.trim !== '')
+      .map((r) => ({
+        value: r.trim as string,
+        label: titleCase(r.trim as string),
+        count: r._count._all,
+      }));
+
+    const damageTypes: Facet[] = (damageRaw as Array<{ damageDescription: string | null; _count: { _all: number } }>)
+      .filter((r) => r.damageDescription !== null && r.damageDescription !== '')
+      .map((r) => ({
+        value: r.damageDescription as string,
+        label: titleCase(r.damageDescription as string),
+        count: r._count._all,
+      }));
+
+    const saleStatuses: Facet[] = (statusRaw as Array<{ saleStatus: string | null; _count: { _all: number } }>)
+      .filter((r) => r.saleStatus !== null && r.saleStatus !== '')
+      .map((r) => ({
+        value: r.saleStatus as string,
+        label: titleCase(r.saleStatus as string),
+        count: r._count._all,
+      }));
+
+    const titleTypes: Facet[] = (titleRaw as Array<{ saleTitleType: string | null; _count: { _all: number } }>)
+      .filter((r) => r.saleTitleType !== null && r.saleTitleType !== '')
+      .map((r) => ({
+        value: r.saleTitleType as string,
+        label: titleTypeLabel(r.saleTitleType as string),
+        count: r._count._all,
+      }));
+
+    const states: Facet[] = (stateRaw as Array<{ locationState: string | null; _count: { _all: number } }>)
+      .filter((r) => {
+        if (!r.locationState || r.locationState === '') return false;
+        const key = r.locationState.trim().toUpperCase();
+        return key in STATE_MAP;
+      })
+      .map((r) => {
+        const key = (r.locationState as string).trim().toUpperCase();
+        return {
+          value: key,
+          label: STATE_MAP[key],
+          count: r._count._all,
+        };
+      })
+      // Sort by full state name
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    const keys: Facet[] = (keysRaw as Array<{ hasKeys: string | null; _count: { _all: number } }>)
+      .filter((r) => r.hasKeys !== null && r.hasKeys !== '')
+      .map((r) => ({
+        value: r.hasKeys as string,
+        label: r.hasKeys as string,
+        count: r._count._all,
+      }));
+
+    return { years, makes, models, trims, damageTypes, saleStatuses, titleTypes, states, keys };
   }
 
   async getStats() {

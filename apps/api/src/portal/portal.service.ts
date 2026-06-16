@@ -192,9 +192,18 @@ export class PortalService {
   /**
    * Returns distinct filter option lists from the auction_listings table.
    * Used to populate public-facing dropdowns (makes, years, damage types, etc.).
+   * @deprecated Use getPortalFilters() for the faceted cascading endpoint.
    */
   getFilters() {
     return this.copartService.getFilterOptions();
+  }
+
+  /**
+   * Faceted, cascading filter options for the customer portal.
+   * Delegates to CopartService so no business logic lives in the service layer here.
+   */
+  getPortalFilters(opts: { year?: number; make?: string; model?: string; trim?: string }) {
+    return this.copartService.getPortalFilters(opts);
   }
 
   /**

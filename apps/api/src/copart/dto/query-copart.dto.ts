@@ -1,5 +1,5 @@
 import { IsOptional, IsString, IsInt, IsBoolean, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 export class QueryCopartDto {
   @IsOptional()
@@ -69,6 +69,10 @@ export class QueryCopartDto {
   saleTitleType?: string;
 
   @IsOptional()
+  @IsString()
+  trim?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   saleDateFrom?: number;
@@ -98,4 +102,9 @@ export class QueryCopartDto {
   @Type(() => Boolean)
   @IsBoolean()
   inspectableOnly?: boolean; // Only listings whose yard offers on-site inspection
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  runsAndDrives?: boolean; // true = only "Run and Drive" vehicles (excludes "Does Not Run")
 }

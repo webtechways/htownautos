@@ -4,6 +4,8 @@ import {
   BadRequestException,
   Logger,
   Optional,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import Stripe from 'stripe';
 import { Prisma } from '@prisma/client';
@@ -12,9 +14,12 @@ import { StripeEventsService } from '../presence/stripe-events.service';
 import { SmsService } from '../sms/sms.service';
 import { EmailService } from '../email/email.service';
 import { ShortUrlService } from '../short-url/short-url.service';
-// Lazy import to avoid circular dependency — resolved at runtime.
-// PortalService is injected via forwardRef on the module side.
-import type { PortalService, OrderReceiptDetail } from '../portal/portal.service';
+// Value import (NOT `import type`) so PortalService is a usable DI token.
+// The module cycle (StripeModule ↔ PortalModule) is broken with forwardRef both
+// at the module level and on this injection point. portal.service.ts does not
+// import this file, so there is no file-level circular import.
+import { PortalService } from '../portal/portal.service';
+import type { OrderReceiptDetail } from '../portal/portal.service';
 
 @Injectable()
 export class StripeService {
@@ -27,7 +32,9 @@ export class StripeService {
     private readonly smsService: SmsService,
     private readonly emailService: EmailService,
     private readonly shortUrlService: ShortUrlService,
-    @Optional() private readonly portalService?: PortalService,
+    @Optional()
+    @Inject(forwardRef(() => PortalService))
+    private readonly portalService?: PortalService,
   ) {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
   }
@@ -340,23 +347,45 @@ export class StripeService {
     // a failure here break the payments list.
     try {
       const piIds = events.filter((e) => e.type === 'payment').map((e) => e.id);
-      if (piIds.length > 0 && this.portalService) {
+      // Map each PaymentIntent id → portalOrderId from its metadata (set at
+      // checkout). This is a robust fallback when the order never got its
+      // stripePaymentIntentId stamped (e.g. webhook path that didn't fire).
+      const piToOrderId = new Map<string, string>();
+      for (const pi of paymentIntents.data) {
+        const oid = pi.metadata?.portalOrderId;
+        if (oid) piToOrderId.set(pi.id, oid);
+      }
+      const orderIds = Array.from(new Set(piToOrderId.values()));
+
+      if ((piIds.length > 0 || orderIds.length > 0) && this.portalService) {
         const orders = await this.prisma.portalOrder.findMany({
-          where: { buyerId, stripePaymentIntentId: { in: piIds } },
+          where: {
+            buyerId,
+            OR: [
+              { stripePaymentIntentId: { in: piIds } },
+              ...(orderIds.length > 0 ? [{ id: { in: orderIds } }] : []),
+            ],
+          },
         });
         const orderByPi = new Map(
           orders
             .filter((o) => o.stripePaymentIntentId)
             .map((o) => [o.stripePaymentIntentId as string, o]),
         );
+        const orderById = new Map(orders.map((o) => [o.id, o]));
+
         await Promise.all(
           events
-            .filter((e) => e.type === 'payment' && orderByPi.has(e.id))
+            .filter((e) => e.type === 'payment')
             .map(async (e) => {
-              const order = orderByPi.get(e.id)!;
+              const order =
+                orderByPi.get(e.id) ??
+                orderById.get(piToOrderId.get(e.id) ?? '');
+              if (!order) return;
               e.orderType = order.type;
               e.order =
-                (await this.portalService!.buildOrderReceiptDetail(order as any)) ?? null;
+                (await this.portalService!.buildOrderReceiptDetail(order as any)) ??
+                null;
             }),
         );
       }

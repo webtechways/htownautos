@@ -27,6 +27,8 @@ import { CreateChecklistItemDto } from './dto/create-checklist-item.dto';
 import { UpdateChecklistItemDto } from './dto/update-checklist-item.dto';
 import { CreateRequestItemDto } from './dto/create-request-item.dto';
 import { UpdateRequestItemDto } from './dto/update-request-item.dto';
+import { CreateInspectionErrorCodeDto } from './dto/create-inspection-error-code.dto';
+import { UpdateInspectionErrorCodeDto } from './dto/update-inspection-error-code.dto';
 
 @ApiTags('Vehicle Inspections')
 @Controller('vehicle-inspections')
@@ -189,5 +191,45 @@ export class VehicleInspectionsController {
     @Param('itemId', ParseUUIDPipe) itemId: string,
   ) {
     return this.service.removeRequestItem(itemId, id, tenantId);
+  }
+
+  // ─── inspection error codes ──────────────────────────────────────
+
+  @Post(':id/error-codes')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Add an error code to an inspection' })
+  @ApiParam({ name: 'id', description: 'Inspection UUID' })
+  addErrorCode(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateInspectionErrorCodeDto,
+  ) {
+    return this.service.addErrorCode(id, tenantId, dto);
+  }
+
+  @Patch(':id/error-codes/:itemId')
+  @ApiOperation({ summary: 'Update an inspection error code (level, note, transcription…)' })
+  @ApiParam({ name: 'id', description: 'Inspection UUID' })
+  @ApiParam({ name: 'itemId', description: 'Error code UUID' })
+  updateErrorCode(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: UpdateInspectionErrorCodeDto,
+  ) {
+    return this.service.updateErrorCode(itemId, id, tenantId, dto);
+  }
+
+  @Delete(':id/error-codes/:itemId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Remove an inspection error code (cascades its media)' })
+  @ApiParam({ name: 'id', description: 'Inspection UUID' })
+  @ApiParam({ name: 'itemId', description: 'Error code UUID' })
+  removeErrorCode(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+  ) {
+    return this.service.removeErrorCode(itemId, id, tenantId);
   }
 }

@@ -181,6 +181,9 @@ export class MediaService {
           ...(createMediaDto.inspectionRequestItemId && {
             inspectionRequestItemId: createMediaDto.inspectionRequestItemId,
           }),
+          ...(createMediaDto.inspectionErrorCodeId && {
+            inspectionErrorCodeId: createMediaDto.inspectionErrorCodeId,
+          }),
           ...(createMediaDto.carfaxReportId && { carfaxReportId: createMediaDto.carfaxReportId }),
         },
       });
@@ -329,6 +332,9 @@ export class MediaService {
           }),
           ...(dto.inspectionRequestItemId && {
             inspectionRequestItemId: dto.inspectionRequestItemId,
+          }),
+          ...(dto.inspectionErrorCodeId && {
+            inspectionErrorCodeId: dto.inspectionErrorCodeId,
           }),
           ...(dto.carfaxReportId && { carfaxReportId: dto.carfaxReportId }),
         },
@@ -517,6 +523,9 @@ export class MediaService {
           }),
           ...(dto.inspectionRequestItemId && {
             inspectionRequestItemId: dto.inspectionRequestItemId,
+          }),
+          ...(dto.inspectionErrorCodeId && {
+            inspectionErrorCodeId: dto.inspectionErrorCodeId,
           }),
           ...(dto.carfaxReportId && { carfaxReportId: dto.carfaxReportId }),
         },

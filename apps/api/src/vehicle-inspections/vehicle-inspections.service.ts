@@ -14,6 +14,8 @@ import { CreateChecklistItemDto } from './dto/create-checklist-item.dto';
 import { UpdateChecklistItemDto } from './dto/update-checklist-item.dto';
 import { CreateRequestItemDto } from './dto/create-request-item.dto';
 import { UpdateRequestItemDto } from './dto/update-request-item.dto';
+import { CreateInspectionErrorCodeDto } from './dto/create-inspection-error-code.dto';
+import { UpdateInspectionErrorCodeDto } from './dto/update-inspection-error-code.dto';
 import { DEFAULT_CHECKLIST } from './checklist-template';
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -85,6 +87,15 @@ const INSPECTION_INCLUDE = {
       { sortOrder: 'asc' as const },
       { createdAt: 'asc' as const },
     ] satisfies Prisma.InspectionRequestItemOrderByWithRelationInput[],
+    include: {
+      media: { orderBy: { createdAt: 'asc' as const } },
+    },
+  },
+  errorCodes: {
+    orderBy: [
+      { sortOrder: 'asc' as const },
+      { createdAt: 'asc' as const },
+    ] satisfies Prisma.InspectionErrorCodeOrderByWithRelationInput[],
     include: {
       media: { orderBy: { createdAt: 'asc' as const } },
     },
@@ -353,6 +364,7 @@ export class VehicleInspectionsService {
           { inspectionId: { in: inspectionIds } },
           { inspectionChecklistItem: { inspectionId: { in: inspectionIds } } },
           { inspectionRequestItem: { inspectionId: { in: inspectionIds } } },
+          { inspectionErrorCode: { inspectionId: { in: inspectionIds } } },
         ],
       },
       select: { storageKey: true },
@@ -479,6 +491,62 @@ export class VehicleInspectionsService {
   ) {
     await this.ensureRequestItem(itemId, inspectionId, tenantId);
     await this.prisma.inspectionRequestItem.delete({ where: { id: itemId } });
+    return { deleted: true };
+  }
+
+  // ─── inspection error codes ───────────────────────────────────────
+
+  async addErrorCode(
+    inspectionId: string,
+    tenantId: string,
+    dto: CreateInspectionErrorCodeDto,
+  ) {
+    await this.ensureInspection(inspectionId, tenantId);
+    return this.prisma.inspectionErrorCode.create({
+      data: {
+        inspectionId,
+        code: dto.code,
+        description: dto.description,
+        level: dto.level,
+        note: dto.note,
+        voiceNoteTranscription: dto.voiceNoteTranscription,
+        sortOrder: dto.sortOrder ?? 0,
+      },
+      include: { media: { orderBy: { createdAt: 'asc' as const } } },
+    });
+  }
+
+  async updateErrorCode(
+    itemId: string,
+    inspectionId: string,
+    tenantId: string,
+    dto: UpdateInspectionErrorCodeDto,
+  ) {
+    await this.ensureErrorCode(itemId, inspectionId, tenantId);
+
+    const data: Prisma.InspectionErrorCodeUpdateInput = {};
+    if (dto.code !== undefined) data.code = dto.code;
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.level !== undefined) data.level = dto.level;
+    if (dto.note !== undefined) data.note = dto.note;
+    if (dto.voiceNoteTranscription !== undefined)
+      data.voiceNoteTranscription = dto.voiceNoteTranscription;
+    if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
+
+    return this.prisma.inspectionErrorCode.update({
+      where: { id: itemId },
+      data,
+      include: { media: { orderBy: { createdAt: 'asc' as const } } },
+    });
+  }
+
+  async removeErrorCode(
+    itemId: string,
+    inspectionId: string,
+    tenantId: string,
+  ) {
+    await this.ensureErrorCode(itemId, inspectionId, tenantId);
+    await this.prisma.inspectionErrorCode.delete({ where: { id: itemId } });
     return { deleted: true };
   }
 
@@ -656,5 +724,22 @@ export class VehicleInspectionsService {
     });
     if (!exists)
       throw new NotFoundException(`Request item ${itemId} not found`);
+  }
+
+  private async ensureErrorCode(
+    itemId: string,
+    inspectionId: string,
+    tenantId: string,
+  ): Promise<void> {
+    const exists = await this.prisma.inspectionErrorCode.findFirst({
+      where: {
+        id: itemId,
+        inspectionId,
+        inspection: { tenantId: tenantId || undefined },
+      },
+      select: { id: true },
+    });
+    if (!exists)
+      throw new NotFoundException(`Error code ${itemId} not found`);
   }
 }

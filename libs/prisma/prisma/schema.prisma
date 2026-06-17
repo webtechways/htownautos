@@ -1196,6 +1196,7 @@ model Media {
   inspectionId                 String?
   inspectionChecklistItemId    String?
   inspectionRequestItemId      String?
+  inspectionErrorCodeId        String?
   carfaxReportId               String?
   buyer                        Buyer?                   @relation("BuyerMedia", fields: [buyerId], references: [id], onDelete: Cascade)
   part                         Part?                    @relation("PartMedia", fields: [partId], references: [id], onDelete: Cascade)
@@ -1213,6 +1214,7 @@ model Media {
   inspection                   VehicleInspection?       @relation("InspectionMedia", fields: [inspectionId], references: [id], onDelete: Cascade)
   inspectionChecklistItem      InspectionChecklistItem? @relation("ChecklistItemMedia", fields: [inspectionChecklistItemId], references: [id], onDelete: Cascade)
   inspectionRequestItem        InspectionRequestItem?   @relation("RequestItemMedia", fields: [inspectionRequestItemId], references: [id], onDelete: Cascade)
+  inspectionErrorCode          InspectionErrorCode?     @relation("ErrorCodeMedia", fields: [inspectionErrorCodeId], references: [id], onDelete: Cascade)
   carfaxReport                 CarfaxReport?            @relation("CarfaxReportMedia", fields: [carfaxReportId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
@@ -1225,6 +1227,7 @@ model Media {
   @@index([inspectionId])
   @@index([inspectionChecklistItemId])
   @@index([inspectionRequestItemId])
+  @@index([inspectionErrorCodeId])
   @@index([carfaxReportId])
   @@map("media")
 }
@@ -3214,6 +3217,7 @@ model VehicleInspection {
   vehicle      Vehicle?                  @relation("VehicleInspections", fields: [vehicleId], references: [id], onDelete: SetNull)
   buyer        Buyer?                    @relation("BuyerInspections", fields: [buyerId], references: [id], onDelete: SetNull)
   checklist    InspectionChecklistItem[]
+  errorCodes   InspectionErrorCode[]
   // Replaces the single specificRequest text — each item has its own note +
   // optional photo. specificRequest column is kept for backward compatibility.
   requestItems InspectionRequestItem[]
@@ -3305,6 +3309,37 @@ model InspectionRequestItem {
 
   @@index([inspectionId])
   @@map("inspection_request_items")
+}
+
+enum InspectionErrorLevel {
+  GREEN
+  YELLOW
+  RED
+}
+
+/// Diagnostic trouble / error codes found during an inspection (e.g. OBD-II
+/// codes), each with a severity level, note, optional voice-note transcription
+/// and attached photos/videos. Shown in the dashboard (editable) and the web +
+/// share-link views (read-only).
+model InspectionErrorCode {
+  id           String @id @default(uuid())
+  inspectionId String
+
+  code                   String
+  description            String?
+  level                  InspectionErrorLevel @default(GREEN)
+  note                   String?
+  voiceNoteTranscription String?
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  inspection VehicleInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  media      Media[]           @relation("ErrorCodeMedia")
+
+  @@index([inspectionId])
+  @@map("inspection_error_codes")
 }
 
 // ─── Customer Portal ──────────────────────────────────────────────────────────

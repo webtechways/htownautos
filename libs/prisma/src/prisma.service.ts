@@ -274,6 +274,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.inspectionRequestItem;
   }
 
+  get inspectionErrorCode() {
+    return this.prisma.inspectionErrorCode;
+  }
+
   get inventoryAsset() {
     return this.prisma.inventoryAsset;
   }

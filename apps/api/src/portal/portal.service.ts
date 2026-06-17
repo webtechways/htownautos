@@ -282,6 +282,7 @@ export class PortalService {
       ...(inspection.media ?? []),
       ...((inspection.checklist ?? []).flatMap((c: any) => c.media ?? [])),
       ...((inspection.requestItems ?? []).flatMap((r: any) => r.media ?? [])),
+      ...((inspection.errorCodes ?? []).flatMap((e: any) => e.media ?? [])),
     ];
     await Promise.all(
       allMedia.map(async (m) => {

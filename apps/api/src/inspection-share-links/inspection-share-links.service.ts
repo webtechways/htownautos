@@ -182,6 +182,15 @@ export class InspectionShareLinksService {
                 media: { orderBy: { createdAt: 'asc' as const } },
               },
             },
+            errorCodes: {
+              orderBy: [
+                { sortOrder: 'asc' as const },
+                { createdAt: 'asc' as const },
+              ] satisfies Prisma.InspectionErrorCodeOrderByWithRelationInput[],
+              include: {
+                media: { orderBy: { createdAt: 'asc' as const } },
+              },
+            },
             media: { orderBy: { createdAt: 'asc' as const } },
           },
         },
@@ -215,6 +224,7 @@ export class InspectionShareLinksService {
       ...inspection.media,
       ...inspection.checklist.flatMap((c) => c.media),
       ...inspection.requestItems.flatMap((r) => r.media),
+      ...(inspection as any).errorCodes.flatMap((e: any) => e.media),
     ];
     await Promise.all(
       allMedia.map(async (m) => {
@@ -255,6 +265,7 @@ export class InspectionShareLinksService {
       media: inspection.media,
       checklist: inspection.checklist,
       requestItems: inspection.requestItems,
+      errorCodes: (inspection as any).errorCodes,
       carfax,
       // Link metadata for the page footer.
       shareLink: {

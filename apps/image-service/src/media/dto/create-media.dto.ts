@@ -28,6 +28,7 @@ export enum MediaCategory {
   // Inspection-specific categories.
   INSPECTION_REQUEST = 'inspection_request', // images attached to specificRequest
   INSPECTION_ITEM = 'inspection_item',       // per-checklist-item photos/videos
+  INSPECTION_ERROR_CODE = 'inspection_error_code', // per-error-code photos/videos
   INSPECTION_VOICE = 'inspection_voice',     // voice note (audio)
   // Inspection-level "full walkaround" videos shown above the checklist.
   INSPECTION_FULL_EXTERIOR_VIDEO = 'inspection_full_exterior_video',

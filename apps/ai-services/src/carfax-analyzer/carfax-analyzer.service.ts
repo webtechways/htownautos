@@ -219,6 +219,56 @@ Be thorough and specific. Include dates and mileage where available. This is a p
    * Consumes 1 credit per call. The caller must ensure the listing exists
    * and belongs to the correct context before calling this method.
    */
+  /**
+   * Returns the CheapCarfax account limits/credits (free call, no credit used):
+   * { daily_limit, carfax_reports_left_today, autocheck_reports_left_today, credits }.
+   */
+  async getProviderLimits(): Promise<{
+    daily_limit: number | null;
+    carfax_reports_left_today: number | null;
+    autocheck_reports_left_today: number | null;
+    credits: number | null;
+  }> {
+    const apiKey = process.env.CARFAX_API ?? '';
+    if (!apiKey) {
+      return {
+        daily_limit: null,
+        carfax_reports_left_today: null,
+        autocheck_reports_left_today: null,
+        credits: null,
+      };
+    }
+    try {
+      const res = await fetch('https://panel.cheapcarfax.net/api/user/limits', {
+        headers: { 'x-api-key': apiKey },
+      });
+      if (!res.ok) {
+        this.logger.warn(`Carfax limits fetch failed: ${res.status}`);
+        return {
+          daily_limit: null,
+          carfax_reports_left_today: null,
+          autocheck_reports_left_today: null,
+          credits: null,
+        };
+      }
+      const j = (await res.json()) as Record<string, number>;
+      return {
+        daily_limit: j.daily_limit ?? null,
+        carfax_reports_left_today: j.carfax_reports_left_today ?? null,
+        autocheck_reports_left_today: j.autocheck_reports_left_today ?? null,
+        credits: j.credits ?? null,
+      };
+    } catch (err) {
+      this.logger.warn(`Carfax limits fetch error: ${(err as Error).message}`);
+      return {
+        daily_limit: null,
+        carfax_reports_left_today: null,
+        autocheck_reports_left_today: null,
+        credits: null,
+      };
+    }
+  }
+
   async fetchCarfaxFromProvider(auctionListingId: string) {
     // 1. Guard: CARFAX_API key must be configured
     const apiKey = process.env.CARFAX_API ?? '';

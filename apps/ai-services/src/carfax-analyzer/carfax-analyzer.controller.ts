@@ -73,6 +73,13 @@ export class CarfaxAnalyzerController {
     return { url };
   }
 
+  @Get('limits')
+  @ApiOperation({ summary: 'Remaining Carfax reports / credits from the CheapCarfax provider' })
+  async getLimits() {
+    const data = await this.carfaxAnalyzerService.getProviderLimits();
+    return { data };
+  }
+
   @Post('batch-check')
   @ApiOperation({ summary: 'Batch check which auction listing IDs have Carfax reports' })
   async batchCheck(@Body() body: { ids: string[] }) {

@@ -250,14 +250,28 @@ Be thorough and specific. Include dates and mileage where available. This is a p
 
     if (!providerRes.ok) {
       const bodyText = await providerRes.text().catch(() => '');
-      if (providerRes.status === 402) {
-        throw new BadRequestException('Sin créditos de Carfax');
+      // The provider returns its message in a JSON { message } body and does NOT
+      // always use the matching HTTP status (e.g. "Insufficient credits" comes
+      // back as 400), so inspect the message text, not just the status code.
+      let providerMsg = '';
+      try {
+        providerMsg = (JSON.parse(bodyText)?.message ?? '').toString();
+      } catch {
+        providerMsg = bodyText;
       }
-      if (providerRes.status === 429) {
+      const lower = providerMsg.toLowerCase();
+      if (providerRes.status === 402 || lower.includes('credit')) {
+        throw new BadRequestException(
+          'Sin créditos de Carfax. Recarga en panel.cheapcarfax.net/buy-credits',
+        );
+      }
+      if (providerRes.status === 429 || lower.includes('limit')) {
         throw new BadRequestException('Límite diario de Carfax alcanzado');
       }
       throw new BadRequestException(
-        `Carfax provider error ${providerRes.status}: ${bodyText.slice(0, 200)}`,
+        providerMsg
+          ? `Carfax: ${providerMsg.slice(0, 200)}`
+          : `Carfax provider error ${providerRes.status}`,
       );
     }
 

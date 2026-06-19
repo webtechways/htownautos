@@ -3,6 +3,7 @@ import {
   Logger,
   InternalServerErrorException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import OpenAI from 'openai';
 import { PrismaService } from '@htownautos/prisma';
@@ -208,5 +209,108 @@ Be thorough and specific. Include dates and mileage where available. This is a p
       distinct: ['auctionListingId'],
     });
     return results.map((r) => r.auctionListingId.toString());
+  }
+
+  /**
+   * Fetch a Carfax HTML report directly from the CheapCarfax provider,
+   * store the HTML in S3, persist a CarfaxReport record, and return a
+   * signed download URL.
+   *
+   * Consumes 1 credit per call. The caller must ensure the listing exists
+   * and belongs to the correct context before calling this method.
+   */
+  async fetchCarfaxFromProvider(auctionListingId: string) {
+    // 1. Guard: CARFAX_API key must be configured
+    const apiKey = process.env.CARFAX_API ?? '';
+    if (!apiKey) {
+      throw new InternalServerErrorException('CARFAX_API no configurada');
+    }
+
+    // 2. Load the AuctionListing and extract VIN
+    const listing = await this.prisma.auctionListing.findUnique({
+      where: { lotNumber: BigInt(auctionListingId) },
+      select: { lotNumber: true, vin: true },
+    });
+    if (!listing) {
+      throw new NotFoundException('Auction listing not found');
+    }
+
+    const rawVin = listing.vin?.replace(/\s/g, '') ?? '';
+    if (!rawVin || rawVin.length !== 17) {
+      throw new BadRequestException('VIN no disponible o inválido para este lote');
+    }
+    const vin = rawVin;
+
+    // 3. Call CheapCarfax provider
+    this.logger.log(`Fetching Carfax from provider for VIN ${vin} (listing ${auctionListingId})`);
+    const providerRes = await fetch(
+      `https://panel.cheapcarfax.net/api/carfax/vin/${vin}/html`,
+      { headers: { 'x-api-key': apiKey } },
+    );
+
+    if (!providerRes.ok) {
+      const bodyText = await providerRes.text().catch(() => '');
+      if (providerRes.status === 402) {
+        throw new BadRequestException('Sin créditos de Carfax');
+      }
+      if (providerRes.status === 429) {
+        throw new BadRequestException('Límite diario de Carfax alcanzado');
+      }
+      throw new BadRequestException(
+        `Carfax provider error ${providerRes.status}: ${bodyText.slice(0, 200)}`,
+      );
+    }
+
+    const payload = (await providerRes.json()) as {
+      yearMakeModel: string;
+      id: string;
+      html: string;
+    };
+    const { yearMakeModel, id: providerId, html } = payload;
+
+    // 4. Upload HTML to S3 — sanitize providerId to safe chars
+    const safeProviderId = providerId.replace(/[^A-Za-z0-9_-]/g, '_');
+    const s3Key = `carfax/${auctionListingId}-${safeProviderId}.html`;
+
+    await this.s3Service.uploadBufferToKey(
+      Buffer.from(html, 'utf8'),
+      s3Key,
+      'text/html',
+    );
+    this.logger.log(`Carfax HTML uploaded to S3: ${s3Key}`);
+
+    // 5. Build plain-text summary for the `analysis` column (used by max-bid)
+    const MAX_ANALYSIS_CHARS = 12000;
+    const stripped = html
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const summary = `${yearMakeModel}\n\n${stripped}`.slice(0, MAX_ANALYSIS_CHARS);
+
+    // 6. Persist CarfaxReport
+    const report = await this.prisma.carfaxReport.create({
+      data: {
+        auctionListingId: BigInt(auctionListingId),
+        vin,
+        s3Key,
+        analysis: summary,
+        date: new Date(),
+      },
+    });
+    this.logger.log(`CarfaxReport created: ${report.id} for listing ${auctionListingId}`);
+
+    // 7. Return serialized record + signed URL
+    const signedUrl = await this.s3Service.getSignedUrl(s3Key, 3600);
+
+    return {
+      ...report,
+      auctionListingId: report.auctionListingId.toString(),
+      signedUrl,
+      yearMakeModel,
+      contentType: 'text/html' as const,
+    };
   }
 }

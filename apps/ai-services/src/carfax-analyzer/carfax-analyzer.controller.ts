@@ -16,6 +16,13 @@ class UploadCarfaxDto {
   s3Key: string;
 }
 
+class FetchCarfaxDto {
+  @ApiProperty({ description: 'Auction listing ID (lot number)' })
+  @IsString()
+  @IsNotEmpty()
+  auctionListingId: string;
+}
+
 @ApiTags('Carfax Analyzer')
 @Controller('carfax-analyzer')
 export class CarfaxAnalyzerController {
@@ -23,6 +30,17 @@ export class CarfaxAnalyzerController {
     private readonly carfaxAnalyzerService: CarfaxAnalyzerService,
     private readonly s3Service: S3Service,
   ) {}
+
+  @Post('fetch')
+  @ApiOperation({
+    summary: 'Fetch a Carfax HTML report from the CheapCarfax provider, store in S3, and return a signed URL',
+  })
+  async fetchFromProvider(@Body() dto: FetchCarfaxDto) {
+    const result = await this.carfaxAnalyzerService.fetchCarfaxFromProvider(
+      dto.auctionListingId,
+    );
+    return { data: result };
+  }
 
   @Post('upload')
   @ApiOperation({ summary: 'Register an uploaded Carfax PDF (no AI analysis yet)' })

@@ -1,11 +1,14 @@
 import {
+  Body,
   Controller,
   Get,
+  Param,
+  Patch,
   Post,
   Query,
-  Param,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -22,7 +25,8 @@ import {
   type AuctionSyncTriggerMessage,
 } from '@htownautos/rabbitmq';
 import { SearchAuctionsDto } from './dto/search-auctions.dto';
-import { Public } from '@htownautos/auth';
+import { DiscardAuctionDto } from './dto/discard-auction.dto';
+import { ClerkJwtGuard, CurrentUser, Public } from '@htownautos/auth';
 
 /**
  * Heavy sync work (CSV import, full reindex, index recreation) is owned by the
@@ -184,6 +188,27 @@ export class AuctionSearchController {
   @ApiResponse({ status: 404, description: 'Auction listing not found' })
   async refreshCopartBid(@Param('lotNumber') lotNumber: string) {
     return this.searchService.refreshHighBid(lotNumber);
+  }
+
+  @Patch(':source/:sourceId/discard')
+  @UseGuards(ClerkJwtGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Set or clear the discarded state for an auction listing',
+    description: 'Staff-only. Marks a lot as discarded (with optional reason) or clears the flag. Only copart lots are persisted in Postgres; IAAI lots return 404.',
+  })
+  @ApiParam({ name: 'source', enum: ['copart', 'iaai'] })
+  @ApiParam({ name: 'sourceId', description: 'Lot number (Copart)' })
+  @ApiResponse({ status: 200, description: 'Updated discard state' })
+  @ApiResponse({ status: 404, description: 'Auction listing not found' })
+  async discardAuction(
+    @Param('source') source: 'copart' | 'iaai',
+    @Param('sourceId') sourceId: string,
+    @Body() dto: DiscardAuctionDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.searchService.discardListing(sourceId, dto.discarded, dto.reason, userId ?? null);
   }
 
   // Wildcard route — MUST be last to avoid catching static routes

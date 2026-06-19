@@ -1912,6 +1912,12 @@ model AuctionListing {
   // Listings whose lastSeenAt is older than the staleness threshold get isStale=true.
   lastSeenAt            DateTime?
   isStale               Boolean                   @default(false)
+  // Staff-marked "discarded" — a lot already evaluated/inspected that should be
+  // skipped next time it appears, with the reason recorded.
+  discarded             Boolean                   @default(false)
+  discardReason         String?
+  discardedAt           DateTime?
+  discardedById         String?
   createdAt             DateTime                  @default(now())
   updatedAt             DateTime                  @updatedAt
   analyses              AuctionVehicleAnalysis[]
@@ -1940,6 +1946,7 @@ model AuctionListing {
   @@index([isStale])
   @@index([lastSeenAt])
   @@index([yardId])
+  @@index([discarded])
   @@map("auction_listings")
 }
 

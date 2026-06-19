@@ -7,6 +7,12 @@ import { RabbitMQService } from '@htownautos/rabbitmq';
 import { ProxyService } from '@htownautos/common';
 import { SearchAuctionsDto } from './dto/search-auctions.dto';
 
+export interface DiscardFields {
+  discarded: boolean;
+  discardReason: string | null;
+  discardedAt: Date | null;
+}
+
 // Copart Images API Response types
 interface CopartImageLink {
   url: string;
@@ -549,11 +555,97 @@ export class AuctionSearchService {
   }
 
   /**
-   * Get auction by source and sourceId
+   * Get auction by source and sourceId.
+   * For copart listings the OpenSearch doc may not carry the new discard fields
+   * (index not yet reindexed). We always merge the authoritative discard state
+   * from Postgres so the detail view reflects it immediately after a discard/un-discard.
    */
-  async findBySourceId(source: 'copart' | 'iaai', sourceId: string): Promise<UnifiedAuction | null> {
+  async findBySourceId(source: 'copart' | 'iaai', sourceId: string): Promise<(UnifiedAuction & DiscardFields) | null> {
     const id = `${source}_${sourceId}`;
-    return this.findById(id);
+    const doc = await this.findById(id);
+    if (!doc) return null;
+
+    // Merge discard fields from Postgres (authoritative source)
+    const discardFields = await this.getDiscardFields(sourceId);
+    return {
+      ...doc,
+      discarded: discardFields?.discarded ?? false,
+      discardReason: discardFields?.discardReason ?? null,
+      discardedAt: discardFields?.discardedAt ?? null,
+    };
+  }
+
+  /**
+   * Fetch only the discard fields for a lot from Postgres.
+   * Returns null when the lot does not exist (e.g. non-copart source).
+   */
+  async getDiscardFields(sourceId: string): Promise<DiscardFields | null> {
+    let lotNumber: bigint;
+    try {
+      lotNumber = BigInt(sourceId);
+    } catch {
+      return null;
+    }
+    const row = await this.prisma.auctionListing.findUnique({
+      where: { lotNumber },
+      select: { discarded: true, discardReason: true, discardedAt: true },
+    });
+    if (!row) return null;
+    return {
+      discarded: row.discarded,
+      discardReason: row.discardReason,
+      discardedAt: row.discardedAt,
+    };
+  }
+
+  /**
+   * Set or clear the discarded state for a Copart lot.
+   * @param sourceId  The lot number as a string.
+   * @param discarded Whether to mark or unmark as discarded.
+   * @param reason    Optional reason (only stored when discarded=true).
+   * @param userId    Clerk user ID of the acting staff member (stored for audit).
+   */
+  async discardListing(
+    sourceId: string,
+    discarded: boolean,
+    reason: string | undefined,
+    userId: string | null,
+  ): Promise<{ lotNumber: string; discarded: boolean; discardReason: string | null; discardedAt: Date | null }> {
+    const lotNumber = BigInt(sourceId);
+
+    const existing = await this.prisma.auctionListing.findUnique({
+      where: { lotNumber },
+      select: { lotNumber: true },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Auction listing ${sourceId} not found`);
+    }
+
+    const updated = await this.prisma.auctionListing.update({
+      where: { lotNumber },
+      data: {
+        discarded,
+        discardReason: discarded ? (reason ?? null) : null,
+        discardedAt: discarded ? new Date() : null,
+        discardedById: discarded ? (userId ?? null) : null,
+      },
+      select: { lotNumber: true, discarded: true, discardReason: true, discardedAt: true },
+    });
+
+    // Best-effort reindex so browse/search list can badge discarded lots
+    try {
+      const full = await this.prisma.auctionListing.findUnique({ where: { lotNumber } });
+      if (full) await this.syncService.indexCopartListing(full);
+    } catch (err) {
+      this.logger.warn(`[Discard] Reindex failed for lot ${sourceId}: ${(err as Error).message}`);
+    }
+
+    return {
+      lotNumber: updated.lotNumber.toString(),
+      discarded: updated.discarded,
+      discardReason: updated.discardReason,
+      discardedAt: updated.discardedAt,
+    };
   }
 
   /**

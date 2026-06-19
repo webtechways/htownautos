@@ -69,6 +69,7 @@ import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PostmarkModule } from './postmark/postmark.module';
 import { CloudflareModule } from './cloudflare/cloudflare.module';
 import { PortalModule } from './portal/portal.module';
+import { AuctionHistoryModule } from './auction-history/auction-history.module';
 
 /**
  * API Gateway Module
@@ -154,6 +155,7 @@ import { PortalModule } from './portal/portal.module';
     PostmarkModule,
     CloudflareModule,
     PortalModule,
+    AuctionHistoryModule,
   ],
   controllers: [AppController],
   providers: [

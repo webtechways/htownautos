@@ -95,8 +95,27 @@ export class AuctionSearchService {
       }
     }
 
+    // If inspectableOnly filter is active, resolve yard names from DB (no reindex needed —
+    // yardName is already indexed; we filter via terms query on the existing field)
+    let inspectableYardNames: string[] | undefined;
+    if (dto.inspectableOnly) {
+      const yards = await this.prisma.yard.findMany({
+        where: { physicalInspectionAvailable: true },
+        select: { name: true },
+      });
+      inspectableYardNames = yards.map((y) => y.name);
+      // If no yards are inspection-enabled, return empty immediately — the terms filter
+      // with an empty array would match nothing anyway, but short-circuiting is cleaner.
+      if (inspectableYardNames.length === 0) {
+        return {
+          data: [],
+          meta: { page, limit, total: 0, totalPages: 0, hasNextPage: false, hasPreviousPage: false },
+        };
+      }
+    }
+
     // Build query
-    const query = this.buildQuery(dto, carfaxSourceIds);
+    const query = this.buildQuery(dto, carfaxSourceIds, inspectableYardNames);
 
     // Build sort
     const sort = this.buildSort(sortBy, sortOrder);
@@ -155,7 +174,7 @@ export class AuctionSearchService {
     return parseInt(`${y}${m}${d}`, 10);
   }
 
-  private buildQuery(dto: SearchAuctionsDto, carfaxSourceIds?: string[]): any {
+  private buildQuery(dto: SearchAuctionsDto, carfaxSourceIds?: string[], inspectableYardNames?: string[]): any {
     const must: any[] = [];
     const filter: any[] = [];
 
@@ -383,6 +402,19 @@ export class AuctionSearchService {
       filter.push({ terms: { 'sourceId.keyword': carfaxSourceIds } });
     }
 
+    // Discarded filter — only applied when explicitly true; omitting it shows all lots
+    // (docs without the field are treated as not-discarded by OpenSearch, which is correct
+    // for the 583k legacy docs that predate this field)
+    if (dto.discarded === true) {
+      filter.push({ term: { discarded: true } });
+    }
+
+    // Inspectable-yard filter — yard names resolved from Postgres before buildQuery is called
+    // (yardName is already indexed on all existing docs — no reindex required)
+    if (inspectableYardNames && inspectableYardNames.length > 0) {
+      filter.push({ terms: { 'yardName.keyword': inspectableYardNames } });
+    }
+
     // Build final query
     if (must.length === 0 && filter.length === 0) {
       return { match_all: {} };
@@ -561,7 +593,7 @@ export class AuctionSearchService {
    * (index not yet reindexed). We always merge the authoritative discard state
    * from Postgres so the detail view reflects it immediately after a discard/un-discard.
    */
-  async findBySourceId(source: 'copart' | 'iaai', sourceId: string): Promise<(UnifiedAuction & DiscardFields) | null> {
+  async findBySourceId(source: 'copart' | 'iaai', sourceId: string): Promise<(Omit<UnifiedAuction, 'discarded' | 'discardReason' | 'discardedAt'> & DiscardFields) | null> {
     const id = `${source}_${sourceId}`;
     const doc = await this.findById(id);
     if (!doc) return null;

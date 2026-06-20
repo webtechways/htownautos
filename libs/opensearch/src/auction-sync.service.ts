@@ -221,6 +221,11 @@ export class AuctionSyncService {
       itemNumber: listing.itemNumber || null,
       sellerName: listing.sellerName || null,
 
+      // Discard state — incremental: written each time a lot is discarded/un-discarded
+      discarded: listing.discarded ?? false,
+      discardReason: listing.discardReason ?? null,
+      discardedAt: listing.discardedAt?.toISOString() ?? null,
+
       // MarketCheck Specific (null for Copart)
       carfax1Owner: null,
       carfaxCleanTitle: null,

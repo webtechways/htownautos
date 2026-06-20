@@ -76,6 +76,11 @@ export interface UnifiedAuction {
   itemNumber: number | null;
   sellerName: string | null;
 
+  // Discard state (written on discard/un-discard, absent on legacy docs → treated as not discarded)
+  discarded?: boolean;
+  discardReason?: string | null;
+  discardedAt?: string | null;
+
   // === MARKETCHECK SPECIFIC FIELDS ===
 
   // Carfax

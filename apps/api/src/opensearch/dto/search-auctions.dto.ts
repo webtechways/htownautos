@@ -303,6 +303,18 @@ export class SearchAuctionsDto {
   @IsBoolean()
   hasBuyItNow?: boolean;
 
+  @ApiPropertyOptional({ description: 'When true, show only lots marked as discarded. When omitted, show all lots.' })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  discarded?: boolean;
+
+  @ApiPropertyOptional({ description: 'When true, restrict results to lots located in yards that have physicalInspectionAvailable=true' })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  inspectableOnly?: boolean;
+
   // === AGGREGATIONS ===
 
   @ApiPropertyOptional({ description: 'Include aggregations in response', default: false })

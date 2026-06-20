@@ -37,6 +37,21 @@ export interface AuctionHistoryResponse {
 export class AuctionHistoryService {
   private readonly logger = new Logger(AuctionHistoryService.name);
 
+  /** Pull a human message out of the provider's (sometimes nested) error body. */
+  private extractProviderMessage(text: string): string {
+    try {
+      const j = JSON.parse(text);
+      const m =
+        j?.msg?.message ??
+        j?.message ??
+        (typeof j?.msg === 'string' ? j.msg : '') ??
+        '';
+      return String(m || text);
+    } catch {
+      return text;
+    }
+  }
+
   async getAuctionHistory(vin: string): Promise<AuctionHistoryResponse> {
     const normalizedVin = vin.trim().toUpperCase();
 
@@ -64,8 +79,17 @@ export class AuctionHistoryService {
 
     if (!res.ok) {
       const text = await res.text();
+      // The provider returns 400 with a "Record(s) were not found" message when
+      // a VIN simply has no auction history. That is NOT an error for us — return
+      // a clean empty result so the UI shows a friendly "no history" state and the
+      // snapshot can be recorded.
+      const msg = this.extractProviderMessage(text);
+      if (/not\s*found|no\s*record|record\(s\)\s*were\s*not/i.test(msg)) {
+        return { status: 'not_found', vin: normalizedVin, data: [] };
+      }
+      this.logger.warn(`Auction provider ${res.status}: ${msg.slice(0, 200)}`);
       throw new BadRequestException(
-        `Auction provider error ${res.status}: ${text.slice(0, 200)}`,
+        msg ? `Historial de subasta: ${msg.slice(0, 160)}` : 'No se pudo obtener el historial de subasta',
       );
     }
 

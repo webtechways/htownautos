@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
@@ -49,15 +50,17 @@ export class BuyerVehiclePreferencesController {
     description:
       'Returns all active (non-stale) auction listings that satisfy at ' +
       'least one of the buyer\'s wanted vehicles. Listings whose highBid ' +
-      'already exceeds that preference\'s maxCost are excluded.',
+      'already exceeds that preference\'s maxCost are excluded. ' +
+      'Pass inspectableOnly=true to restrict to yards with physical inspection available.',
   })
   @ApiParam({ name: 'buyerId', description: 'Buyer UUID' })
   @ApiResponse({ status: HttpStatus.OK })
   matches(
     @CurrentTenant() tenantId: string,
     @Param('buyerId', ParseUUIDPipe) buyerId: string,
+    @Query('inspectableOnly') inspectableOnly?: string,
   ) {
-    return this.service.matches(buyerId, tenantId);
+    return this.service.matches(buyerId, tenantId, inspectableOnly === 'true');
   }
 
   @Post()

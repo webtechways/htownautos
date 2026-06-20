@@ -213,8 +213,11 @@ export class BuyerVehiclePreferencesService {
    * Return every active auction listing that matches at least one of the
    * buyer's wanted-vehicle preferences. Excludes lots where highBid
    * already exceeds the preference's maxCost (budget cap).
+   *
+   * @param inspectableOnly When true, restricts results to listings whose
+   *   yard has physicalInspectionAvailable = true.
    */
-  async matches(buyerId: string, tenantId: string) {
+  async matches(buyerId: string, tenantId: string, inspectableOnly = false) {
     await this.ensureBuyer(buyerId, tenantId);
 
     const prefs = await this.prisma.buyerVehiclePreference.findMany({
@@ -233,18 +236,22 @@ export class BuyerVehiclePreferencesService {
       (today.getUTCMonth() + 1) * 100 +
       today.getUTCDate();
 
-    const listings = await this.prisma.auctionListing.findMany({
-      where: {
-        AND: [
-          { OR: orClauses },
-          {
-            OR: [
-              { saleDate: null },
-              { saleDate: { gte: todayInt - 1 } }, // 1-day margin for TZ wraparound
-            ],
-          },
+    const andClauses: Prisma.AuctionListingWhereInput[] = [
+      { OR: orClauses },
+      {
+        OR: [
+          { saleDate: null },
+          { saleDate: { gte: todayInt - 1 } }, // 1-day margin for TZ wraparound
         ],
       },
+    ];
+
+    if (inspectableOnly) {
+      andClauses.push({ yard: { is: { physicalInspectionAvailable: true } } });
+    }
+
+    const listings = await this.prisma.auctionListing.findMany({
+      where: { AND: andClauses },
       take: 1000,
       orderBy: [
         { saleDate: { sort: 'asc', nulls: 'last' } },

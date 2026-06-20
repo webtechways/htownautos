@@ -70,6 +70,7 @@ import { PostmarkModule } from './postmark/postmark.module';
 import { CloudflareModule } from './cloudflare/cloudflare.module';
 import { PortalModule } from './portal/portal.module';
 import { AuctionHistoryModule } from './auction-history/auction-history.module';
+import { AdminSeedModule } from './admin-seed/admin-seed.module';
 
 /**
  * API Gateway Module
@@ -156,6 +157,7 @@ import { AuctionHistoryModule } from './auction-history/auction-history.module';
     CloudflareModule,
     PortalModule,
     AuctionHistoryModule,
+    AdminSeedModule,
   ],
   controllers: [AppController],
   providers: [

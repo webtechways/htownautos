@@ -19,6 +19,7 @@ import { CreateDepositDto } from './dto/create-deposit.dto';
 import { InspectionCartDto, CartItemDto } from './dto/inspection-cart.dto';
 import { PortalPricingService, PortalPricing } from './portal-pricing.service';
 import { FindACarCheckoutDto } from './dto/find-a-car-checkout.dto';
+import { AuctionAnalysisService } from '../auction-analysis/auction-analysis.service';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -144,6 +145,7 @@ export class PortalService {
     private readonly pricingService: PortalPricingService,
     private readonly auctionSearchService: AuctionSearchService,
     private readonly s3: S3Service,
+    private readonly auctionAnalysis: AuctionAnalysisService,
   ) {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
   }
@@ -268,7 +270,13 @@ export class PortalService {
       (inspection as any).lotNumber,
     );
 
-    return { ...inspection, carfax };
+    // Attach all auction-analysis blocks (damages, parts, maxBid, snapshots).
+    // Best-effort: null values mean "Pending" — never throws.
+    const analysis = await this.auctionAnalysis.gatherForLot(
+      (inspection as any).lotNumber ?? null,
+    );
+
+    return { ...inspection, carfax, analysis };
   }
 
   /**

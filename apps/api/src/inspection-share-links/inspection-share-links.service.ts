@@ -11,6 +11,7 @@ import { PrismaService } from '@htownautos/prisma';
 import { S3Service } from '@htownautos/common';
 import { CreateShareLinkDto } from './dto/create-share-link.dto';
 import { ShortUrlService } from '../short-url/short-url.service';
+import { AuctionAnalysisService } from '../auction-analysis/auction-analysis.service';
 
 const MEDIA_SIGNED_URL_TTL = 60 * 60 * 6; // 6 hours
 
@@ -23,6 +24,7 @@ export class InspectionShareLinksService {
     private readonly prisma: PrismaService,
     private readonly s3: S3Service,
     private readonly shortUrl: ShortUrlService,
+    private readonly auctionAnalysis: AuctionAnalysisService,
   ) {
     this.appBaseUrl = (
       process.env.APP_BASE_URL || 'https://app.htownautos.com'
@@ -247,6 +249,11 @@ export class InspectionShareLinksService {
       inspection.lotNumber,
     );
 
+    // Attach all auction-analysis blocks. Best-effort: null means "Pending".
+    const analysis = await this.auctionAnalysis.gatherForLot(
+      inspection.lotNumber ?? null,
+    );
+
     return {
       // Identity / header (intentionally lean — no createdBy, no tenant id,
       // no shared-with list).
@@ -267,6 +274,7 @@ export class InspectionShareLinksService {
       requestItems: inspection.requestItems,
       errorCodes: (inspection as any).errorCodes,
       carfax,
+      analysis,
       // Link metadata for the page footer.
       shareLink: {
         expiresAt: link.expiresAt,

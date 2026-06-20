@@ -7,6 +7,7 @@ import { VehicleInspectionsModule } from '../vehicle-inspections/vehicle-inspect
 import { OpenSearchModule } from '../opensearch/opensearch.module';
 import { BuyerFavoritesModule } from '../buyer-favorites/buyer-favorites.module';
 import { StripeModule } from '../stripe/stripe.module';
+import { AuctionAnalysisModule } from '../auction-analysis/auction-analysis.module';
 import { PortalController } from './portal.controller';
 import { PortalPublicController } from './portal-public.controller';
 import { PortalService } from './portal.service';
@@ -29,7 +30,7 @@ import { ReceiptPdfService } from './receipt-pdf.service';
  * (StripeModule → forwardRef(PortalModule) ↔ PortalModule → forwardRef(StripeModule)).
  */
 @Module({
-  imports: [PrismaModule, CopartModule, VehicleInspectionsModule, OpenSearchModule, BuyerFavoritesModule, forwardRef(() => StripeModule)],
+  imports: [PrismaModule, CopartModule, VehicleInspectionsModule, OpenSearchModule, BuyerFavoritesModule, AuctionAnalysisModule, forwardRef(() => StripeModule)],
   controllers: [PortalPublicController, PortalController, PortalSettingsController],
   providers: [PortalService, PortalPricingService, CustomerGuard, S3Service, ReceiptPdfService],
   exports: [PortalService, PortalPricingService, ReceiptPdfService],

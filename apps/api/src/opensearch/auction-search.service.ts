@@ -1,10 +1,11 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { OpenSearchService, AUCTION_INDEX_NAME, AuctionSyncService } from '@htownautos/opensearch';
 import type { UnifiedAuction, AuctionAggregations, AuctionSearchResult } from '@htownautos/opensearch';
 import { PrismaService } from '@htownautos/prisma';
 import { RabbitMQService } from '@htownautos/rabbitmq';
 import { ProxyService } from '@htownautos/common';
+import { AuctionAnalysisType, Prisma } from '@prisma/client';
 import { SearchAuctionsDto } from './dto/search-auctions.dto';
 
 export interface DiscardFields {
@@ -853,6 +854,35 @@ export class AuctionSearchService {
     } catch (err) {
       this.logger.warn(`[Gallery] Failed to cleanup expired caches: ${err.message}`);
     }
+  }
+
+  // ── Analysis snapshot upsert ───────────────────────────────────────────────
+
+  /**
+   * Persist a staff-generated live analysis as an AuctionAnalysisSnapshot so the
+   * read-only web / share-link views can show the data without re-calling the
+   * paid external APIs. One row per (lotNumber, type); upserted on every call.
+   */
+  async upsertAnalysisSnapshot(
+    sourceId: string,
+    type: AuctionAnalysisType,
+    data: Record<string, unknown>,
+  ): Promise<{ ok: true }> {
+    let listingId: bigint;
+    try {
+      listingId = BigInt(sourceId);
+    } catch {
+      throw new BadRequestException(`sourceId must be numeric; received "${sourceId}"`);
+    }
+
+    const jsonData = data as unknown as Prisma.InputJsonValue;
+    await this.prisma.auctionAnalysisSnapshot.upsert({
+      where: { auctionListingId_type: { auctionListingId: listingId, type } },
+      create: { auctionListingId: listingId, type, data: jsonData },
+      update: { data: jsonData },
+    });
+
+    return { ok: true };
   }
 }
 

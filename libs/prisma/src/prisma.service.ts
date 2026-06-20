@@ -218,6 +218,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.maxBidRecommendation;
   }
 
+  get auctionAnalysisSnapshot() {
+    return this.prisma.auctionAnalysisSnapshot;
+  }
+
   get shortUrl() {
     return this.prisma.shortUrl;
   }

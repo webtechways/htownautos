@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   HttpCode,
   HttpStatus,
@@ -26,6 +27,7 @@ import {
 } from '@htownautos/rabbitmq';
 import { SearchAuctionsDto } from './dto/search-auctions.dto';
 import { DiscardAuctionDto } from './dto/discard-auction.dto';
+import { UpsertAnalysisSnapshotDto } from './dto/upsert-analysis-snapshot.dto';
 import { ClerkJwtGuard, CurrentUser, Public } from '@htownautos/auth';
 
 /**
@@ -209,6 +211,25 @@ export class AuctionSearchController {
     @CurrentUser('sub') userId: string,
   ) {
     return this.searchService.discardListing(sourceId, dto.discarded, dto.reason, userId ?? null);
+  }
+
+  @Put(':source/:sourceId/analysis-snapshot')
+  @UseGuards(ClerkJwtGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Upsert an analysis snapshot for an auction listing',
+    description: 'Staff-only. Persists a staff-generated live analysis (MarketCheck / Comparables / Auction History) so read-only views can show it without re-calling paid external APIs.',
+  })
+  @ApiParam({ name: 'source', enum: ['copart', 'iaai'] })
+  @ApiParam({ name: 'sourceId', description: 'Lot number (numeric)' })
+  @ApiResponse({ status: 200, description: 'Snapshot upserted' })
+  @ApiResponse({ status: 400, description: 'sourceId is not numeric' })
+  async upsertAnalysisSnapshot(
+    @Param('sourceId') sourceId: string,
+    @Body() dto: UpsertAnalysisSnapshotDto,
+  ) {
+    return this.searchService.upsertAnalysisSnapshot(sourceId, dto.type, dto.data);
   }
 
   // Wildcard route — MUST be last to avoid catching static routes

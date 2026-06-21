@@ -23,6 +23,7 @@ import { ClerkService } from '@htownautos/auth';
 import { EmailService } from '../email/email.service';
 import { TwilioService } from '../twilio/twilio.service';
 import { TenantEmailDomainService } from './tenant-email-domain.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { SearchType, PurchasePhoneNumberDto, UpdatePhoneNumberDto } from './dto/phone-number.dto';
 
 // Invitation status constants
@@ -43,6 +44,7 @@ export class TenantService {
     private emailService: EmailService,
     private twilioService: TwilioService,
     private tenantEmailDomainService: TenantEmailDomainService,
+    private notificationsService: NotificationsService,
   ) {}
 
   async create(createTenantDto: CreateTenantDto, creatorUserId: string, ownerUsername: string) {
@@ -1348,9 +1350,12 @@ export class TenantService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + INVITATION_EXPIRY_DAYS);
 
+    // Determine whether this invite is for a user who already has a real account
+    const isExistingUser = !!(user && user.clerkUserId);
+
     // Create User, TenantUser, and TenantInvitation in a transaction
     const result = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Create user if doesn't exist (without clerkUserId - will be set when they register)
+      // Create user only if they don't exist at all — NEVER create a duplicate for an existing email
       if (!user) {
         user = await tx.user.create({
           data: {
@@ -1361,13 +1366,15 @@ export class TenantService {
           },
         });
         this.logger.log(`Created pending user with ID: ${user.id} for email: ${inviteDto.email}`);
+      } else {
+        this.logger.log(`Reusing existing user with ID: ${user.id} for email: ${inviteDto.email}`);
       }
 
       // Create TenantUser with pending status
       const tenantUser = await tx.tenantUser.create({
         data: {
           tenantId,
-          userId: user.id,
+          userId: user!.id,
           roleId: inviteDto.roleId,
           username: inviteDto.username,
           tenantEmail,
@@ -1416,8 +1423,43 @@ export class TenantService {
         },
       });
 
-      return { user, tenantUser, invitation };
+      return { user: user!, tenantUser, invitation };
     });
+
+    // Fire in-app notifications for existing users (best-effort).
+    // We send one notification per tenant the invited user is ALREADY active in,
+    // so the nudge shows up wherever they currently work.
+    if (isExistingUser && result.user) {
+      try {
+        const invitationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3001'}/me/invitations`;
+        const activeMemberships = await this.prisma.tenantUser.findMany({
+          where: {
+            userId: result.user.id,
+            status: INVITATION_STATUS.ACTIVE,
+            isActive: true,
+            tenant: { deletedAt: null },
+          },
+          select: { tenantId: true },
+        });
+        for (const membership of activeMemberships) {
+          await this.notificationsService.create(
+            membership.tenantId,
+            result.user.id,
+            {
+              title: 'New tenant invitation',
+              message: `You have been invited to join ${tenant.name}`,
+              type: 'TENANT_INVITATION',
+              actionUrl: invitationUrl,
+              priority: 'normal',
+            },
+          );
+        }
+      } catch (notifErr) {
+        this.logger.warn(
+          `Failed to send invitation notification to user ${result.user.id}: ${(notifErr as Error).message}`,
+        );
+      }
+    }
 
     // Build invitation URL
     const invitationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3001'}/accept-invitation?code=${invitationCode}`;
@@ -1557,11 +1599,19 @@ export class TenantService {
   }
 
   /**
-   * Accept an invitation using the invitation code
-   * User must already have a Clerk account (clerkUserId set)
-   * Updates TenantUser status from pending to active
+   * Accept an invitation using the invitation code.
+   * loggedInUser must be supplied (the authenticated caller). The invitation's
+   * associated email must match the logged-in user's email (case-insensitive),
+   * OR the TenantUser already points to the logged-in user's DB id.
+   *
+   * If the pending TenantUser was pointing to an orphaned placeholder User row
+   * (clerkUserId null, no other memberships), it re-points to the real User and
+   * deletes the orphan.
    */
-  async acceptInvitation(code: string) {
+  async acceptInvitation(
+    code: string,
+    loggedInUser: { id: string; email: string; clerkUserId: string },
+  ) {
     // Find TenantUser by invitation code
     const tenantUser = await this.prisma.tenantUser.findUnique({
       where: { invitationCode: code },
@@ -1584,48 +1634,96 @@ export class TenantService {
       throw new GoneException('This invitation has been revoked');
     }
 
-    // Check if user has Clerk account (clerkUserId set)
-    // If not, they need to register first
-    if (!tenantUser.user.clerkUserId) {
-      return {
-        requiresRegistration: true,
-        email: tenantUser.user.email,
-        tenant: { id: tenantUser.tenant.id, name: tenantUser.tenant.name },
-        role: tenantUser.role,
-        message: 'Please create an account to accept this invitation',
-      };
+    // Security: the invitation must belong to the logged-in user
+    const emailMatches = tenantUser.user.email.toLowerCase() === loggedInUser.email.toLowerCase();
+    const ownerMatches = tenantUser.userId === loggedInUser.id;
+
+    if (!emailMatches && !ownerMatches) {
+      throw new ForbiddenException(
+        'This invitation was sent to a different email address',
+      );
     }
 
-    // Accept invitation - update TenantUser status to active
-    const updatedTenantUser = await this.prisma.tenantUser.update({
-      where: { id: tenantUser.id },
-      data: {
-        status: INVITATION_STATUS.ACTIVE,
-        isActive: true,
-        acceptedAt: new Date(),
-        invitationCode: null, // Clear the code after use
-      },
-      include: {
-        tenant: { select: { id: true, name: true, slug: true } },
-        user: { select: { id: true, email: true, name: true } },
-        role: { select: { id: true, name: true, slug: true } },
-      },
+    // Determine the real userId to assign (logged-in user's DB id)
+    const realUserId = loggedInUser.id;
+    const orphanedUserId =
+      tenantUser.userId !== realUserId && !tenantUser.user.clerkUserId
+        ? tenantUser.userId
+        : null;
+
+    // If the TenantUser currently points to an orphan but the logged-in user
+    // already has a TenantUser row for this tenant (e.g. race condition), reject.
+    if (orphanedUserId) {
+      const alreadyMember = await this.prisma.tenantUser.findUnique({
+        where: { tenantId_userId: { tenantId: tenantUser.tenantId, userId: realUserId } },
+      });
+      if (alreadyMember) {
+        throw new ConflictException('You are already a member of this tenant');
+      }
+    }
+
+    // Accept in a transaction: re-point userId if needed, activate, clean up orphan
+    const updatedTenantUser = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.tenantUser.update({
+        where: { id: tenantUser.id },
+        data: {
+          userId: realUserId,
+          status: INVITATION_STATUS.ACTIVE,
+          isActive: true,
+          acceptedAt: new Date(),
+          invitationCode: null,
+        },
+        include: {
+          tenant: { select: { id: true, name: true, slug: true, clerkOrgId: true } },
+          user: { select: { id: true, email: true, name: true } },
+          role: { select: { id: true, name: true, slug: true } },
+        },
+      });
+
+      // Clean up orphan User row if it has no other memberships and no clerkUserId
+      if (orphanedUserId) {
+        const otherMemberships = await tx.tenantUser.count({
+          where: { userId: orphanedUserId },
+        });
+        if (otherMemberships === 0) {
+          await tx.user.delete({ where: { id: orphanedUserId } });
+          this.logger.log(`Deleted orphaned placeholder user ${orphanedUserId}`);
+        }
+      }
+
+      // Mark TenantInvitation accepted
+      await tx.tenantInvitation.updateMany({
+        where: {
+          tenantId: tenantUser.tenantId,
+          email: tenantUser.user.email.toLowerCase(),
+          status: 'pending',
+        },
+        data: { status: 'accepted', acceptedAt: new Date() },
+      });
+
+      return updated;
     });
 
-    // Also update TenantInvitation status if exists
-    await this.prisma.tenantInvitation.updateMany({
-      where: {
-        tenantId: tenantUser.tenantId,
-        email: tenantUser.user.email,
-        status: 'pending',
-      },
-      data: {
-        status: 'accepted',
-        acceptedAt: new Date(),
-      },
-    });
+    // Add user to Clerk org (best-effort / idempotent)
+    if (updatedTenantUser.tenant.clerkOrgId) {
+      try {
+        const clerkRole = this.mapRoleToClerkRole(updatedTenantUser.role.slug);
+        await this.clerkService.addOrganizationMembership(
+          updatedTenantUser.tenant.clerkOrgId,
+          loggedInUser.clerkUserId,
+          clerkRole,
+        );
+      } catch (clerkErr) {
+        this.logger.error(
+          `Failed to add Clerk membership for user ${loggedInUser.clerkUserId} in org ${updatedTenantUser.tenant.clerkOrgId}: ${(clerkErr as Error).message}`,
+        );
+        // Do not throw — DB is the source of truth; Clerk sync can be repaired manually
+      }
+    }
 
-    this.logger.log(`Invitation accepted for ${tenantUser.user.email} in tenant ${updatedTenantUser.tenant.name}`);
+    this.logger.log(
+      `Invitation accepted for ${loggedInUser.email} in tenant ${updatedTenantUser.tenant.name}`,
+    );
 
     return {
       message: `Welcome to ${updatedTenantUser.tenant.name}!`,
@@ -1638,6 +1736,233 @@ export class TenantService {
         role: updatedTenantUser.role,
       },
     };
+  }
+
+  /**
+   * Map our internal role slug to a Clerk organization role.
+   * Clerk built-in roles: org:admin, org:member.
+   */
+  private mapRoleToClerkRole(roleSlug: string): string {
+    if (roleSlug === 'owner' || roleSlug === 'admin') return 'org:admin';
+    return 'org:member';
+  }
+
+  // ========================================
+  // MY INVITATIONS (cross-tenant, logged-in user)
+  // ========================================
+
+  /**
+   * Return pending invitations for the logged-in user.
+   * Matches by userId OR by email on the linked User row (covers invites
+   * created before the user's clerkUserId was linked).
+   */
+  async getMyInvitations(userId: string, email: string) {
+    // Find TenantUser rows that are pending AND belong to this user by id OR email
+    const tenantUsers = await this.prisma.tenantUser.findMany({
+      where: {
+        status: INVITATION_STATUS.PENDING,
+        OR: [
+          { userId },
+          { user: { email: { equals: email, mode: 'insensitive' } } },
+        ],
+        tenant: { deletedAt: null },
+      },
+      include: {
+        tenant: { select: { id: true, name: true, slug: true } },
+        role: { select: { id: true, name: true, slug: true } },
+        user: { select: { id: true, email: true } },
+      },
+      orderBy: { invitationSentAt: 'desc' },
+    });
+
+    // Resolve the invitedBy user name if available
+    const inviterIds = [...new Set(tenantUsers.map((tu) => tu.invitedBy).filter(Boolean) as string[])];
+    const inviters = inviterIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: inviterIds } },
+          select: { id: true, email: true, name: true, firstName: true, lastName: true },
+        })
+      : [];
+    const inviterMap = new Map(inviters.map((u) => [u.id, u]));
+
+    return tenantUsers.map((tu) => {
+      const inviter = tu.invitedBy ? inviterMap.get(tu.invitedBy) : null;
+      return {
+        id: tu.id,
+        tenantId: tu.tenant.id,
+        tenantName: tu.tenant.name,
+        roleName: tu.role.name,
+        roleSlug: tu.role.slug,
+        invitedBy: inviter
+          ? { id: inviter.id, name: inviter.name || `${inviter.firstName || ''} ${inviter.lastName || ''}`.trim() || inviter.email }
+          : null,
+        invitedAt: tu.invitationSentAt,
+        invitationCode: tu.invitationCode,
+      };
+    });
+  }
+
+  /**
+   * Accept a pending invitation identified by TenantUser.id (in-app flow).
+   * Ownership check: TenantUser.userId === loggedInUser.id OR email match.
+   */
+  async acceptMyInvitation(
+    tenantUserId: string,
+    loggedInUser: { id: string; email: string; clerkUserId: string },
+  ) {
+    const tenantUser = await this.prisma.tenantUser.findUnique({
+      where: { id: tenantUserId },
+      include: {
+        tenant: true,
+        user: true,
+        role: { select: { id: true, name: true, slug: true } },
+      },
+    });
+
+    if (!tenantUser) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    if (tenantUser.status === INVITATION_STATUS.ACTIVE) {
+      throw new BadRequestException('This invitation has already been accepted');
+    }
+
+    if (tenantUser.status !== INVITATION_STATUS.PENDING) {
+      throw new BadRequestException('This invitation is no longer pending');
+    }
+
+    // Security: must be the invited user
+    const emailMatches = tenantUser.user.email.toLowerCase() === loggedInUser.email.toLowerCase();
+    const ownerMatches = tenantUser.userId === loggedInUser.id;
+
+    if (!emailMatches && !ownerMatches) {
+      throw new ForbiddenException('This invitation does not belong to you');
+    }
+
+    // If this TenantUser was pointing at an orphan but the real user already has a membership, block
+    const orphanedUserId =
+      tenantUser.userId !== loggedInUser.id && !tenantUser.user.clerkUserId
+        ? tenantUser.userId
+        : null;
+
+    if (orphanedUserId) {
+      const alreadyMember = await this.prisma.tenantUser.findUnique({
+        where: { tenantId_userId: { tenantId: tenantUser.tenantId, userId: loggedInUser.id } },
+      });
+      if (alreadyMember) {
+        throw new ConflictException('You are already a member of this tenant');
+      }
+    }
+
+    const updatedTenantUser = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.tenantUser.update({
+        where: { id: tenantUser.id },
+        data: {
+          userId: loggedInUser.id,
+          status: INVITATION_STATUS.ACTIVE,
+          isActive: true,
+          acceptedAt: new Date(),
+          invitationCode: null,
+        },
+        include: {
+          tenant: { select: { id: true, name: true, slug: true, clerkOrgId: true } },
+          user: { select: { id: true, email: true, name: true } },
+          role: { select: { id: true, name: true, slug: true } },
+        },
+      });
+
+      if (orphanedUserId) {
+        const otherMemberships = await tx.tenantUser.count({
+          where: { userId: orphanedUserId },
+        });
+        if (otherMemberships === 0) {
+          await tx.user.delete({ where: { id: orphanedUserId } });
+          this.logger.log(`Deleted orphaned placeholder user ${orphanedUserId}`);
+        }
+      }
+
+      await tx.tenantInvitation.updateMany({
+        where: {
+          tenantId: tenantUser.tenantId,
+          email: tenantUser.user.email.toLowerCase(),
+          status: 'pending',
+        },
+        data: { status: 'accepted', acceptedAt: new Date() },
+      });
+
+      return updated;
+    });
+
+    // Add to Clerk org (best-effort)
+    if (updatedTenantUser.tenant.clerkOrgId) {
+      try {
+        const clerkRole = this.mapRoleToClerkRole(updatedTenantUser.role.slug);
+        await this.clerkService.addOrganizationMembership(
+          updatedTenantUser.tenant.clerkOrgId,
+          loggedInUser.clerkUserId,
+          clerkRole,
+        );
+      } catch (clerkErr) {
+        this.logger.error(
+          `Failed to add Clerk membership for user ${loggedInUser.clerkUserId}: ${(clerkErr as Error).message}`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `In-app invitation accepted for ${loggedInUser.email} in tenant ${updatedTenantUser.tenant.name}`,
+    );
+
+    return {
+      message: `Welcome to ${updatedTenantUser.tenant.name}!`,
+      tenantUser: {
+        id: updatedTenantUser.id,
+        status: updatedTenantUser.status,
+        acceptedAt: updatedTenantUser.acceptedAt,
+        tenant: updatedTenantUser.tenant,
+        user: updatedTenantUser.user,
+        role: updatedTenantUser.role,
+      },
+    };
+  }
+
+  /**
+   * Decline a pending invitation identified by TenantUser.id.
+   */
+  async declineMyInvitation(
+    tenantUserId: string,
+    loggedInUser: { id: string; email: string },
+  ) {
+    const tenantUser = await this.prisma.tenantUser.findUnique({
+      where: { id: tenantUserId },
+      include: { user: { select: { id: true, email: true } } },
+    });
+
+    if (!tenantUser) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    if (tenantUser.status !== INVITATION_STATUS.PENDING) {
+      throw new BadRequestException('This invitation is no longer pending');
+    }
+
+    const emailMatches = tenantUser.user.email.toLowerCase() === loggedInUser.email.toLowerCase();
+    const ownerMatches = tenantUser.userId === loggedInUser.id;
+
+    if (!emailMatches && !ownerMatches) {
+      throw new ForbiddenException('This invitation does not belong to you');
+    }
+
+    await this.prisma.tenantUser.update({
+      where: { id: tenantUser.id },
+      data: {
+        status: 'declined',
+        isActive: false,
+        invitationCode: null,
+      },
+    });
+
+    return { ok: true };
   }
 
   /**

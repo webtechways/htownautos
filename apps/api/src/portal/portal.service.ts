@@ -20,6 +20,7 @@ import { InspectionCartDto, CartItemDto } from './dto/inspection-cart.dto';
 import { PortalPricingService, PortalPricing } from './portal-pricing.service';
 import { FindACarCheckoutDto } from './dto/find-a-car-checkout.dto';
 import { AuctionAnalysisService } from '../auction-analysis/auction-analysis.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -146,6 +147,7 @@ export class PortalService {
     private readonly auctionSearchService: AuctionSearchService,
     private readonly s3: S3Service,
     private readonly auctionAnalysis: AuctionAnalysisService,
+    private readonly notifications: NotificationsService,
   ) {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
   }
@@ -372,7 +374,7 @@ export class PortalService {
       );
     }
 
-    return this.prisma.inspectionRequestItem.create({
+    const requestItem = await this.prisma.inspectionRequestItem.create({
       data: {
         inspectionId: id,
         note: text,
@@ -380,6 +382,96 @@ export class PortalService {
       },
       include: { media: true },
     });
+
+    // ── Notify staff ──────────────────────────────────────────────────────────
+    try {
+      const buyerName = `${buyer.firstName} ${buyer.lastName}`.trim();
+      await this.notifications.notifyTenantStaff(buyer.tenantId, {
+        title: 'Solicitud especial en inspección',
+        message: `${buyerName} agregó una solicitud a una inspección`,
+        type: 'CUSTOMER_INSPECTION_NOTE',
+        entityType: 'VehicleInspection',
+        entityId: id,
+        actionUrl: `${this.dashboardBaseUrl()}/inspections/${id}`,
+        metaValue: {
+          buyerId: buyer.id,
+          buyerName,
+          inspectionId: id,
+          note: text,
+        } as Record<string, unknown>,
+      });
+    } catch {
+      // best-effort: never throw
+    }
+
+    return requestItem;
+  }
+
+  // ── Cancel inspection (customer-initiated) ────────────────────────────────
+
+  /**
+   * Customer cancels one of their inspections.
+   *
+   * Rules:
+   *  1. The inspection must belong to the calling buyer AND the buyer's tenant.
+   *  2. Cannot cancel an already CANCELED or DONE/REJECTED inspection.
+   *
+   * Sets status=CANCELED, cancelledAt, cancelReason, cancelledByCustomer=true.
+   * Returns the updated VehicleInspection.
+   */
+  async cancelInspection(
+    id: string,
+    buyer: PortalBuyer,
+    reason?: string,
+  ) {
+    const inspection = await this.prisma.vehicleInspection.findFirst({
+      where: { id, tenantId: buyer.tenantId },
+      select: { id: true, buyerId: true, status: true },
+    });
+
+    if (!inspection || inspection.buyerId !== buyer.id) {
+      throw new NotFoundException(`Inspection ${id} not found`);
+    }
+
+    const nonCancellableStatuses = ['CANCELED', 'DONE', 'REJECTED'];
+    if (nonCancellableStatuses.includes(inspection.status as string)) {
+      throw new BadRequestException(
+        `No puedes cancelar una inspección en estado ${inspection.status}`,
+      );
+    }
+
+    const updated = await this.prisma.vehicleInspection.update({
+      where: { id },
+      data: {
+        status: 'CANCELED',
+        cancelledAt: new Date(),
+        cancelReason: reason ?? null,
+        cancelledByCustomer: true,
+      },
+    });
+
+    // ── Notify staff ──────────────────────────────────────────────────────────
+    try {
+      const buyerName = `${buyer.firstName} ${buyer.lastName}`.trim();
+      await this.notifications.notifyTenantStaff(buyer.tenantId, {
+        title: 'Inspección cancelada por cliente',
+        message: `${buyerName} canceló una inspección`,
+        type: 'CUSTOMER_INSPECTION_CANCELLED',
+        entityType: 'VehicleInspection',
+        entityId: id,
+        actionUrl: `${this.dashboardBaseUrl()}/inspections/${id}`,
+        metaValue: {
+          buyerId: buyer.id,
+          buyerName,
+          inspectionId: id,
+          reason: reason ?? null,
+        } as Record<string, unknown>,
+      });
+    } catch {
+      // best-effort: never throw
+    }
+
+    return updated;
   }
 
   // ── Order receipt + payment confirmation ───────────────────────────────────
@@ -1143,6 +1235,39 @@ export class PortalService {
     this.logger.log(
       `fulfillInspectionOrder: order ${order.id} FULFILLED — ${createdIds.length}/${items.length} inspections created`,
     );
+
+    // ── Notify staff ──────────────────────────────────────────────────────────
+    if (createdIds.length > 0) {
+      try {
+        const buyer = await this.prisma.buyer.findUnique({
+          where: { id: order.buyerId },
+          select: { firstName: true, lastName: true },
+        });
+        const buyerName = buyer
+          ? `${buyer.firstName} ${buyer.lastName}`.trim()
+          : order.buyerId;
+        const count = createdIds.length;
+        const lotNumbers = items.map((i) => i.lotNumber).filter(Boolean).join(', ');
+        await this.notifications.notifyTenantStaff(tenantId, {
+          title: 'Nueva solicitud de inspección',
+          message: `${buyerName} solicitó ${count} inspección${count !== 1 ? 'es' : ''}${lotNumbers ? ` (${lotNumbers})` : ''}`,
+          type: 'CUSTOMER_INSPECTION_REQUESTED',
+          entityType: 'PortalOrder',
+          entityId: order.id,
+          actionUrl: `${this.dashboardBaseUrl()}/inspections`,
+          metaValue: {
+            buyerId: order.buyerId,
+            buyerName,
+            count,
+            lotNumbers: items.map((i) => i.lotNumber).filter(Boolean),
+            vins: items.map((i) => i.vin).filter(Boolean),
+            orderId: order.id,
+          } as Record<string, unknown>,
+        });
+      } catch {
+        // best-effort: never throw
+      }
+    }
   }
 
   private async fulfillDepositOrder(
@@ -1177,6 +1302,36 @@ export class PortalService {
     this.logger.log(
       `fulfillDepositOrder: order ${order.id} fulfilled — ledger entry created`,
     );
+
+    // ── Notify staff ──────────────────────────────────────────────────────────
+    try {
+      const buyer = await this.prisma.buyer.findUnique({
+        where: { id: order.buyerId },
+        select: { firstName: true, lastName: true },
+      });
+      const buyerName = buyer
+        ? `${buyer.firstName} ${buyer.lastName}`.trim()
+        : order.buyerId;
+      const tenantId = order.tenantId ?? '';
+      const amountDollars = Number(order.amount).toFixed(2);
+      await this.notifications.notifyTenantStaff(tenantId, {
+        title: 'Depósito recibido',
+        message: `${buyerName} realizó un depósito de $${amountDollars}`,
+        type: 'CUSTOMER_DEPOSIT',
+        entityType: 'PortalOrder',
+        entityId: order.id,
+        actionUrl: `${this.dashboardBaseUrl()}/buyers/${order.buyerId}`,
+        metaValue: {
+          buyerId: order.buyerId,
+          buyerName,
+          amountDollars,
+          currency: order.currency,
+          orderId: order.id,
+        } as Record<string, unknown>,
+      });
+    } catch {
+      // best-effort: never throw
+    }
   }
 
   private async fulfillFindACarOrder(
@@ -1256,6 +1411,34 @@ export class PortalService {
     this.logger.log(
       `fulfillFindACarOrder: order ${order.id} FULFILLED — ${createdPreferenceIds.length}/${preferences.length} preferences created`,
     );
+
+    // ── Notify staff ──────────────────────────────────────────────────────────
+    try {
+      const tenantId = order.tenantId ?? '';
+      const buyer = await this.prisma.buyer.findUnique({
+        where: { id: order.buyerId },
+        select: { firstName: true, lastName: true },
+      });
+      const buyerName = buyer
+        ? `${buyer.firstName} ${buyer.lastName}`.trim()
+        : order.buyerId;
+      await this.notifications.notifyTenantStaff(tenantId, {
+        title: 'Solicitud Find a Car for Me',
+        message: `${buyerName} solicitó Find a Car for Me`,
+        type: 'CUSTOMER_FIND_A_CAR',
+        entityType: 'PortalOrder',
+        entityId: order.id,
+        actionUrl: `${this.dashboardBaseUrl()}/buyers/${order.buyerId}`,
+        metaValue: {
+          buyerId: order.buyerId,
+          buyerName,
+          preferencesCount: createdPreferenceIds.length,
+          orderId: order.id,
+        } as Record<string, unknown>,
+      });
+    } catch {
+      // best-effort: never throw
+    }
   }
 
   // ── Private: pricing computation ──────────────────────────────────────────
@@ -1406,6 +1589,28 @@ export class PortalService {
         note,
       },
     });
+
+    // ── Notify staff (only on new request, not when returning existing) ───────
+    try {
+      const buyerName = `${buyer.firstName} ${buyer.lastName}`.trim();
+      await this.notifications.notifyTenantStaff(buyer.tenantId, {
+        title: 'Solicitud de liberación de depósito',
+        message: `${buyerName} solicitó la liberación de su depósito`,
+        type: 'CUSTOMER_DEPOSIT_RELEASE',
+        entityType: 'DepositReleaseRequest',
+        entityId: created.id,
+        actionUrl: `${this.dashboardBaseUrl()}/buyers/${buyer.id}`,
+        metaValue: {
+          buyerId: buyer.id,
+          buyerName,
+          amountDollars: created.amount.toString(),
+          requestId: created.id,
+        } as Record<string, unknown>,
+      });
+    } catch {
+      // best-effort: never throw
+    }
+
     return { ...created, amount: created.amount.toString() };
   }
 
@@ -1417,6 +1622,70 @@ export class PortalService {
     });
     if (!req) return null;
     return { ...req, amount: req.amount.toString() };
+  }
+
+  // ── Contact form (public) ─────────────────────────────────────────────────
+
+  /**
+   * Saves a contact message and notifies tenant staff.
+   * Resolves tenantId from tenantSlug when provided; falls back to PORTAL_TENANT_ID.
+   * Public endpoint — no auth context available.
+   */
+  async submitContactForm(data: {
+    name: string;
+    email: string;
+    phone?: string;
+    subject?: string;
+    message: string;
+    tenantSlug?: string;
+    buyerId?: string;
+  }): Promise<{ ok: boolean }> {
+    // Resolve tenantId from slug, or fall back to the portal tenant.
+    let tenantId = PORTAL_TENANT_ID;
+    if (data.tenantSlug) {
+      const tenant = await this.prisma.tenant.findFirst({
+        where: { slug: data.tenantSlug },
+        select: { id: true },
+      });
+      if (tenant) tenantId = tenant.id;
+    }
+
+    const contactMessage = await this.prisma.contactMessage.create({
+      data: {
+        tenantId,
+        buyerId: data.buyerId ?? null,
+        name: data.name,
+        email: data.email,
+        phone: data.phone ?? null,
+        subject: data.subject ?? null,
+        message: data.message,
+        status: 'NEW',
+      },
+    });
+
+    // ── Notify staff (best-effort) ─────────────────────────────────────────
+    try {
+      await this.notifications.notifyTenantStaff(tenantId, {
+        title: 'Nuevo mensaje de contacto',
+        message: `Nuevo mensaje de contacto de ${data.name}`,
+        type: 'CUSTOMER_CONTACT_MESSAGE',
+        entityType: 'ContactMessage',
+        entityId: contactMessage.id,
+        actionUrl: `${this.dashboardBaseUrl()}/contact-messages`,
+        metaValue: {
+          name: data.name,
+          email: data.email,
+          phone: data.phone ?? null,
+          subject: data.subject ?? null,
+          message: data.message,
+          contactMessageId: contactMessage.id,
+        } as Record<string, unknown>,
+      });
+    } catch {
+      // best-effort: never throw
+    }
+
+    return { ok: true };
   }
 
   // ── Orders (buyer-facing, for receipt PDF) ────────────────────────────────
@@ -1437,6 +1706,11 @@ export class PortalService {
 
   private portalBaseUrl(): string {
     return process.env.PORTAL_BASE_URL ?? 'https://htownautos.com';
+  }
+
+  /** Base URL for the staff dashboard. */
+  private dashboardBaseUrl(): string {
+    return process.env.DASHBOARD_BASE_URL ?? 'https://app.htownautos.com';
   }
 
   private async getOrCreateStripeCustomer(buyer: PortalBuyer): Promise<string> {

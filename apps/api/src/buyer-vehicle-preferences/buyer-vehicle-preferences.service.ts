@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
+import { preferenceToWhere } from '@htownautos/auction-matching';
 import { CreateBuyerVehiclePreferenceDto } from './dto/create-buyer-vehicle-preference.dto';
 import { UpdateBuyerVehiclePreferenceDto } from './dto/update-buyer-vehicle-preference.dto';
 import { isFutureSale } from './sale-time.util';
@@ -57,66 +58,6 @@ function serializeListing(l: any) {
     repairCost: l.repairCost?.toString() ?? null,
     saleDate: l.saleDate != null ? String(l.saleDate) : null,
   };
-}
-
-/** Converts one buyer preference to a Prisma `where` subclause. */
-function preferenceToWhere(
-  pref: {
-    yearFrom: number | null;
-    yearTo: number | null;
-    make: string;
-    models: string[];
-    trims: string[];
-    maxMileage: number | null;
-    titleTypes: string[];
-    colors: string[];
-    maxCost: Prisma.Decimal | null;
-  },
-): Prisma.AuctionListingWhereInput {
-  const where: Prisma.AuctionListingWhereInput = {
-    isStale: false,
-    make: { equals: pref.make, mode: 'insensitive' },
-  };
-
-  if (pref.yearFrom || pref.yearTo) {
-    const year: Prisma.IntNullableFilter = {};
-    if (pref.yearFrom) year.gte = pref.yearFrom;
-    if (pref.yearTo) year.lte = pref.yearTo;
-    where.year = year;
-  }
-  if (pref.models.length > 0) {
-    where.modelGroup = { in: pref.models, mode: 'insensitive' };
-  }
-  if (pref.trims.length > 0) {
-    where.trim = { in: pref.trims, mode: 'insensitive' };
-  }
-  if (pref.titleTypes.length > 0) {
-    where.saleTitleType = { in: pref.titleTypes, mode: 'insensitive' };
-  }
-  if (pref.colors.length > 0) {
-    where.color = { in: pref.colors, mode: 'insensitive' };
-  }
-
-  // NULL-tolerant numeric filters: listings with no odometer/highBid are
-  // included because "unknown" must not preemptively exclude a match.
-  const andClauses: Prisma.AuctionListingWhereInput[] = [];
-
-  if (pref.maxMileage != null) {
-    andClauses.push({
-      OR: [{ odometer: { lte: pref.maxMileage } }, { odometer: null }],
-    });
-  }
-  if (pref.maxCost != null) {
-    // Hard cap: a bid already above budget excludes the listing.
-    andClauses.push({
-      OR: [{ highBid: { lte: pref.maxCost } }, { highBid: null }],
-    });
-  }
-  if (andClauses.length > 0) {
-    where.AND = andClauses;
-  }
-
-  return where;
 }
 
 @Injectable()

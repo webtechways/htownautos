@@ -8,6 +8,7 @@ import { OpenSearchModule } from '../opensearch/opensearch.module';
 import { BuyerFavoritesModule } from '../buyer-favorites/buyer-favorites.module';
 import { StripeModule } from '../stripe/stripe.module';
 import { AuctionAnalysisModule } from '../auction-analysis/auction-analysis.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { PortalController } from './portal.controller';
 import { PortalPublicController } from './portal-public.controller';
 import { PortalService } from './portal.service';
@@ -28,9 +29,12 @@ import { ReceiptPdfService } from './receipt-pdf.service';
  *
  * StripeModule is imported via forwardRef to break the mutual dependency cycle
  * (StripeModule → forwardRef(PortalModule) ↔ PortalModule → forwardRef(StripeModule)).
+ *
+ * NotificationsModule is imported so PortalService can inject NotificationsService.
+ * NotificationsModule only imports PrismaModule → no circular dependency.
  */
 @Module({
-  imports: [PrismaModule, CopartModule, VehicleInspectionsModule, OpenSearchModule, BuyerFavoritesModule, AuctionAnalysisModule, forwardRef(() => StripeModule)],
+  imports: [PrismaModule, CopartModule, VehicleInspectionsModule, OpenSearchModule, BuyerFavoritesModule, AuctionAnalysisModule, NotificationsModule, forwardRef(() => StripeModule)],
   controllers: [PortalPublicController, PortalController, PortalSettingsController],
   providers: [PortalService, PortalPricingService, CustomerGuard, S3Service, ReceiptPdfService],
   exports: [PortalService, PortalPricingService, ReceiptPdfService],

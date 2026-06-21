@@ -6,6 +6,7 @@ import { Readable } from 'stream';
 import csvParser = require('csv-parser');
 import { PrismaService } from '@htownautos/prisma';
 import { AuctionSyncService } from '@htownautos/opensearch';
+import { WantedMatchNotifierService } from './wanted-match-notifier.service';
 
 // Maps CSV header names → staging column names
 const CSV_HEADER_MAP: Record<string, string> = {
@@ -81,6 +82,12 @@ const MIN_ROWS_SANITY = 1_000;               // feed below this is clearly broke
 const STALENESS_THRESHOLD_HOURS = 6;         // unseen lots become "stale" after 6h
 const REQUIRED_HEADERS = ['lotNumber', 'vin', 'make', 'year'] as const;
 
+// Above this many brand-new lots in a single run we skip wanted-match
+// notifications: it's almost certainly an initial load or a recreate, and
+// matching/notifying tens of thousands of lots would flood the notification
+// center. Normal incremental runs add at most a few hundred new lots.
+const NEW_LOT_NOTIFY_LIMIT = 5_000;
+
 /** pg_try_advisory_lock key — constant hash of "copart_sync". */
 const LOCK_KEY_SQL = `hashtext('copart_sync')`;
 
@@ -117,6 +124,7 @@ export class CopartImportService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly syncService: AuctionSyncService,
+    private readonly wantedMatchNotifier: WantedMatchNotifierService,
   ) {
     this.pool = new Pool({
       connectionString: this.configService.get<string>('DATABASE_URL'),
@@ -250,8 +258,39 @@ export class CopartImportService {
     await this.insertIntoStaging(valid);
 
     // Step 7: Staging → auction_listings (upsert + mark lastSeenAt)
-    metrics.rowsUpserted = await this.mapStagingToAuctionListings();
-    this.logger.log(`Upserted ${metrics.rowsUpserted} into auction_listings`);
+    const { total: upserted, newLotNumbers } =
+      await this.mapStagingToAuctionListings();
+    metrics.rowsUpserted = upserted;
+    this.logger.log(
+      `Upserted ${upserted} into auction_listings (${newLotNumbers.length} brand-new lots)`,
+    );
+
+    // Step 7b: Notify staff about brand-new lots that match a buyer's wanted
+    // list. Guarded against bulk/initial loads (see NEW_LOT_NOTIFY_LIMIT) and
+    // wrapped so a notification failure never aborts the sync.
+    if (newLotNumbers.length === 0) {
+      // nothing new this run
+    } else if (newLotNumbers.length > NEW_LOT_NOTIFY_LIMIT) {
+      this.logger.warn(
+        `Skipping wanted-match notifications: ${newLotNumbers.length} new lots ` +
+          `exceeds threshold of ${NEW_LOT_NOTIFY_LIMIT} (treating as bulk/initial load)`,
+      );
+    } else {
+      try {
+        const created = await this.wantedMatchNotifier.notifyNewListings(
+          newLotNumbers,
+        );
+        if (created > 0) {
+          this.logger.log(`Created ${created} wanted-match notification(s)`);
+        }
+      } catch (err) {
+        const e = err as Error;
+        this.logger.error(
+          `Wanted-match notification step failed (non-fatal): ${e?.message}`,
+          e?.stack,
+        );
+      }
+    }
 
     // Step 8: Mark as stale any listings not seen in this run (after the grace period)
     metrics.rowsStaleMarked = await this.markStaleListings();
@@ -411,10 +450,13 @@ export class CopartImportService {
     return total;
   }
 
-  private async mapStagingToAuctionListings(): Promise<number> {
+  private async mapStagingToAuctionListings(): Promise<{
+    total: number;
+    newLotNumbers: string[];
+  }> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query(`
+      const result = await client.query<{ lotNumber: string; inserted: boolean }>(`
         -- Sanitizes a free-form numeric string from the Copart CSV.
         --   * strips anything that isn't a digit or '.'
         --   * trims leading/trailing dots
@@ -602,9 +644,16 @@ export class CopartImportService {
           "lastSeenAt"        = NOW(),
           "isStale"           = false,
           "updatedAt"         = NOW()
+        -- xmax = 0 on a row touched by INSERT ... ON CONFLICT means it was
+        -- freshly INSERTED (not updated): the hook for "a brand-new lot".
+        RETURNING "lotNumber"::text AS "lotNumber", (xmax = 0) AS inserted
       `);
 
-      return result.rowCount ?? 0;
+      const newLotNumbers = result.rows
+        .filter((r) => r.inserted)
+        .map((r) => r.lotNumber);
+
+      return { total: result.rowCount ?? 0, newLotNumbers };
     } finally {
       client.release();
     }

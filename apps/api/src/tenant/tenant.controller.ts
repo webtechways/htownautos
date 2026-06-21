@@ -833,6 +833,61 @@ export class TenantController {
   }
 
   // ========================================
+  // MY INVITATIONS (cross-tenant, logged-in user)
+  // ========================================
+
+  @Get('me/invitations')
+  @TenantOptional()
+  @ApiOperation({
+    summary: 'Get my pending invitations',
+    description:
+      'Returns all pending tenant invitations for the logged-in user, ' +
+      'regardless of which tenant they are currently in.',
+  })
+  @ApiResponse({ status: 200, description: 'List of pending invitations' })
+  getMyInvitations(@CurrentUser() user: { id: string; email: string }) {
+    return this.tenantService.getMyInvitations(user.id, user.email);
+  }
+
+  @Post('me/invitations/:tenantUserId/accept')
+  @TenantOptional()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Accept a pending invitation (in-app)',
+    description:
+      'Accepts a pending tenant invitation identified by TenantUser ID. ' +
+      'Adds the logged-in user to the tenant and syncs Clerk organization membership.',
+  })
+  @ApiParam({ name: 'tenantUserId', description: 'TenantUser UUID', example: '123e4567-e89b-12d3-a456-426614174000' })
+  @ApiResponse({ status: 200, description: 'Invitation accepted' })
+  @ApiResponse({ status: 403, description: 'Invitation does not belong to you' })
+  @ApiResponse({ status: 404, description: 'Invitation not found' })
+  acceptMyInvitation(
+    @Param('tenantUserId', ParseUUIDPipe) tenantUserId: string,
+    @CurrentUser() user: { id: string; email: string; clerkUserId: string },
+  ) {
+    return this.tenantService.acceptMyInvitation(tenantUserId, user);
+  }
+
+  @Post('me/invitations/:tenantUserId/decline')
+  @TenantOptional()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Decline a pending invitation (in-app)',
+    description: 'Declines a pending tenant invitation identified by TenantUser ID.',
+  })
+  @ApiParam({ name: 'tenantUserId', description: 'TenantUser UUID', example: '123e4567-e89b-12d3-a456-426614174000' })
+  @ApiResponse({ status: 200, description: 'Invitation declined' })
+  @ApiResponse({ status: 403, description: 'Invitation does not belong to you' })
+  @ApiResponse({ status: 404, description: 'Invitation not found' })
+  declineMyInvitation(
+    @Param('tenantUserId', ParseUUIDPipe) tenantUserId: string,
+    @CurrentUser() user: { id: string; email: string },
+  ) {
+    return this.tenantService.declineMyInvitation(tenantUserId, user);
+  }
+
+  // ========================================
   // INVITATION ENDPOINTS
   // ========================================
 
@@ -1039,10 +1094,12 @@ export class InvitationController {
   }
 
   @Post('accept')
-  @Public()
+  @TenantOptional()
   @ApiOperation({
     summary: 'Accept invitation',
-    description: 'Accepts a tenant invitation using the secret code received via email. This endpoint is public.',
+    description:
+      'Accepts a tenant invitation using the secret code received via email. ' +
+      'Caller must be authenticated — the logged-in user is added to the tenant.',
   })
   @ApiResponse({
     status: 200,
@@ -1070,6 +1127,14 @@ export class InvitationController {
     description: 'Invitation has already been accepted',
   })
   @ApiResponse({
+    status: 401,
+    description: 'Must be authenticated to accept an invitation',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'This invitation was sent to a different email address',
+  })
+  @ApiResponse({
     status: 404,
     description: 'Invalid or expired invitation code',
   })
@@ -1077,8 +1142,11 @@ export class InvitationController {
     status: 410,
     description: 'Invitation has been revoked',
   })
-  acceptInvitation(@Body() acceptDto: AcceptInvitationDto) {
-    return this.tenantService.acceptInvitation(acceptDto.code);
+  acceptInvitation(
+    @Body() acceptDto: AcceptInvitationDto,
+    @CurrentUser() user: { id: string; email: string; clerkUserId: string },
+  ) {
+    return this.tenantService.acceptInvitation(acceptDto.code, user);
   }
 
   @Post('register')

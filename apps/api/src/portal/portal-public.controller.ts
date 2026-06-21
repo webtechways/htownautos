@@ -14,6 +14,7 @@ import { PortalPricingService } from './portal-pricing.service';
 import { QueryCopartDto } from '../copart/dto/query-copart.dto';
 import { InspectionCartDto } from './dto/inspection-cart.dto';
 import { PortalFiltersQueryDto } from './dto/portal-filters-query.dto';
+import { ContactFormDto } from './dto/contact-form.dto';
 
 /**
  * Public (unauthenticated) portal endpoints. The marketing site lets anyone
@@ -81,5 +82,17 @@ export class PortalPublicController {
   @HttpCode(HttpStatus.OK)
   quote(@Body() dto: InspectionCartDto) {
     return this.portalService.quotePublic(dto);
+  }
+
+  /**
+   * POST /api/v1/portal/contact
+   * Public contact form — no authentication required.
+   * Creates a ContactMessage row and notifies tenant staff.
+   * Body: { name, email, phone?, subject?, message, tenantSlug?, buyerId? }
+   */
+  @Post('contact')
+  @HttpCode(HttpStatus.OK)
+  submitContact(@Body() dto: ContactFormDto) {
+    return this.portalService.submitContactForm(dto);
   }
 }

@@ -71,6 +71,8 @@ import { CloudflareModule } from './cloudflare/cloudflare.module';
 import { PortalModule } from './portal/portal.module';
 import { AuctionHistoryModule } from './auction-history/auction-history.module';
 import { AdminSeedModule } from './admin-seed/admin-seed.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { ContactMessagesModule } from './contact-messages/contact-messages.module';
 
 /**
  * API Gateway Module
@@ -158,6 +160,8 @@ import { AdminSeedModule } from './admin-seed/admin-seed.module';
     PortalModule,
     AuctionHistoryModule,
     AdminSeedModule,
+    NotificationsModule,
+    ContactMessagesModule,
   ],
   controllers: [AppController],
   providers: [

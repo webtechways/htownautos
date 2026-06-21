@@ -163,6 +163,33 @@ export class ClerkService {
   }
 
   /**
+   * Add an existing Clerk user to an Organization as a member.
+   * Idempotent: swallows "already a member" errors.
+   */
+  async addOrganizationMembership(organizationId: string, clerkUserId: string, role: string) {
+    this.logger.log(`Adding ${clerkUserId} to org ${organizationId} with role ${role}`);
+    try {
+      await this.clerk.organizations.createOrganizationMembership({
+        organizationId,
+        userId: clerkUserId,
+        role,
+      });
+      this.logger.log(`Added ${clerkUserId} to org ${organizationId}`);
+    } catch (error: any) {
+      // 422 with already_a_member_in_organization means idempotent success
+      const alreadyMember = error.errors?.some(
+        (e: any) => e.code === 'already_a_member_in_organization' || e.code === 'duplicate_record',
+      );
+      if (alreadyMember || error.status === 422 || error.status === 409) {
+        this.logger.warn(`User ${clerkUserId} is already a member of org ${organizationId} — skipping`);
+        return;
+      }
+      this.logger.error(`Failed to add org membership: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
    * Revoke a pending invitation to a Clerk Organization.
    */
   async revokeOrganizationInvitation(organizationId: string, invitationId: string, requestingUserId: string) {

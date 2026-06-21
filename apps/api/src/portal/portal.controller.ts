@@ -29,6 +29,7 @@ import { CreateDepositDto } from './dto/create-deposit.dto';
 import { AddInspectionRequestDto } from './dto/add-inspection-request.dto';
 import { CreateDepositReleaseRequestDto } from './dto/create-deposit-release-request.dto';
 import { FindACarCheckoutDto } from './dto/find-a-car-checkout.dto';
+import { CancelInspectionDto } from './dto/cancel-inspection.dto';
 
 // CustomerGuard resolves the tenant from the Buyer, so the global TenantGuard
 // must not require an org-based tenant on these routes.
@@ -107,6 +108,21 @@ export class PortalController {
     @Body() dto: AddInspectionRequestDto,
   ) {
     return this.portalService.addInspectionRequest(id, buyer, dto.text);
+  }
+
+  /**
+   * POST /api/v1/portal/inspections/:id/cancel
+   * Customer cancels an inspection they requested.
+   * Only cancellable while status is REQUESTED or IN_PROGRESS.
+   */
+  @Post('inspections/:id/cancel')
+  @HttpCode(HttpStatus.OK)
+  cancelInspection(
+    @Param('id') id: string,
+    @CurrentBuyer() buyer: PortalBuyer,
+    @Body() dto: CancelInspectionDto,
+  ) {
+    return this.portalService.cancelInspection(id, buyer, dto.reason);
   }
 
   // inspections/quote is PUBLIC — see PortalPublicController.

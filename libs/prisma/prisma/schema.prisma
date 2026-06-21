@@ -559,6 +559,7 @@ model Tenant {
   ledgerEntries           CustomerLedgerEntry[]
   portalOrders            PortalOrder[]
   depositReleaseRequests  DepositReleaseRequest[]
+  contactMessages         ContactMessage[]
 
   @@index([clerkOrgId])
   @@index([slug])
@@ -596,30 +597,30 @@ model UnmatchedInboundEmail {
 }
 
 model User {
-  id                String              @id @default(uuid())
-  email             String              @unique
-  name              String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  metaValue         Json?
-  avatar            String?
-  clerkUserId       String?             @unique
-  emailVerified     Boolean             @default(false)
-  firstName         String?
-  isActive          Boolean             @default(true)
-  lastActivityAt    DateTime?
-  lastLoginAt       DateTime?
-  lastSeenAt        DateTime?
-  lastName          String?
-  phoneNumber       String?
-  isOnline          Boolean             @default(false)
-  tenants           TenantUser[]
-  vehiclesCreated   Vehicle[]           @relation("VehicleCreatedBy")
-  sentInvitations   TenantInvitation[]
-  paidExpenses      ExtraExpense[]      @relation("ExpensePaidBy")
-  sharedInspections VehicleInspection[] @relation("InspectionSharedWith")
-  ledgerEntriesCreated     CustomerLedgerEntry[]
-  decidedDepositReleases   DepositReleaseRequest[] @relation("DepositReleaseDecidedBy")
+  id                     String                  @id @default(uuid())
+  email                  String                  @unique
+  name                   String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  metaValue              Json?
+  avatar                 String?
+  clerkUserId            String?                 @unique
+  emailVerified          Boolean                 @default(false)
+  firstName              String?
+  isActive               Boolean                 @default(true)
+  lastActivityAt         DateTime?
+  lastLoginAt            DateTime?
+  lastSeenAt             DateTime?
+  lastName               String?
+  phoneNumber            String?
+  isOnline               Boolean                 @default(false)
+  tenants                TenantUser[]
+  vehiclesCreated        Vehicle[]               @relation("VehicleCreatedBy")
+  sentInvitations        TenantInvitation[]
+  paidExpenses           ExtraExpense[]          @relation("ExpensePaidBy")
+  sharedInspections      VehicleInspection[]     @relation("InspectionSharedWith")
+  ledgerEntriesCreated   CustomerLedgerEntry[]
+  decidedDepositReleases DepositReleaseRequest[] @relation("DepositReleaseDecidedBy")
 
   @@index([clerkUserId])
   @@index([email])
@@ -904,6 +905,7 @@ model Buyer {
   ledgerEntries            CustomerLedgerEntry[]
   portalOrders             PortalOrder[]
   depositReleaseRequests   DepositReleaseRequest[]
+  contactMessages          ContactMessage[]
 
   @@unique([tenantId, phoneMain])
   @@index([tenantId])
@@ -918,77 +920,77 @@ model Buyer {
 }
 
 model Deal {
-  id                          String       @id @default(uuid())
+  id                          String                @id @default(uuid())
   buyerId                     String
   vehicleId                   String
   coBuyerId                   String?
-  dealNumber                  String       @unique
+  dealNumber                  String                @unique
   dealStatusId                String
   financeTypeId               String?
-  dealDate                    DateTime     @default(now())
+  dealDate                    DateTime              @default(now())
   deliveryDate                DateTime?
   fundedDate                  DateTime?
-  vehiclePrice                Decimal      @db.Decimal(10, 2)
-  sellingPrice                Decimal      @db.Decimal(10, 2)
-  discount                    Decimal?     @db.Decimal(10, 2)
-  rebate                      Decimal?     @db.Decimal(10, 2)
-  hasTradeIn                  Boolean      @default(false)
+  vehiclePrice                Decimal               @db.Decimal(10, 2)
+  sellingPrice                Decimal               @db.Decimal(10, 2)
+  discount                    Decimal?              @db.Decimal(10, 2)
+  rebate                      Decimal?              @db.Decimal(10, 2)
+  hasTradeIn                  Boolean               @default(false)
   tradeInYear                 Int?
   tradeInMake                 String?
   tradeInModel                String?
   tradeInVin                  String?
   tradeInMileage              Int?
-  tradeInActualValue          Decimal?     @db.Decimal(10, 2)
-  tradeInAllowance            Decimal?     @db.Decimal(10, 2)
-  tradeInPayoff               Decimal?     @db.Decimal(10, 2)
+  tradeInActualValue          Decimal?              @db.Decimal(10, 2)
+  tradeInAllowance            Decimal?              @db.Decimal(10, 2)
+  tradeInPayoff               Decimal?              @db.Decimal(10, 2)
   tradeInLienHolder           String?
-  tradeInEquity               Decimal?     @db.Decimal(10, 2)
-  salesTax                    Decimal?     @db.Decimal(10, 2)
-  docFee                      Decimal?     @db.Decimal(10, 2)
-  titleFee                    Decimal?     @db.Decimal(10, 2)
-  registrationFee             Decimal?     @db.Decimal(10, 2)
-  otherFees                   Decimal?     @db.Decimal(10, 2)
-  totalFees                   Decimal?     @db.Decimal(10, 2)
-  totalCashPrice              Decimal?     @db.Decimal(10, 2)
-  downPayment                 Decimal?     @db.Decimal(10, 2)
-  amountFinanced              Decimal?     @db.Decimal(10, 2)
-  apr                         Decimal?     @db.Decimal(5, 3)
+  tradeInEquity               Decimal?              @db.Decimal(10, 2)
+  salesTax                    Decimal?              @db.Decimal(10, 2)
+  docFee                      Decimal?              @db.Decimal(10, 2)
+  titleFee                    Decimal?              @db.Decimal(10, 2)
+  registrationFee             Decimal?              @db.Decimal(10, 2)
+  otherFees                   Decimal?              @db.Decimal(10, 2)
+  totalFees                   Decimal?              @db.Decimal(10, 2)
+  totalCashPrice              Decimal?              @db.Decimal(10, 2)
+  downPayment                 Decimal?              @db.Decimal(10, 2)
+  amountFinanced              Decimal?              @db.Decimal(10, 2)
+  apr                         Decimal?              @db.Decimal(5, 3)
   term                        Int?
-  monthlyPayment              Decimal?     @db.Decimal(10, 2)
-  totalOfPayments             Decimal?     @db.Decimal(10, 2)
-  financeCharge               Decimal?     @db.Decimal(10, 2)
+  monthlyPayment              Decimal?              @db.Decimal(10, 2)
+  totalOfPayments             Decimal?              @db.Decimal(10, 2)
+  financeCharge               Decimal?              @db.Decimal(10, 2)
   lenderName                  String?
   lenderId                    String?
-  lenderRate                  Decimal?     @db.Decimal(5, 3)
-  dealerReserve               Decimal?     @db.Decimal(5, 3)
-  buyRate                     Decimal?     @db.Decimal(5, 3)
-  sellRate                    Decimal?     @db.Decimal(5, 3)
-  hasWarranty                 Boolean      @default(false)
+  lenderRate                  Decimal?              @db.Decimal(5, 3)
+  dealerReserve               Decimal?              @db.Decimal(5, 3)
+  buyRate                     Decimal?              @db.Decimal(5, 3)
+  sellRate                    Decimal?              @db.Decimal(5, 3)
+  hasWarranty                 Boolean               @default(false)
   warrantyProvider            String?
-  warrantyCost                Decimal?     @db.Decimal(10, 2)
+  warrantyCost                Decimal?              @db.Decimal(10, 2)
   warrantyTerm                Int?
-  warrantyDeductible          Decimal?     @db.Decimal(10, 2)
-  hasGap                      Boolean      @default(false)
+  warrantyDeductible          Decimal?              @db.Decimal(10, 2)
+  hasGap                      Boolean               @default(false)
   gapProvider                 String?
-  gapCost                     Decimal?     @db.Decimal(10, 2)
-  hasMaintenancePlan          Boolean      @default(false)
+  gapCost                     Decimal?              @db.Decimal(10, 2)
+  hasMaintenancePlan          Boolean               @default(false)
   maintenanceProvider         String?
-  maintenanceCost             Decimal?     @db.Decimal(10, 2)
-  hasTheftProtection          Boolean      @default(false)
-  theftProtectionCost         Decimal?     @db.Decimal(10, 2)
-  hasPaintProtection          Boolean      @default(false)
-  paintProtectionCost         Decimal?     @db.Decimal(10, 2)
-  totalAftermarketProducts    Decimal?     @db.Decimal(10, 2)
-  loanToValue                 Decimal?     @db.Decimal(5, 2)
-  paymentToIncome             Decimal?     @db.Decimal(5, 2)
-  debtToIncome                Decimal?     @db.Decimal(5, 2)
-  creditCheckConsent          Boolean      @default(false)
+  maintenanceCost             Decimal?              @db.Decimal(10, 2)
+  hasTheftProtection          Boolean               @default(false)
+  theftProtectionCost         Decimal?              @db.Decimal(10, 2)
+  hasPaintProtection          Boolean               @default(false)
+  paintProtectionCost         Decimal?              @db.Decimal(10, 2)
+  totalAftermarketProducts    Decimal?              @db.Decimal(10, 2)
+  loanToValue                 Decimal?              @db.Decimal(5, 2)
+  paymentToIncome             Decimal?              @db.Decimal(5, 2)
+  debtToIncome                Decimal?              @db.Decimal(5, 2)
+  creditCheckConsent          Boolean               @default(false)
   creditCheckDate             DateTime?
-  termsAccepted               Boolean      @default(false)
+  termsAccepted               Boolean               @default(false)
   termsAcceptedDate           DateTime?
-  privacyPolicyAccepted       Boolean      @default(false)
-  electronicDisclosureConsent Boolean      @default(false)
-  creditReportPulled          Boolean      @default(false)
+  privacyPolicyAccepted       Boolean               @default(false)
+  electronicDisclosureConsent Boolean               @default(false)
+  creditReportPulled          Boolean               @default(false)
   creditReportDate            DateTime?
   creditReportProvider        String?
   creditScore                 Int?
@@ -1007,23 +1009,23 @@ model Deal {
   cudlAppId                   String?
   cudlStatus                  String?
   cudlSubmittedDate           DateTime?
-  cashTransactionOver10k      Boolean      @default(false)
-  form8300Filed               Boolean      @default(false)
+  cashTransactionOver10k      Boolean               @default(false)
+  form8300Filed               Boolean               @default(false)
   form8300FiledDate           DateTime?
-  redFlagsChecked             Boolean      @default(false)
+  redFlagsChecked             Boolean               @default(false)
   redFlagsNotes               String?
   activeLoan1Type             String?
   activeLoan1Creditor         String?
-  activeLoan1Balance          Decimal?     @db.Decimal(10, 2)
-  activeLoan1Payment          Decimal?     @db.Decimal(10, 2)
+  activeLoan1Balance          Decimal?              @db.Decimal(10, 2)
+  activeLoan1Payment          Decimal?              @db.Decimal(10, 2)
   activeLoan2Type             String?
   activeLoan2Creditor         String?
-  activeLoan2Balance          Decimal?     @db.Decimal(10, 2)
-  activeLoan2Payment          Decimal?     @db.Decimal(10, 2)
+  activeLoan2Balance          Decimal?              @db.Decimal(10, 2)
+  activeLoan2Payment          Decimal?              @db.Decimal(10, 2)
   activeLoan3Type             String?
   activeLoan3Creditor         String?
-  activeLoan3Balance          Decimal?     @db.Decimal(10, 2)
-  activeLoan3Payment          Decimal?     @db.Decimal(10, 2)
+  activeLoan3Balance          Decimal?              @db.Decimal(10, 2)
+  activeLoan3Payment          Decimal?              @db.Decimal(10, 2)
   salesPersonId               String?
   salesManagerId              String?
   financeManagerId            String?
@@ -1034,18 +1036,18 @@ model Deal {
   ipAddress                   String?
   userAgent                   String?
   applicationLanguage         String?
-  createdAt                   DateTime     @default(now())
-  updatedAt                   DateTime     @updatedAt
+  createdAt                   DateTime              @default(now())
+  updatedAt                   DateTime              @updatedAt
   metaValue                   Json?
   tenantId                    String?
   activities                  Activity[]
   ledgerEntries               CustomerLedgerEntry[]
-  buyer                       Buyer        @relation("BuyerDeals", fields: [buyerId], references: [id])
-  coBuyer                     Buyer?       @relation("CoBuyerDeals", fields: [coBuyerId], references: [id])
-  dealStatus                  DealStatus   @relation(fields: [dealStatusId], references: [id])
-  financeType                 FinanceType? @relation(fields: [financeTypeId], references: [id])
-  tenant                      Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  vehicle                     Vehicle      @relation(fields: [vehicleId], references: [id])
+  buyer                       Buyer                 @relation("BuyerDeals", fields: [buyerId], references: [id])
+  coBuyer                     Buyer?                @relation("CoBuyerDeals", fields: [coBuyerId], references: [id])
+  dealStatus                  DealStatus            @relation(fields: [dealStatusId], references: [id])
+  financeType                 FinanceType?          @relation(fields: [financeTypeId], references: [id])
+  tenant                      Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle                     Vehicle               @relation(fields: [vehicleId], references: [id])
 
   @@index([tenantId])
   @@index([buyerId])
@@ -1952,8 +1954,8 @@ model AuctionListing {
 }
 
 enum AuctionAnalysisType {
-  MARKET_CHECK    // MarketCheck price/MSRP snapshot
-  COMPARABLES     // MarketCheck comparable listings snapshot
+  MARKET_CHECK // MarketCheck price/MSRP snapshot
+  COMPARABLES // MarketCheck comparable listings snapshot
   AUCTION_HISTORY // Vehicle Databases auction sale history snapshot
 }
 
@@ -3240,21 +3242,26 @@ model VehicleInspection {
   marketPrice   Decimal? @db.Decimal(12, 2)
   notes         String?
 
+  // Cancellation (customer-initiated)
+  cancelledAt         DateTime?
+  cancelReason        String?
+  cancelledByCustomer Boolean   @default(false)
+
   // Audit
   createdBy String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relations
-  tenant       Tenant?                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  vehicle      Vehicle?                  @relation("VehicleInspections", fields: [vehicleId], references: [id], onDelete: SetNull)
-  buyer        Buyer?                    @relation("BuyerInspections", fields: [buyerId], references: [id], onDelete: SetNull)
-  checklist    InspectionChecklistItem[]
-  errorCodes   InspectionErrorCode[]
+  tenant        Tenant?                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vehicle       Vehicle?                  @relation("VehicleInspections", fields: [vehicleId], references: [id], onDelete: SetNull)
+  buyer         Buyer?                    @relation("BuyerInspections", fields: [buyerId], references: [id], onDelete: SetNull)
+  checklist     InspectionChecklistItem[]
+  errorCodes    InspectionErrorCode[]
   // Replaces the single specificRequest text — each item has its own note +
   // optional photo. specificRequest column is kept for backward compatibility.
-  requestItems InspectionRequestItem[]
-  media        Media[]                   @relation("InspectionMedia")
+  requestItems  InspectionRequestItem[]
+  media         Media[]                   @relation("InspectionMedia")
   // Clients (users) granted read access to this inspection. Independent of
   // inspectorId (who performs it) — sharedWith governs who can VIEW it.
   sharedWith    User[]                    @relation("InspectionSharedWith")
@@ -3375,6 +3382,36 @@ model InspectionErrorCode {
   @@map("inspection_error_codes")
 }
 
+// ─── Contact Messages ─────────────────────────────────────────────────────────
+// Web contact form submissions. tenantId is required (the form is always
+// tenant-scoped). buyerId is optional — set only when a logged-in portal
+// customer submits the form; otherwise the contact is anonymous.
+// status lifecycle: NEW → READ → ARCHIVED (managed at the service layer).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ContactMessage {
+  id       String  @id @default(uuid())
+  tenantId String
+  buyerId  String?
+  name     String
+  email    String
+  phone    String?
+  subject  String?
+  message  String
+  status   String  @default("NEW")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  buyer  Buyer? @relation(fields: [buyerId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("contact_messages")
+}
+
 // ─── Customer Portal ──────────────────────────────────────────────────────────
 // Foundation for htownautos.com customer-facing portal:
 //   - CustomerLedgerEntry: deposit/charge/refund ledger per buyer
@@ -3382,10 +3419,10 @@ model InspectionErrorCode {
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum CustomerLedgerEntryType {
-  DEPOSIT    // Customer adds funds (Stripe or manual)
-  CHARGE     // Funds charged for a service
-  REFUND     // Funds returned to the customer
-  APPLIED    // Funds applied toward a purchase order
+  DEPOSIT // Customer adds funds (Stripe or manual)
+  CHARGE // Funds charged for a service
+  REFUND // Funds returned to the customer
+  APPLIED // Funds applied toward a purchase order
   ADJUSTMENT // Manual correction by staff
 }
 
@@ -3397,16 +3434,16 @@ enum CustomerLedgerEntryStatus {
 
 enum PortalOrderType {
   INSPECTION // Payment for a vehicle inspection
-  SERVICE    // Payment for another service
-  DEPOSIT    // Direct deposit to ledger balance
+  SERVICE // Payment for another service
+  DEPOSIT // Direct deposit to ledger balance
 }
 
 enum PortalOrderStatus {
-  PENDING   // Created, awaiting payment
-  PAID      // Payment confirmed
+  PENDING // Created, awaiting payment
+  PAID // Payment confirmed
   FULFILLED // Service delivered / inspection completed
-  CANCELED  // Canceled before fulfillment
-  REFUNDED  // Payment reversed
+  CANCELED // Canceled before fulfillment
+  REFUNDED // Payment reversed
 }
 
 /// Double-entry ledger for customer deposits, charges, refunds, and balance
@@ -3432,7 +3469,7 @@ model CustomerLedgerEntry {
   relatedInspectionId String?
   // Optional link to the deal this entry relates to.
   // SetNull so ledger history survives if the deal is deleted.
-  relatedDealId String?
+  relatedDealId       String?
 
   // Staff user who created this entry. Null = system or customer-initiated action.
   createdById String?
@@ -3526,7 +3563,7 @@ model DepositReleaseRequest {
 
   stripeRefundId String? @map("stripe_refund_id") // set when approved + refunded via Stripe
 
-  decidedById String?   // staff User who approved or rejected
+  decidedById String? // staff User who approved or rejected
   decidedAt   DateTime? // timestamp of the approve/reject action
 
   createdAt DateTime @default(now())

@@ -6,6 +6,7 @@ import { OpenSearchLibModule } from '@htownautos/opensearch';
 import { RabbitMQModule } from '@htownautos/rabbitmq';
 import { CopartImportService } from './copart-import.service';
 import { SyncTriggerListener } from './sync-trigger.listener';
+import { WantedMatchNotifierService } from './wanted-match-notifier.service';
 
 @Module({
   imports: [
@@ -15,6 +16,10 @@ import { SyncTriggerListener } from './sync-trigger.listener';
     OpenSearchLibModule,
     RabbitMQModule,
   ],
-  providers: [CopartImportService, SyncTriggerListener],
+  providers: [
+    CopartImportService,
+    SyncTriggerListener,
+    WantedMatchNotifierService,
+  ],
 })
 export class AppModule {}

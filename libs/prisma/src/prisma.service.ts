@@ -330,6 +330,14 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.depositReleaseRequest;
   }
 
+  get notification() {
+    return this.prisma.notification;
+  }
+
+  get contactMessage() {
+    return this.prisma.contactMessage;
+  }
+
   get $transaction() {
     return this.prisma.$transaction.bind(this.prisma);
   }

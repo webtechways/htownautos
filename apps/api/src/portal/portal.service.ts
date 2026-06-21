@@ -1362,9 +1362,19 @@ export class PortalService {
       : [];
 
     const createdPreferenceIds: string[] = [];
+    const vehicleSummaries: string[] = [];
 
     for (const pref of preferences) {
       try {
+        const yf = pref['yearFrom'] != null ? Number(pref['yearFrom']) : null;
+        const yt = pref['yearTo'] != null ? Number(pref['yearTo']) : null;
+        const mk = String(pref['make'] ?? '').trim();
+        const mdl = Array.isArray(pref['models']) ? (pref['models'] as string[]) : [];
+        const yearPart = yf && yt ? `${yf}-${yt} ` : yf ? `${yf}+ ` : '';
+        const modelPart = mdl.length
+          ? ` ${mdl.slice(0, 2).join(', ')}${mdl.length > 2 ? ` +${mdl.length - 2}` : ''}`
+          : '';
+        const summary = `${yearPart}${mk}${modelPart}`.trim();
         const created = await this.prisma.buyerVehiclePreference.create({
           data: {
             buyerId: order.buyerId,
@@ -1386,6 +1396,7 @@ export class PortalService {
           },
         });
         createdPreferenceIds.push(created.id);
+        if (summary) vehicleSummaries.push(summary);
         this.logger.log(
           `fulfillFindACarOrder: created BuyerVehiclePreference ${created.id} for order ${order.id}`,
         );
@@ -1422,17 +1433,20 @@ export class PortalService {
       const buyerName = buyer
         ? `${buyer.firstName} ${buyer.lastName}`.trim()
         : order.buyerId;
+      const vehiclesCount = createdPreferenceIds.length;
       await this.notifications.notifyTenantStaff(tenantId, {
         title: 'Solicitud Find a Car for Me',
-        message: `${buyerName} solicitó Find a Car for Me`,
+        message: `${buyerName} solicitó Find a Car for Me (${vehiclesCount} ${vehiclesCount === 1 ? 'vehículo' : 'vehículos'})`,
         type: 'CUSTOMER_FIND_A_CAR',
         entityType: 'PortalOrder',
         entityId: order.id,
-        actionUrl: `${this.dashboardBaseUrl()}/buyers/${order.buyerId}`,
+        // Relative SPA path → opens the customer on For Bids ▸ Wanted Vehicles.
+        actionUrl: `/dashboard/customers/${order.buyerId}/edit#for-bids-wanted`,
         metaValue: {
           buyerId: order.buyerId,
           buyerName,
-          preferencesCount: createdPreferenceIds.length,
+          preferencesCount: vehiclesCount,
+          vehicles: vehicleSummaries,
           orderId: order.id,
         } as Record<string, unknown>,
       });

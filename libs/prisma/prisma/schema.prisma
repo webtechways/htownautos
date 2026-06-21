@@ -1592,6 +1592,8 @@ model Notification {
   @@index([isRead])
   @@index([priority])
   @@index([createdAt])
+  // Backs the notification-center feed query (per user+tenant, unread-first, newest-first).
+  @@index([tenantId, userId, isRead, createdAt])
   @@map("notifications")
 }
 

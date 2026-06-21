@@ -207,9 +207,12 @@ export class WantedMatchNotifierService {
 
       const lots = [...group.lots.values()];
       const count = lots.length;
+      // Staff-facing message, in Spanish, to match the existing notification
+      // producers (see portal.service CUSTOMER_FIND_A_CAR).
       const message =
-        `${count} new auction vehicle${count === 1 ? '' : 's'} ` +
-        `match ${group.buyerName}'s wanted list`;
+        count === 1
+          ? `${group.buyerName}: 1 auto nuevo coincide con su búsqueda`
+          : `${group.buyerName}: ${count} autos nuevos coinciden con su búsqueda`;
       const actionUrl = `/dashboard/customers/${group.buyerId}/edit#for-bids-matches`;
       const meta: Prisma.InputJsonValue = {
         buyerId: group.buyerId,
@@ -222,9 +225,9 @@ export class WantedMatchNotifierService {
         rows.push({
           tenantId: group.tenantId,
           userId,
-          title: 'New auction matches',
+          title: 'Coincidencia de subasta',
           message,
-          type: 'wanted_match',
+          type: 'AUCTION_WANTED_MATCH',
           entityType: 'buyer',
           entityId: group.buyerId,
           actionUrl,
@@ -236,7 +239,10 @@ export class WantedMatchNotifierService {
 
     if (rows.length === 0) return 0;
 
-    const result = await this.prisma.notification.createMany({ data: rows });
+    const result = await this.prisma.notification.createMany({
+      data: rows,
+      skipDuplicates: true,
+    });
     this.logger.log(
       `Wanted-match: ${byBuyer.size} buyer(s) matched → ${result.count} notification(s)`,
     );

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AuctionAnalysisType } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
+import { S3Service } from '@htownautos/common';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,14 @@ export interface MaxBidBlock {
   createdAt: Date;
 }
 
+export interface CarfaxBlock {
+  hasReport: boolean;
+  aiSummary: string | null;
+  analysis: string | null;
+  signedUrl?: string;
+  date?: Date | null;
+}
+
 export interface InspectionAuctionAnalysis {
   damages: DamagesBlock | null;
   parts: PartsPricingItem[] | null;
@@ -40,6 +49,7 @@ export interface InspectionAuctionAnalysis {
   marketCheck: unknown | null;
   comparables: unknown | null;
   auctionHistory: unknown | null;
+  carfax: CarfaxBlock;
 }
 
 const NULL_ANALYSIS: InspectionAuctionAnalysis = {
@@ -49,15 +59,21 @@ const NULL_ANALYSIS: InspectionAuctionAnalysis = {
   marketCheck: null,
   comparables: null,
   auctionHistory: null,
+  carfax: { hasReport: false, aiSummary: null, analysis: null },
 };
 
 // ── Service ───────────────────────────────────────────────────────────────────
+
+const CARFAX_SIGNED_URL_TTL = 60 * 60 * 6; // 6 hours
 
 @Injectable()
 export class AuctionAnalysisService {
   private readonly logger = new Logger(AuctionAnalysisService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly s3: S3Service,
+  ) {}
 
   /**
    * Gather all auction-analysis data for a given lot number. Queries run in
@@ -79,7 +95,7 @@ export class AuctionAnalysisService {
     }
 
     try {
-      const [damageRow, partRows, maxBidRow, snapshots] = await Promise.all([
+      const [damageRow, partRows, maxBidRow, snapshots, carfaxRow] = await Promise.all([
         this.prisma.auctionVehicleAnalysis.findFirst({
           where: { auctionListingId: listingId },
           orderBy: { createdAt: 'desc' },
@@ -99,6 +115,11 @@ export class AuctionAnalysisService {
         }),
         this.prisma.auctionAnalysisSnapshot.findMany({
           where: { auctionListingId: listingId },
+        }),
+        this.prisma.carfaxReport.findFirst({
+          where: { auctionListingId: listingId },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, s3Key: true, aiSummary: true, analysis: true, date: true },
         }),
       ]);
 
@@ -142,6 +163,28 @@ export class AuctionAnalysisService {
       // ── snapshots (indexed by type) ───────────────────────────────────────
       const byType = new Map(snapshots.map((s) => [s.type, s.data]));
 
+      // ── carfax ────────────────────────────────────────────────────────────
+      let carfax: CarfaxBlock;
+      if (!carfaxRow) {
+        carfax = { hasReport: false, aiSummary: null, analysis: null };
+      } else {
+        let signedUrl: string | undefined;
+        if (carfaxRow.s3Key) {
+          try {
+            signedUrl = await this.s3.getSignedUrl(carfaxRow.s3Key, CARFAX_SIGNED_URL_TTL);
+          } catch {
+            /* swallow — signed URL generation is best-effort */
+          }
+        }
+        carfax = {
+          hasReport: true,
+          aiSummary: carfaxRow.aiSummary,
+          analysis: carfaxRow.analysis,
+          signedUrl,
+          date: carfaxRow.date,
+        };
+      }
+
       return {
         damages,
         parts,
@@ -149,6 +192,7 @@ export class AuctionAnalysisService {
         marketCheck: byType.get(AuctionAnalysisType.MARKET_CHECK) ?? null,
         comparables: byType.get(AuctionAnalysisType.COMPARABLES) ?? null,
         auctionHistory: byType.get(AuctionAnalysisType.AUCTION_HISTORY) ?? null,
+        carfax,
       };
     } catch (err) {
       this.logger.error(

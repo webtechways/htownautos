@@ -60,6 +60,16 @@ export class CarfaxAnalyzerController {
     return { data: result };
   }
 
+  @Post(':reportId/summarize')
+  @ApiOperation({
+    summary: 'Generate a structured AI summary of an existing Carfax report and store in aiSummary',
+  })
+  @ApiParam({ name: 'reportId', description: 'Carfax report ID' })
+  async summarize(@Param('reportId') reportId: string) {
+    const result = await this.carfaxAnalyzerService.summarizeReport(reportId);
+    return { data: { id: result.id, aiSummary: result.aiSummary } };
+  }
+
   @Get('download')
   @ApiOperation({ summary: 'Get a signed download URL for a Carfax PDF' })
   @ApiQuery({ name: 'key', required: true, description: 'S3 key of the PDF' })

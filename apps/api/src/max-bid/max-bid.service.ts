@@ -189,8 +189,8 @@ Copart Repair Cost Estimate: $${listing.repairCost || 'N/A'}`;
 MarketCheck Price: $${marketPriceData.marketcheckPrice || 'N/A'}
 MSRP: $${marketPriceData.msrp || 'N/A'}`;
 
-    // Section 4: Comparable Vehicles (top 10)
-    const topComps = compsData.listings.slice(0, 10);
+    // Section 4: Comparable Vehicles (top 20 — give the model a broad market picture)
+    const topComps = compsData.listings.slice(0, 20);
     const compsLines = topComps
       .map(
         (c: any, i: number) =>
@@ -200,7 +200,7 @@ MSRP: $${marketPriceData.msrp || 'N/A'}`;
     const compsSection = `COMPARABLE VEHICLES (${compsData.numFound} found, showing top ${topComps.length}):
 ${compsLines}`;
 
-    // Section 5: Damage Analysis
+    // Section 5: Damage Analysis — ALL detected parts, no cap
     let damageSection = 'DAMAGE ANALYSIS: None available';
     if (damageAnalysis?.damages?.length > 0) {
       const totalRepairCost = damageAnalysis.damages.reduce(
@@ -218,7 +218,7 @@ ${compsLines}`;
 ${damageLines}`;
     }
 
-    // Section 6: Market Parts Pricing
+    // Section 6: Market Parts Pricing — ALL parts, no cap
     let partsSection = 'PARTS MARKET PRICING: None available';
     if (marketParts.length > 0) {
       const totalPartsValue = marketParts.reduce(
@@ -236,14 +236,22 @@ ${partsLines}`;
     }
 
     // Section 7: Carfax Report
+    // Prefer the structured AI summary when present — it's more signal-dense.
+    // Fall back to the raw stripped-HTML analysis. Truncation raised to 6000
+    // chars to give the model a full picture of title brand, accidents, and owners.
+    const CARFAX_TRUNCATION = 6000;
     let carfaxSection = 'CARFAX REPORT: None available';
     if (carfaxReport) {
-      const truncated =
-        carfaxReport.analysis.length > 2000
-          ? carfaxReport.analysis.substring(0, 2000) + '...[truncated]'
-          : carfaxReport.analysis;
-      carfaxSection = `CARFAX REPORT ANALYSIS:
+      const carfaxText = (carfaxReport.aiSummary ?? carfaxReport.analysis ?? '').trim();
+      const source = carfaxReport.aiSummary ? 'AI Summary' : 'Stripped Text';
+      if (carfaxText) {
+        const truncated =
+          carfaxText.length > CARFAX_TRUNCATION
+            ? carfaxText.substring(0, CARFAX_TRUNCATION) + '...[truncated]'
+            : carfaxText;
+        carfaxSection = `CARFAX REPORT (${source}):
 ${truncated}`;
+      }
     }
 
     return `You are an expert auto auction buyer and vehicle valuation analyst. Calculate the maximum realistic bid for this vehicle at auction.

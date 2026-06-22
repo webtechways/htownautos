@@ -193,12 +193,25 @@ export class AuctionSearchService {
 
     // Full text search
     if (dto.search) {
+      // sourceId is a keyword field — multi_match with fuzziness does not match it
+      // reliably, so we add a separate prefix clause in a bool should so that a
+      // bare lot-number query ("48161206") still surfaces that exact lot.
       must.push({
-        multi_match: {
-          query: dto.search,
-          fields: ['vin^3', 'make^2', 'model^2', 'damageDescription', 'heading'],
-          type: 'best_fields',
-          fuzziness: 'AUTO',
+        bool: {
+          should: [
+            {
+              multi_match: {
+                query: dto.search,
+                fields: ['vin^3', 'make^2', 'model^2', 'sourceId^2', 'damageDescription', 'heading'],
+                type: 'best_fields',
+                fuzziness: 'AUTO',
+              },
+            },
+            {
+              prefix: { sourceId: dto.search },
+            },
+          ],
+          minimum_should_match: 1,
         },
       });
     }

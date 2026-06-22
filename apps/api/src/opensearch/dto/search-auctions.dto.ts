@@ -38,7 +38,7 @@ export class SearchAuctionsDto {
 
   // === COMMON FILTERS ===
 
-  @ApiPropertyOptional({ description: 'Full text search (VIN, make, model)' })
+  @ApiPropertyOptional({ description: 'Full text search (VIN, make, model, lot number)' })
   @IsOptional()
   @IsString()
   search?: string;

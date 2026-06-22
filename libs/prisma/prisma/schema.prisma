@@ -2654,6 +2654,7 @@ model CarfaxReport {
   vin              String?
   s3Key            String
   analysis         String?   @db.Text
+  aiSummary        String?   @db.Text
   // Report date (when the Carfax was issued), separate from createdAt which
   // is when this row was inserted into our DB.
   date             DateTime?

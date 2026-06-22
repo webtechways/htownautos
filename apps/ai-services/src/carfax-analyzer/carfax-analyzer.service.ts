@@ -157,6 +157,138 @@ Be thorough and specific. Include dates and mileage where available. This is a p
     }
   }
 
+  /**
+   * Produce a clean, structured AI summary and store it in `aiSummary`.
+   *
+   * Text source (in priority order):
+   *  1. `report.analysis` — stripped plain-text already in the DB (fastest, free)
+   *  2. S3 object re-fetched:
+   *     - HTML file → strip tags to plain text
+   *     - PDF → delegate to the existing analyzeReport PDF path (stores to `analysis` first)
+   *
+   * The summary is always in English and covers: accidents/damage, title brand,
+   * odometer/rollback, owners, service records, recalls, lemon/buyback, risk note.
+   */
+  async summarizeReport(reportId: string) {
+    const report = await this.prisma.carfaxReport.findUnique({
+      where: { id: reportId },
+      include: { auctionListing: true },
+    });
+    if (!report) {
+      throw new NotFoundException('Carfax report not found');
+    }
+
+    // ── Determine the text to summarize ──────────────────────────────────────
+    const MIN_ANALYSIS_CHARS = 200; // anything shorter is probably a stub
+    let textToSummarize: string | null = null;
+
+    if (report.analysis && report.analysis.length >= MIN_ANALYSIS_CHARS) {
+      // Use the pre-stripped plain text already in the DB — no S3 fetch needed.
+      textToSummarize = report.analysis;
+      this.logger.log(`summarizeReport ${reportId}: using existing analysis (${textToSummarize.length} chars)`);
+    } else {
+      // Re-fetch from S3 and detect format.
+      this.logger.log(`summarizeReport ${reportId}: downloading from S3 (${report.s3Key})`);
+      let rawBuffer: Buffer;
+      try {
+        rawBuffer = await this.s3Service.downloadBuffer(report.s3Key);
+      } catch (err) {
+        throw new InternalServerErrorException(`Failed to download S3 object: ${(err as Error).message}`);
+      }
+
+      const sniff = rawBuffer.slice(0, 5).toString('ascii');
+      const isPdf = sniff.startsWith('%PDF');
+
+      if (isPdf) {
+        // PDF path: run the existing analyzeReport (stores to `analysis`) then re-read.
+        this.logger.log(`summarizeReport ${reportId}: PDF detected, running analyzeReport first`);
+        const analyzed = await this.analyzeReport(reportId);
+        textToSummarize = analyzed.analysis ?? null;
+      } else {
+        // Assume HTML — strip tags to plain text.
+        const html = rawBuffer.toString('utf8');
+        textToSummarize = html
+          .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+          .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        this.logger.log(`summarizeReport ${reportId}: HTML detected, stripped to ${textToSummarize.length} chars`);
+      }
+    }
+
+    if (!textToSummarize || textToSummarize.length < MIN_ANALYSIS_CHARS) {
+      throw new BadRequestException('Insufficient Carfax content to summarize');
+    }
+
+    const listing = report.auctionListing;
+    const vehicleInfo = [listing.year, listing.make, listing.modelGroup, listing.modelDetail, listing.trim]
+      .filter(Boolean)
+      .join(' ');
+
+    const MAX_INPUT_CHARS = 18000; // generous — GPT-4o context is large
+    const truncatedText = textToSummarize.length > MAX_INPUT_CHARS
+      ? textToSummarize.slice(0, MAX_INPUT_CHARS) + '\n...[content truncated]'
+      : textToSummarize;
+
+    const systemPrompt = `You are an automotive history report analyst. You summarize vehicle history reports in clear, structured plain text in English. Be concise but complete. Use section headers in ALL CAPS followed by a colon. Do not use markdown or bullet symbols.`;
+
+    const userPrompt = `Summarize the following Carfax report for a ${vehicleInfo} (VIN: ${listing.vin ?? 'N/A'}).
+
+Produce a clean structured plain-text summary (no markdown) with these sections:
+ACCIDENT/DAMAGE HISTORY: (every reported incident, severity, date if known)
+TITLE BRAND: (clean, salvage, rebuilt, flood, lemon, etc.)
+ODOMETER/ROLLBACK FLAGS: (mileage progression, any red flags)
+NUMBER OF OWNERS: (count, types: personal/fleet/rental/lease)
+SERVICE RECORDS: (documented services, gaps, regularity)
+RECALLS/OPEN CAMPAIGNS: (list any open recalls)
+LEMON/BUYBACK: (yes/no with details)
+RISK NOTE: (2-3 sentences summarizing key risks or confidence for purchase)
+
+--- CARFAX REPORT TEXT ---
+${truncatedText}`;
+
+    this.logger.log(`→ OpenAI Carfax Summary: summarizing report ${reportId} for ${vehicleInfo}`);
+    const start = Date.now();
+
+    let summaryText: string;
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 1500,
+        temperature: 0.2,
+      });
+
+      const duration = Date.now() - start;
+      summaryText = response.choices[0]?.message?.content?.trim() ?? '';
+      this.logger.log(`← OpenAI Carfax Summary OK (${duration}ms) tokens=${response.usage?.total_tokens}`);
+
+      if (!summaryText) {
+        throw new InternalServerErrorException('OpenAI returned empty summary');
+      }
+    } catch (err) {
+      const duration = Date.now() - start;
+      if (err instanceof NotFoundException || err instanceof InternalServerErrorException || err instanceof BadRequestException) {
+        throw err;
+      }
+      this.logger.error(`← OpenAI Carfax Summary FAILED (${duration}ms): ${err}`);
+      throw new InternalServerErrorException('Failed to generate Carfax AI summary');
+    }
+
+    const updated = await this.prisma.carfaxReport.update({
+      where: { id: reportId },
+      data: { aiSummary: summaryText },
+    });
+
+    this.logger.log(`Carfax AI summary saved for report ${reportId}`);
+    return updated;
+  }
+
   async getReports(auctionListingId: string) {
     const reports = await this.prisma.carfaxReport.findMany({
       where: { auctionListingId: BigInt(auctionListingId) },

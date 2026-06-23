@@ -855,11 +855,20 @@ export class CopartImportService implements OnModuleInit {
         RETURNING "lotNumber"::text AS "lotNumber", (xmax = 0) AS inserted
       `);
 
-      const newLotNumbers = result.rows
+      // node-postgres returns an ARRAY of results for a multi-statement simple
+      // query (here: CREATE FUNCTION + INSERT…RETURNING). The RETURNING rows
+      // live in the LAST result; `result.rows` is undefined on the array itself
+      // (this was the "Cannot read properties of undefined (reading 'filter')").
+      const raw = result as unknown;
+      const insertResult = (
+        Array.isArray(raw) ? raw[raw.length - 1] : raw
+      ) as { rows?: { lotNumber: string; inserted: boolean }[]; rowCount?: number | null };
+
+      const newLotNumbers = (insertResult.rows ?? [])
         .filter((r) => r.inserted)
         .map((r) => r.lotNumber);
 
-      return { total: result.rowCount ?? 0, newLotNumbers };
+      return { total: insertResult.rowCount ?? 0, newLotNumbers };
     } finally {
       client.release();
     }

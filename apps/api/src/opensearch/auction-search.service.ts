@@ -178,18 +178,24 @@ export class AuctionSearchService {
     const must: any[] = [];
     const filter: any[] = [];
 
-    // Always exclude already-auctioned items:
-    // keep listings where saleDate is null/missing, 0 (no date yet), OR saleDate >= today
-    filter.push({
-      bool: {
-        should: [
-          { bool: { must_not: { exists: { field: 'saleDate' } } } },
-          { term: { saleDate: 0 } },
-          { range: { saleDate: { gte: this.getTodayAsInt() } } },
-        ],
-        minimum_should_match: 1,
-      },
-    });
+    // Exclude already-auctioned items from the DEFAULT browse view only
+    // (keep listings with no saleDate, saleDate 0, or saleDate >= today).
+    // When the user does an EXPLICIT lookup (free-text search, VIN, lot/source/ids)
+    // do NOT hide past-dated lots: many stay active on Copart ("On Minimum Bid" /
+    // relisted) with a stale saleDate, and the user expects to find them by VIN/lot.
+    const explicitLookup = !!(dto.search || dto.vin || dto.sourceIds || dto.ids);
+    if (!explicitLookup) {
+      filter.push({
+        bool: {
+          should: [
+            { bool: { must_not: { exists: { field: 'saleDate' } } } },
+            { term: { saleDate: 0 } },
+            { range: { saleDate: { gte: this.getTodayAsInt() } } },
+          ],
+          minimum_should_match: 1,
+        },
+      });
+    }
 
     // Full text search
     if (dto.search) {

@@ -181,6 +181,41 @@ export class CopartImportService {
   /** Tracks the last phase string to detect phase changes for throttle bypass. */
   private _lastPhase = '';
 
+  /**
+   * Notify dashboard staff that a Copart sync failed, with the reason.
+   * data-sync writes Notification rows directly via Prisma (it shares the DB
+   * with the api). Best-effort — never throws. Targets the main HtownAutos
+   * tenant (override via SYNC_FAILURE_NOTIFY_TENANT_ID).
+   */
+  private async notifySyncFailure(reason: string): Promise<void> {
+    try {
+      const tenantId =
+        process.env.SYNC_FAILURE_NOTIFY_TENANT_ID ||
+        '50197477-9e89-4465-bed5-99c638c435a0'; // HtownAutos main tenant (PORTAL_TENANT_ID)
+      const staff = await this.prisma.tenantUser.findMany({
+        where: { tenantId, status: 'active', isActive: true },
+        select: { userId: true },
+      });
+      const userIds = [...new Set(staff.map((s) => s.userId))];
+      if (userIds.length === 0) return;
+      const cleanReason = (reason || 'Motivo desconocido').replace(/\s+/g, ' ').trim().slice(0, 300);
+      await this.prisma.notification.createMany({
+        data: userIds.map((userId) => ({
+          tenantId,
+          userId,
+          title: 'Sincronización de Copart falló',
+          message: `La sincronización no se completó: ${cleanReason}`,
+          type: 'SYNC_FAILED',
+          priority: 'high',
+          actionUrl: '/dashboard/auction',
+          metaValue: { reason: cleanReason, source: 'copart' },
+        })),
+      });
+    } catch (e) {
+      this.logger.warn(`Failed to create sync-failure notifications: ${(e as Error).message}`);
+    }
+  }
+
   @Cron('9,39 5-22 * * *')
   async handleCopartSyncCron(): Promise<void> {
     await this.runSync();
@@ -264,6 +299,8 @@ export class CopartImportService {
             ...metrics,
           },
         });
+        // Alert staff in the dashboard that the sync did not complete, with the reason.
+        await this.notifySyncFailure(err?.message || 'Motivo desconocido');
       } finally {
         this.activeSyncRunId = null;
       }

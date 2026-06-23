@@ -2,8 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { Pool, PoolClient } from 'pg';
-import { Readable } from 'stream';
-import csvParser = require('csv-parser');
+import { parse as csvParse } from 'csv-parse';
 import { PrismaService } from '@htownautos/prisma';
 import { AuctionSyncService } from '@htownautos/opensearch';
 import { WantedMatchNotifierService } from './wanted-match-notifier.service';
@@ -120,6 +119,13 @@ export class CopartImportService {
   private readonly logger = new Logger(CopartImportService.name);
   private readonly pool: Pool;
 
+  /** ID of the currently-running SyncRun row; null when idle. */
+  private activeSyncRunId: string | null = null;
+  /** Last progress integer (0-100) written to DB — used to throttle writes. */
+  private lastWrittenProgress = -1;
+  /** Timestamp (ms) of the last progress DB write. */
+  private lastProgressWriteTs = 0;
+
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
@@ -130,6 +136,50 @@ export class CopartImportService {
       connectionString: this.configService.get<string>('DATABASE_URL'),
     });
   }
+
+  /**
+   * Best-effort progress update. Never throws — a DB hiccup must never abort
+   * the sync. Throttled: only writes when the integer % changed AND at least
+   * 1 second has elapsed since the last write (or phase changed).
+   */
+  private async updateProgress(
+    phase: string,
+    progress: number,
+    extra?: { processedRows?: number; totalRows?: number },
+  ): Promise<void> {
+    const id = this.activeSyncRunId;
+    if (!id) return;
+
+    const intProgress = Math.min(100, Math.max(0, Math.round(progress)));
+    const now = Date.now();
+    const phaseChanged = phase !== this._lastPhase;
+    const progressChanged = intProgress !== this.lastWrittenProgress;
+    const enoughTimeElapsed = now - this.lastProgressWriteTs >= 1_000;
+
+    if (!phaseChanged && !progressChanged && !enoughTimeElapsed) return;
+
+    this._lastPhase = phase;
+    this.lastWrittenProgress = intProgress;
+    this.lastProgressWriteTs = now;
+
+    try {
+      await this.prisma.syncRun.update({
+        where: { id },
+        data: {
+          phase,
+          progress: intProgress,
+          ...(extra?.processedRows !== undefined ? { processedRows: extra.processedRows } : {}),
+          ...(extra?.totalRows !== undefined ? { totalRows: extra.totalRows } : {}),
+        },
+      });
+    } catch (err) {
+      const e = err as Error;
+      this.logger.warn(`Progress update failed (non-fatal): ${e?.message}`);
+    }
+  }
+
+  /** Tracks the last phase string to detect phase changes for throttle bypass. */
+  private _lastPhase = '';
 
   @Cron('9,39 5-22 * * *')
   async handleCopartSyncCron(): Promise<void> {
@@ -168,9 +218,13 @@ export class CopartImportService {
 
       // 2. Open the SyncRun row in "running" state
       const runRow = await this.prisma.syncRun.create({
-        data: { source: 'copart', status: 'running' },
+        data: { source: 'copart', status: 'running', phase: 'downloading', progress: 0 },
       });
       syncRunId = runRow.id;
+      this.activeSyncRunId = syncRunId;
+      this.lastWrittenProgress = -1;
+      this.lastProgressWriteTs = 0;
+      this._lastPhase = '';
       const startTs = Date.now();
       const syncStart = runRow.startedAt;
 
@@ -184,6 +238,8 @@ export class CopartImportService {
           where: { id: syncRunId },
           data: {
             status: 'success',
+            phase: 'done',
+            progress: 100,
             finishedAt: new Date(),
             durationMs: Date.now() - startTs,
             ...metrics,
@@ -208,6 +264,8 @@ export class CopartImportService {
             ...metrics,
           },
         });
+      } finally {
+        this.activeSyncRunId = null;
       }
     } finally {
       if (gotLock) {
@@ -230,40 +288,51 @@ export class CopartImportService {
     const url = this.configService.get<string>('COPART_DATA');
     if (!url) throw new Error('COPART_DATA environment variable is not set');
 
-    // Step 1: Download CSV (retry with backoff)
+    // Phase: downloading (0→20)
+    await this.updateProgress('downloading', 0);
     const csvBuffer = await this.downloadCsvWithRetry(url);
     metrics.bytesDownloaded = csvBuffer.length;
     this.logger.log(`Downloaded ${csvBuffer.length} bytes from Copart`);
+    await this.updateProgress('downloading', 20);
 
-    // Step 2: Parse CSV
+    // Phase: parsing (20→45)
+    await this.updateProgress('parsing', 20);
     const rows = await this.parseCsv(csvBuffer);
     metrics.rowsParsed = rows.length;
     this.logger.log(`Parsed ${rows.length} rows`);
+    await this.updateProgress('parsing', 45, { totalRows: rows.length });
 
     // Step 3: Sanity-check the parsed result — refuse to truncate if feed looks wrong
     this.assertFeedSanity(rows);
 
-    // Step 4: Filter out malformed rows (bad lotNumber, missing required fields)
+    // Phase: validating (45→55)
+    await this.updateProgress('validating', 45);
     const { valid, invalid } = this.validateRows(rows);
     metrics.rowsValid = valid.length;
     metrics.rowsInvalid = invalid;
     if (invalid > 0) {
       this.logger.warn(`Skipped ${invalid} invalid rows (kept ${valid.length})`);
     }
+    await this.updateProgress('validating', 55);
+
+    // Phase: saving (55→90) — truncate + stage + upsert
+    await this.updateProgress('saving', 55);
 
     // Step 5: Truncate staging (only after we know the feed is OK)
     await this.truncateStaging();
 
-    // Step 6: Batch INSERT into staging
+    // Step 6: Batch INSERT into staging (progress 55→75, updated per batch)
     await this.insertIntoStaging(valid);
+    await this.updateProgress('saving', 75, { processedRows: valid.length, totalRows: rows.length });
 
-    // Step 7: Staging → auction_listings (upsert + mark lastSeenAt)
+    // Step 7: Staging → auction_listings (upsert + mark lastSeenAt) (75→88)
     const { total: upserted, newLotNumbers } =
       await this.mapStagingToAuctionListings();
     metrics.rowsUpserted = upserted;
     this.logger.log(
       `Upserted ${upserted} into auction_listings (${newLotNumbers.length} brand-new lots)`,
     );
+    await this.updateProgress('saving', 88);
 
     // Step 7b: Notify staff about brand-new lots that match a buyer's wanted
     // list. Guarded against bulk/initial loads (see NEW_LOT_NOTIFY_LIMIT) and
@@ -297,15 +366,18 @@ export class CopartImportService {
     if (metrics.rowsStaleMarked > 0) {
       this.logger.log(`Marked ${metrics.rowsStaleMarked} listings as stale`);
     }
+    await this.updateProgress('saving', 90);
 
     // Step 9: Truncate staging
     await this.truncateStaging();
 
-    // Step 10: Reindex OpenSearch
+    // Phase: indexing (90→100)
+    await this.updateProgress('indexing', 90);
     const { success, failed } = await this.syncService.syncAllCopart();
     metrics.rowsIndexed = success;
     metrics.rowsIndexFailed = failed;
     this.logger.log(`OpenSearch: ${success} indexed, ${failed} failed`);
+    await this.updateProgress('indexing', 99);
 
     // Silence unused-param warning; kept for future signature stability.
     void syncStart;
@@ -361,16 +433,53 @@ export class CopartImportService {
   private parseCsv(csvBuffer: Buffer): Promise<Record<string, string>[]> {
     return new Promise((resolve, reject) => {
       const rows: Record<string, string>[] = [];
-      Readable.from(csvBuffer)
-        .pipe(
-          csvParser({
-            mapHeaders: ({ header }) => CSV_HEADER_MAP[header.trim()] ?? header.trim(),
-            skipLines: 0,
-          }),
-        )
-        .on('data', (row: Record<string, string>) => rows.push(row))
-        .on('end', () => resolve(rows))
-        .on('error', reject);
+
+      const parser = csvParse({
+        // Map raw header names to internal column names on the fly.
+        // Unknown headers pass through as-is so we don't silently lose columns.
+        columns: (rawHeaders: string[]) =>
+          rawHeaders.map((h) => CSV_HEADER_MAP[h.trim()] ?? h.trim()),
+        // Tolerant quoting: csv-parser's default strict mode breaks on
+        // Copart's unescaped internal quotes (e.g. "5\" lift kit"). This
+        // option makes the parser recover gracefully instead of desyncing.
+        relax_quotes: true,
+        // Copart rows occasionally have more or fewer fields than the header.
+        // Without this, csv-parse throws on those rows. With it, short rows
+        // are padded with undefined and long rows have extras discarded.
+        relax_column_count: true,
+        // Skip any record that still fails to parse after relaxation, rather
+        // than rejecting the entire buffer.
+        skip_records_with_error: true,
+        // Strip a leading UTF-8 BOM if present.
+        bom: true,
+        // NOTE: do NOT enable csv-parse's `trim` option. On the real Copart
+        // feed it interacts with relax_quotes on the ~10 unbalanced-quote rows
+        // and collapses 140k rows down to ~4k (verified). Trim per-value in
+        // `cast` instead, which runs after a field is extracted and is safe.
+        // Cast all values to trimmed strings (pipeline expects Record<string,string>).
+        cast: (value: string) => (value ?? '').trim(),
+      });
+
+      parser.on('readable', () => {
+        let record: Record<string, string> | null;
+        // eslint-disable-next-line no-cond-assign
+        while ((record = parser.read() as Record<string, string> | null) !== null) {
+          rows.push(record);
+        }
+      });
+
+      parser.on('error', (err: Error) => {
+        // Individual record errors are swallowed by skip_records_with_error;
+        // a top-level error here means the stream itself is broken.
+        this.logger.warn(`csv-parse stream error (skipping): ${err.message}`);
+        // Do NOT reject — emit what we have so the sanity check can run and
+        // produce a clear message if we got too few rows.
+      });
+
+      parser.on('end', () => resolve(rows));
+
+      parser.write(csvBuffer);
+      parser.end();
     });
   }
 

@@ -29,6 +29,7 @@ import { SearchAuctionsDto } from './dto/search-auctions.dto';
 import { DiscardAuctionDto } from './dto/discard-auction.dto';
 import { UpsertAnalysisSnapshotDto } from './dto/upsert-analysis-snapshot.dto';
 import { ClerkJwtGuard, CurrentUser, Public } from '@htownautos/auth';
+import { PrismaService } from '@htownautos/prisma';
 
 /**
  * Heavy sync work (CSV import, full reindex, index recreation) is owned by the
@@ -47,6 +48,7 @@ export class AuctionSearchController {
     private readonly syncService: AuctionSyncService,
     private readonly indexService: AuctionIndexService,
     private readonly rabbitMQ: RabbitMQService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get('search')
@@ -152,6 +154,76 @@ export class AuctionSearchController {
   @ApiResponse({ status: 200, description: 'Sync statistics' })
   async getSyncStats() {
     return this.syncService.getSyncStats();
+  }
+
+  /**
+   * GET /auctions/sync/status
+   *
+   * Returns the most recent SyncRun for source='copart'. If a run is actively
+   * in status='running', that row is always preferred over a completed one.
+   * Poll this endpoint from the dashboard to show live sync progress.
+   *
+   * Auth: no explicit @UseGuards — the global ClerkJwtGuard applied in AppModule
+   * covers all routes that aren't decorated with @Public(). Staff-only by default.
+   */
+  @Get('sync/status')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get live sync status for the Copart feed',
+    description:
+      'Returns the active (running) SyncRun if one exists, otherwise the most recent one. ' +
+      'Fields: status, phase, progress (0-100), processedRows, totalRows, startedAt, finishedAt, ' +
+      'durationMs, bytesDownloaded, rowsParsed, rowsUpserted, rowsStaleMarked.',
+  })
+  @ApiResponse({ status: 200, description: 'Current or last Copart sync status' })
+  async getSyncStatus() {
+    // Prefer any currently-running row so the UI sees live progress.
+    const running = await this.prisma.syncRun.findFirst({
+      where: { source: 'copart', status: 'running' },
+      orderBy: { startedAt: 'desc' },
+      select: {
+        status: true,
+        phase: true,
+        progress: true,
+        processedRows: true,
+        totalRows: true,
+        startedAt: true,
+        finishedAt: true,
+        durationMs: true,
+        source: true,
+        bytesDownloaded: true,
+        rowsParsed: true,
+        rowsUpserted: true,
+        rowsStaleMarked: true,
+      },
+    });
+
+    if (running) return running;
+
+    // No active run — return the most recent completed/failed row.
+    const latest = await this.prisma.syncRun.findFirst({
+      where: { source: 'copart' },
+      orderBy: { startedAt: 'desc' },
+      select: {
+        status: true,
+        phase: true,
+        progress: true,
+        processedRows: true,
+        totalRows: true,
+        startedAt: true,
+        finishedAt: true,
+        durationMs: true,
+        source: true,
+        bytesDownloaded: true,
+        rowsParsed: true,
+        rowsUpserted: true,
+        rowsStaleMarked: true,
+      },
+    });
+
+    if (!latest) return { status: 'idle', progress: 0 };
+
+    return latest;
   }
 
   @Get('index/stats')

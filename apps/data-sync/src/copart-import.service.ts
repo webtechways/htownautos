@@ -453,7 +453,36 @@ export class CopartImportService {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status} ${response.statusText}`);
       }
-      const buf = Buffer.from(await response.arrayBuffer());
+      // Stream the body so the progress bar advances 0→20% during the ~88MB
+      // download (otherwise it sits at 0% for the whole download and looks
+      // frozen). Falls back to a single buffer if the body isn't streamable.
+      const total = Number(response.headers.get('content-length')) || 0;
+      const body = response.body;
+      if (!body || typeof (body as ReadableStream).getReader !== 'function') {
+        const buf = Buffer.from(await response.arrayBuffer());
+        if (buf.length === 0) throw new Error('Empty response body');
+        return buf;
+      }
+      const reader = (body as ReadableStream<Uint8Array>).getReader();
+      const chunks: Buffer[] = [];
+      let received = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(Buffer.from(value));
+          received += value.length;
+          if (total > 0) {
+            // Download occupies the 0→20 band of the overall progress.
+            await this.updateProgress(
+              'downloading',
+              Math.min(20, Math.round((received / total) * 20)),
+            );
+          }
+        }
+      }
+      const buf = Buffer.concat(chunks);
       if (buf.length === 0) {
         throw new Error('Empty response body');
       }
@@ -587,6 +616,12 @@ export class CopartImportService {
         const sql = `INSERT INTO copart_staging (${colList}) VALUES ${valuePlaceholders.join(', ')}`;
         await client.query(sql, values);
         total += batch.length;
+        // Advance the bar through the 55→75 band as rows are staged (throttled).
+        await this.updateProgress(
+          'saving',
+          55 + Math.round((total / rows.length) * 20),
+          { processedRows: total, totalRows: rows.length },
+        );
       }
       this.logger.log(`Staged ${total} rows`);
     } finally {

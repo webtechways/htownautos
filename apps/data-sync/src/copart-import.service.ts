@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
-import { Pool, PoolClient } from 'pg';
+import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { parse as csvParse } from 'csv-parse';
 import { PrismaService } from '@htownautos/prisma';
 import { AuctionSyncService } from '@htownautos/opensearch';
@@ -258,9 +258,10 @@ export class CopartImportService implements OnModuleInit {
 
     try {
       // 1. Try to acquire the advisory lock (non-blocking)
-      const lockRes = await lockClient.query<{ got: boolean }>(
+      const rawLock = await lockClient.query<{ got: boolean }>(
         `SELECT pg_try_advisory_lock(${LOCK_KEY_SQL}) AS got`,
       );
+      const lockRes = this.assertSingleResult<{ got: boolean }>(rawLock, 'advisory lock SELECT');
       gotLock = lockRes.rows[0]?.got === true;
 
       if (!gotLock) {
@@ -622,6 +623,10 @@ export class CopartImportService implements OnModuleInit {
     let total = 0;
 
     try {
+      // 20-minute per-statement timeout prevents a hung INSERT batch from
+      // keeping the run in "running" state indefinitely.
+      await client.query("SET statement_timeout = '1200000'");
+
       const colList = STAGING_COLUMNS.map((c) => `"${c}"`).join(', ');
 
       for (let i = 0; i < rows.length; i += BATCH_SIZE) {
@@ -656,19 +661,45 @@ export class CopartImportService implements OnModuleInit {
     return total;
   }
 
+  /**
+   * Guard: throws a clear error if `query.result` is an array (i.e. the caller
+   * accidentally passed a multi-statement query string). pg when running a
+   * simple multi-statement query returns QueryResult[], not QueryResult, so
+   * `.rows` on the array is undefined — the root cause of the June 2026 outage.
+   * Call this on EVERY place that reads .rows / .rowCount from a client.query()
+   * result so any future regression fails loudly at the source.
+   */
+  private assertSingleResult<T extends QueryResultRow>(
+    result: unknown,
+    label: string,
+  ): QueryResult<T> {
+    if (Array.isArray(result)) {
+      throw new Error(
+        `Multi-statement query in ${label} returned an array; split it into ` +
+          `single statements. This is a programmer error — each client.query() ` +
+          `call must contain exactly one SQL statement.`,
+      );
+    }
+    return result as QueryResult<T>;
+  }
+
   private async mapStagingToAuctionListings(): Promise<{
     total: number;
     newLotNumbers: string[];
   }> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query<{ lotNumber: string; inserted: boolean }>(`
-        -- Sanitizes a free-form numeric string from the Copart CSV.
-        --   * strips anything that isn't a digit or '.'
-        --   * trims leading/trailing dots
-        --   * collapses multiple dots (treats them as thousands separators)
-        --   * returns NULL when the integer part exceeds max_int_digits, so
-        --     the INSERT never trips Decimal(p,s) overflow on garbage values.
+      // Set per-session statement_timeout to prevent a single hung query from
+      // holding the sync in "running" state for days. 20 minutes is generous
+      // for any single statement; a real hang will exceed this and throw,
+      // letting the outer catch mark the run "failed" and notify staff.
+      await client.query("SET statement_timeout = '1200000'");
+
+      // STEP 1: Create the helper function. Must be its own round-trip so that
+      // node-postgres returns a single QueryResult, not an array.
+      // pg_temp functions are session-scoped — the INSERT below on the same
+      // client/session will still see this function.
+      await client.query(`
         CREATE OR REPLACE FUNCTION pg_temp.safe_numeric(val text, max_int_digits int DEFAULT 10) RETURNS numeric AS $$
         DECLARE
           cleaned  text;
@@ -689,7 +720,11 @@ export class CopartImportService implements OnModuleInit {
           RETURN NULL;
         END;
         $$ LANGUAGE plpgsql;
+      `);
 
+      // STEP 2: Run the INSERT as a separate single-statement query.
+      // Now result is a plain QueryResult<T>, not QueryResult<T>[].
+      const rawInsert = await client.query<{ lotNumber: string; inserted: boolean }>(`
         INSERT INTO auction_listings (
           "auctionName", "copartId", "yardNumber", "yardName", "saleDate",
           "dayOfWeek", "saleTime", "timeZone", "itemNumber", "lotNumber",
@@ -855,16 +890,16 @@ export class CopartImportService implements OnModuleInit {
         RETURNING "lotNumber"::text AS "lotNumber", (xmax = 0) AS inserted
       `);
 
-      // node-postgres returns an ARRAY of results for a multi-statement simple
-      // query (here: CREATE FUNCTION + INSERT…RETURNING). The RETURNING rows
-      // live in the LAST result; `result.rows` is undefined on the array itself
-      // (this was the "Cannot read properties of undefined (reading 'filter')").
-      const raw = result as unknown;
-      const insertResult = (
-        Array.isArray(raw) ? raw[raw.length - 1] : raw
-      ) as { rows?: { lotNumber: string; inserted: boolean }[]; rowCount?: number | null };
+      // assertSingleResult guards against the multi-statement footgun that
+      // caused the June 2026 outage. With the CREATE FUNCTION now split into its
+      // own call above, this should always be a no-op — but if someone ever
+      // merges a multi-statement string here again the error will be explicit.
+      const insertResult = this.assertSingleResult<{
+        lotNumber: string;
+        inserted: boolean;
+      }>(rawInsert, 'mapStagingToAuctionListings INSERT');
 
-      const newLotNumbers = (insertResult.rows ?? [])
+      const newLotNumbers = insertResult.rows
         .filter((r) => r.inserted)
         .map((r) => r.lotNumber);
 
@@ -883,7 +918,11 @@ export class CopartImportService implements OnModuleInit {
   private async markStaleListings(): Promise<number> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query(
+      // 20-minute per-statement timeout; an UPDATE on 100k rows should never
+      // take anywhere near this long under normal conditions.
+      await client.query("SET statement_timeout = '1200000'");
+
+      const rawResult = await client.query(
         `
         UPDATE auction_listings
         SET "isStale" = true, "updatedAt" = NOW()
@@ -895,6 +934,7 @@ export class CopartImportService implements OnModuleInit {
           )
         `,
       );
+      const result = this.assertSingleResult(rawResult, 'markStaleListings UPDATE');
       return result.rowCount ?? 0;
     } finally {
       client.release();

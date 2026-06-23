@@ -74,6 +74,7 @@ import { AdminSeedModule } from './admin-seed/admin-seed.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ContactMessagesModule } from './contact-messages/contact-messages.module';
 import { AiTranslateModule } from './ai-translate/ai-translate.module';
+import { SyncWatchdogModule } from './sync-watchdog/sync-watchdog.module';
 
 /**
  * API Gateway Module
@@ -164,6 +165,7 @@ import { AiTranslateModule } from './ai-translate/ai-translate.module';
     NotificationsModule,
     ContactMessagesModule,
     AiTranslateModule,
+    SyncWatchdogModule,
   ],
   controllers: [AppController],
   providers: [

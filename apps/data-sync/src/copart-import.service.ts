@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { Pool, PoolClient } from 'pg';
@@ -115,7 +115,32 @@ function makeEmptyMetrics(): SyncMetrics {
 }
 
 @Injectable()
-export class CopartImportService {
+export class CopartImportService implements OnModuleInit {
+  /**
+   * On worker startup, fail any leftover "running" SyncRun rows. If the worker
+   * is (re)starting, any run still flagged running is from a previous process
+   * that died/hung mid-sync — otherwise its zombie row makes the dashboard show
+   * "Syncing… 0%" forever and (via the advisory lock pattern) could block new
+   * runs. Best-effort; never blocks boot.
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      const res = await this.prisma.syncRun.updateMany({
+        where: { status: 'running' },
+        data: {
+          status: 'failed',
+          finishedAt: new Date(),
+          error: 'Marked failed on worker startup (orphaned/incomplete run)',
+        },
+      });
+      if (res.count > 0) {
+        this.logger.warn(`Reconciled ${res.count} orphaned "running" SyncRun row(s) on startup`);
+      }
+    } catch (e) {
+      this.logger.warn(`Startup SyncRun reconciliation failed (non-fatal): ${(e as Error).message}`);
+    }
+  }
+
   private readonly logger = new Logger(CopartImportService.name);
   private readonly pool: Pool;
 

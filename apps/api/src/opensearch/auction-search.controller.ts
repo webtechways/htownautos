@@ -177,9 +177,19 @@ export class AuctionSearchController {
   })
   @ApiResponse({ status: 200, description: 'Current or last Copart sync status' })
   async getSyncStatus() {
-    // Prefer any currently-running row so the UI sees live progress.
+    // A sync never legitimately runs longer than this; anything older that is
+    // still flagged "running" is an orphaned row from a worker that died/hung
+    // mid-run, so we must NOT show it as live progress (it would stick at 0%).
+    const STALE_RUNNING_MS = 2 * 60 * 60 * 1000;
+    const freshCutoff = new Date(Date.now() - STALE_RUNNING_MS);
+
+    // Prefer a genuinely-active (recent) running row so the UI sees live progress.
     const running = await this.prisma.syncRun.findFirst({
-      where: { source: 'copart', status: 'running' },
+      where: {
+        source: 'copart',
+        status: 'running',
+        startedAt: { gte: freshCutoff },
+      },
       orderBy: { startedAt: 'desc' },
       select: {
         status: true,
@@ -222,6 +232,12 @@ export class AuctionSearchController {
     });
 
     if (!latest) return { status: 'idle', progress: 0 };
+
+    // If the most recent row is itself a stale orphaned "running" (worker died
+    // mid-run), surface it as failed so the dashboard stops showing "Syncing…".
+    if (latest.status === 'running' && latest.startedAt < freshCutoff) {
+      return { ...latest, status: 'failed', phase: latest.phase ?? 'stalled' };
+    }
 
     return latest;
   }

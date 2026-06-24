@@ -250,6 +250,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.buyerVehiclePreference;
   }
 
+  get buyerMatchExclusion() {
+    return this.prisma.buyerMatchExclusion;
+  }
+
   get syncRun() {
     return this.prisma.syncRun;
   }

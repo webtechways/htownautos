@@ -191,6 +191,17 @@ export class BuyerVehiclePreferencesService {
       andClauses.push({ yard: { is: { physicalInspectionAvailable: true } } });
     }
 
+    // Load dismissed lots for this buyer and exclude them from results.
+    const exclusionRows = await this.prisma.buyerMatchExclusion.findMany({
+      where: { buyerId },
+      select: { lotNumber: true },
+    });
+    if (exclusionRows.length > 0) {
+      andClauses.push({
+        lotNumber: { notIn: exclusionRows.map((r) => r.lotNumber) },
+      });
+    }
+
     const listings = await this.prisma.auctionListing.findMany({
       where: { AND: andClauses },
       take: 1000,
@@ -226,5 +237,61 @@ export class BuyerVehiclePreferencesService {
     }
     await this.prisma.buyerVehiclePreference.delete({ where: { id } });
     return { deleted: true };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Match exclusions (dismiss / un-dismiss / reset)
+  // ---------------------------------------------------------------------------
+
+  async addExclusion(
+    buyerId: string,
+    tenantId: string,
+    lotNumberStr: string,
+    createdById: string | null,
+  ) {
+    await this.ensureBuyer(buyerId, tenantId);
+    const lotNumber = BigInt(lotNumberStr);
+    const row = await this.prisma.buyerMatchExclusion.upsert({
+      where: { buyerId_lotNumber: { buyerId, lotNumber } },
+      create: {
+        buyerId,
+        tenantId: tenantId || null,
+        lotNumber,
+        createdById: createdById || null,
+      },
+      update: {},
+    });
+    return { ...row, lotNumber: row.lotNumber.toString() };
+  }
+
+  async removeExclusion(
+    buyerId: string,
+    tenantId: string,
+    lotNumberStr: string,
+  ) {
+    await this.ensureBuyer(buyerId, tenantId);
+    const lotNumber = BigInt(lotNumberStr);
+    await this.prisma.buyerMatchExclusion.deleteMany({
+      where: { buyerId, lotNumber },
+    });
+    return { ok: true };
+  }
+
+  async resetExclusions(buyerId: string, tenantId: string) {
+    await this.ensureBuyer(buyerId, tenantId);
+    const result = await this.prisma.buyerMatchExclusion.deleteMany({
+      where: { buyerId },
+    });
+    return { removed: result.count };
+  }
+
+  async listExclusions(buyerId: string, tenantId: string) {
+    await this.ensureBuyer(buyerId, tenantId);
+    const rows = await this.prisma.buyerMatchExclusion.findMany({
+      where: { buyerId },
+      orderBy: { createdAt: 'asc' },
+      select: { lotNumber: true, createdAt: true },
+    });
+    return { lotNumbers: rows.map((r) => r.lotNumber.toString()) };
   }
 }

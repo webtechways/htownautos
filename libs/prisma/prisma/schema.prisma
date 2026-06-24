@@ -907,6 +907,7 @@ model Buyer {
   portalOrders             PortalOrder[]
   depositReleaseRequests   DepositReleaseRequest[]
   contactMessages          ContactMessage[]
+  matchExclusions          BuyerMatchExclusion[]
 
   @@unique([tenantId, phoneMain])
   @@index([tenantId])
@@ -2219,6 +2220,23 @@ model BuyerFavoritesShareLink {
   @@index([buyerId])
   @@index([token])
   @@map("buyer_favorites_share_links")
+}
+
+/// Tracks which auction lots a buyer has manually dismissed from their matching list.
+/// Dismissed lots are excluded from the GET matches endpoint until the buyer resets.
+model BuyerMatchExclusion {
+  id          String   @id @default(uuid())
+  buyerId     String
+  tenantId    String?
+  lotNumber   BigInt
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  buyer Buyer @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@unique([buyerId, lotNumber])
+  @@index([buyerId])
+  @@map("buyer_match_exclusions")
 }
 
 model Task {

@@ -21,6 +21,7 @@ import {
 import { BuyerVehiclePreferencesService } from './buyer-vehicle-preferences.service';
 import { CreateBuyerVehiclePreferenceDto } from './dto/create-buyer-vehicle-preference.dto';
 import { UpdateBuyerVehiclePreferenceDto } from './dto/update-buyer-vehicle-preference.dto';
+import { CreateBuyerMatchExclusionDto } from './dto/create-buyer-match-exclusion.dto';
 import {
   CurrentTenant,
   CurrentUser,
@@ -100,5 +101,59 @@ export class BuyerVehiclePreferencesController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.service.remove(id, buyerId, tenantId);
+  }
+}
+
+@ApiTags('Buyer Vehicle Preferences')
+@Controller('buyers/:buyerId/match-exclusions')
+export class BuyerMatchExclusionsController {
+  constructor(private readonly service: BuyerVehiclePreferencesService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'List dismissed lot numbers for a buyer' })
+  @ApiParam({ name: 'buyerId', description: 'Buyer UUID' })
+  @ApiResponse({ status: HttpStatus.OK })
+  list(
+    @CurrentTenant() tenantId: string,
+    @Param('buyerId', ParseUUIDPipe) buyerId: string,
+  ) {
+    return this.service.listExclusions(buyerId, tenantId);
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Dismiss (exclude) a lot from the buyer matching list' })
+  @ApiParam({ name: 'buyerId', description: 'Buyer UUID' })
+  add(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser('sub') userId: string,
+    @Param('buyerId', ParseUUIDPipe) buyerId: string,
+    @Body() dto: CreateBuyerMatchExclusionDto,
+  ) {
+    return this.service.addExclusion(buyerId, tenantId, dto.lotNumber, userId ?? null);
+  }
+
+  @Delete('reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset all exclusions for a buyer (restores original matching)' })
+  @ApiParam({ name: 'buyerId', description: 'Buyer UUID' })
+  reset(
+    @CurrentTenant() tenantId: string,
+    @Param('buyerId', ParseUUIDPipe) buyerId: string,
+  ) {
+    return this.service.resetExclusions(buyerId, tenantId);
+  }
+
+  @Delete(':lotNumber')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Un-dismiss a single lot from the exclusion list' })
+  @ApiParam({ name: 'buyerId', description: 'Buyer UUID' })
+  @ApiParam({ name: 'lotNumber', description: 'Lot number (numeric string)' })
+  removeSingle(
+    @CurrentTenant() tenantId: string,
+    @Param('buyerId', ParseUUIDPipe) buyerId: string,
+    @Param('lotNumber') lotNumber: string,
+  ) {
+    return this.service.removeExclusion(buyerId, tenantId, lotNumber);
   }
 }

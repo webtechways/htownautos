@@ -901,6 +901,7 @@ model Buyer {
   auctionBids              BuyerAuctionBid[]
   vehiclePreferences       BuyerVehiclePreference[]
   favorites                BuyerFavorite[]
+  favoriteShareLinks       BuyerFavoritesShareLink[]
   inspections              VehicleInspection[]      @relation("BuyerInspections")
   ledgerEntries            CustomerLedgerEntry[]
   portalOrders             PortalOrder[]
@@ -2192,6 +2193,32 @@ model BuyerFavorite {
   @@index([tenantId, buyerId])
   @@index([lotNumber])
   @@map("buyer_favorites")
+}
+
+/// Public shareable link to a buyer's favorites list.
+/// Mirrors InspectionShareLink: token resolves the buyer + tenantId so the
+/// viewer can browse (and optionally remove) favorites without being logged in.
+model BuyerFavoritesShareLink {
+  id             String    @id @default(uuid())
+  token          String    @unique
+  buyerId        String
+  tenantId       String?
+  /// null = never expires.
+  expiresAt      DateTime?
+  revoked        Boolean   @default(false)
+  /// Clerk userId of whoever generated the link (audit trail).
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  /// Stamped every time the public endpoint is hit with this token.
+  lastAccessedAt DateTime?
+  /// ShortUrl.code companion — populated at creation; null if shortener failed.
+  shortUrlCode   String?
+
+  buyer  Buyer   @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@index([buyerId])
+  @@index([token])
+  @@map("buyer_favorites_share_links")
 }
 
 model Task {

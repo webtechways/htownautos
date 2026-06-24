@@ -220,7 +220,10 @@ export class VehicleInspectionsService {
     dto: CreateVehicleInspectionDto,
   ) {
     await this.validateYardPhysicalInspection(dto);
-    await this.validateRequestedWindow(dto);
+    // Staff path (dashboard): dueAt omitted → skip timing validation entirely.
+    // Customer path (portal checkout): dueAt is never sent from the portal either,
+    // but the 48-hour gate is enforced at checkout time in PortalService.checkoutInspections.
+    if (dto.dueAt) await this.validateRequestedWindow(dto);
 
     const row = await this.prisma.vehicleInspection.create({
       data: {

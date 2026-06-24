@@ -30,6 +30,64 @@ const MIN_DEPOSIT_CENTS = 1000;
 /** Fixed price for the "Find a Car for Me" service in cents ($500). */
 const FIND_A_CAR_PRICE_CENTS = 50_000;
 
+/**
+ * Minimum business-hour lead time before auction start that we require to
+ * accept an inspection order. Mirrors the same constant in VehicleInspectionsService.
+ */
+const PORTAL_MIN_LEAD_HOURS = 48;
+
+// ── Business-hours helpers (portal copy — same logic as vehicle-inspections.service) ──
+
+/** Parse Copart-style saleDate (YYYYMMDD as int) + saleTime ("HH:mm") into UTC. */
+function parsePortalAuctionDateTime(
+  saleDate: number | null | undefined,
+  saleTime: string | null | undefined,
+): Date | null {
+  if (!saleDate || saleDate === 0) return null;
+  const str = saleDate.toString();
+  if (str.length !== 8) return null;
+  const year = Number(str.slice(0, 4));
+  const month = Number(str.slice(4, 6)) - 1;
+  const day = Number(str.slice(6, 8));
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  let hours = 0;
+  let minutes = 0;
+  if (saleTime) {
+    const m = saleTime.match(/^(\d{1,2}):(\d{2})/);
+    if (m) { hours = Number(m[1]); minutes = Number(m[2]); }
+  }
+  return new Date(Date.UTC(year, month, day, hours, minutes));
+}
+
+/**
+ * Add `hours` of "business" time (Mon-Fri only) to `start`.
+ * Weekend hours are skipped entirely — same algorithm as VehicleInspectionsService.
+ */
+function addPortalBusinessHours(start: Date, hours: number): Date {
+  let cur = new Date(start);
+  const startDay = cur.getUTCDay();
+  if (startDay === 6) cur = new Date(cur.getTime() + 2 * 86_400_000);
+  else if (startDay === 0) cur = new Date(cur.getTime() + 1 * 86_400_000);
+
+  let remainingMs = hours * 3_600_000;
+  while (remainingMs > 0) {
+    const dayEnd = new Date(cur);
+    dayEnd.setUTCHours(24, 0, 0, 0);
+    const slice = dayEnd.getTime() - cur.getTime();
+    if (slice > remainingMs) {
+      cur = new Date(cur.getTime() + remainingMs);
+      remainingMs = 0;
+    } else {
+      remainingMs -= slice;
+      cur = dayEnd;
+      const d = cur.getUTCDay();
+      if (d === 6) cur = new Date(cur.getTime() + 2 * 86_400_000);
+      else if (d === 0) cur = new Date(cur.getTime() + 1 * 86_400_000);
+    }
+  }
+  return cur;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Safe Buyer fields returned to portal customers. */
@@ -764,6 +822,27 @@ export class PortalService {
     const yardFees = await this.resolveYardFees(dto.items);
     // Hard validation: throws BadRequestException if any yard fails minCars.
     const quote = this.computeQuote(dto.items, pricing, yardFees, true);
+
+    // ── Customer-only 48-business-hour gate ──────────────────────────────────
+    // Reject any cart item whose auction starts within 48 business hours from now.
+    // Lots without a known auction date are always allowed through.
+    const cutoff = addPortalBusinessHours(new Date(), PORTAL_MIN_LEAD_HOURS);
+    for (const item of dto.items) {
+      let lotKey: bigint;
+      try { lotKey = BigInt(item.lotNumber); } catch { continue; }
+      const listing = await this.prisma.auctionListing.findUnique({
+        where: { lotNumber: lotKey },
+        select: { saleDate: true, saleTime: true },
+      });
+      if (!listing) continue;
+      const auctionAt = parsePortalAuctionDateTime(listing.saleDate, listing.saleTime);
+      if (auctionAt && auctionAt < cutoff) {
+        throw new BadRequestException(
+          `El lote ${item.lotNumber} subasta pronto: se requieren al menos 48 horas hábiles para inspeccionar.`,
+        );
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     const description = `Vehicle inspections — ${quote.carsCount} car${quote.carsCount !== 1 ? 's' : ''}, ${quote.yardsCount} yard${quote.yardsCount !== 1 ? 's' : ''}`;
 

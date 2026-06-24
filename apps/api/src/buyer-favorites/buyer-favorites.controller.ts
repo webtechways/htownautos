@@ -1,8 +1,10 @@
 import {
   Controller,
   Get,
+  Post,
   Delete,
   Param,
+  Body,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
@@ -11,6 +13,7 @@ import {
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { CurrentTenant, ClerkJwtGuard } from '@htownautos/auth';
 import { BuyerFavoritesService } from './buyer-favorites.service';
+import { ToggleBuyerFavoriteDto } from './dto/toggle-buyer-favorite.dto';
 
 /**
  * Staff-facing favorites: lets the CRM dashboard read (and optionally clear) the
@@ -31,6 +34,18 @@ export class BuyerFavoritesController {
     @Param('buyerId', ParseUUIDPipe) buyerId: string,
   ) {
     return this.service.list(buyerId, tenantId);
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Add a favorite auction lot to a buyer (staff/dashboard)' })
+  @ApiParam({ name: 'buyerId', description: 'Buyer UUID' })
+  add(
+    @CurrentTenant() tenantId: string,
+    @Param('buyerId', ParseUUIDPipe) buyerId: string,
+    @Body() dto: ToggleBuyerFavoriteDto,
+  ) {
+    return this.service.add(buyerId, tenantId, dto.lotNumber);
   }
 
   @Delete(':lotNumber')

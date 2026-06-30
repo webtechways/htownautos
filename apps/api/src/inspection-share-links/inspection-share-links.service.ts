@@ -254,6 +254,12 @@ export class InspectionShareLinksService {
       inspection.lotNumber ?? null,
     );
 
+    // Pull the AuctionListing for vehicle specs + images. Best-effort: null if not found.
+    const vehicle = await this.fetchVehicleFromListing(
+      inspection.lotNumber,
+      inspection.vin,
+    );
+
     return {
       // Identity / header (intentionally lean — no createdBy, no tenant id,
       // no shared-with list).
@@ -275,6 +281,7 @@ export class InspectionShareLinksService {
       errorCodes: (inspection as any).errorCodes,
       carfax,
       analysis,
+      vehicle,
       // Link metadata for the page footer.
       shareLink: {
         expiresAt: link.expiresAt,
@@ -290,6 +297,138 @@ export class InspectionShareLinksService {
       select: { id: true },
     });
     if (!exists) throw new NotFoundException(`Inspection ${id} not found`);
+  }
+
+  /**
+   * Look up the AuctionListing for a given inspection and return a
+   * JSON-serializable vehicle object with specs + parsed image URLs.
+   * Returns null if the listing is not found — never throws.
+   */
+  private async fetchVehicleFromListing(
+    lotNumber: string | null,
+    vin: string,
+  ) {
+    const LISTING_SELECT = {
+      images: true,
+      year: true,
+      make: true,
+      modelGroup: true,
+      modelDetail: true,
+      trim: true,
+      color: true,
+      bodyStyle: true,
+      engine: true,
+      transmission: true,
+      drive: true,
+      fuelType: true,
+      cylinders: true,
+      odometer: true,
+      damageDescription: true,
+      secondaryDamage: true,
+      hasKeys: true,
+      runsDrives: true,
+      saleTitleType: true,
+      saleTitleState: true,
+      highBid: true,
+      buyItNowPrice: true,
+      estRetailValue: true,
+      repairCost: true,
+      saleStatus: true,
+      saleDate: true,
+      saleTime: true,
+      dayOfWeek: true,
+      locationCity: true,
+      locationState: true,
+      locationZip: true,
+      yardName: true,
+    } as const;
+
+    try {
+      type ListingRow = Prisma.AuctionListingGetPayload<{ select: typeof LISTING_SELECT }>;
+      let listing: ListingRow | null = null;
+
+      // Primary lookup: by lotNumber (BigInt PK)
+      if (lotNumber) {
+        try {
+          listing = await this.prisma.auctionListing.findFirst({
+            where: { lotNumber: BigInt(lotNumber) },
+            select: LISTING_SELECT,
+          });
+        } catch {
+          // non-numeric lot — fall through to VIN lookup
+        }
+      }
+
+      // Fallback: by VIN
+      if (!listing && vin) {
+        listing = await this.prisma.auctionListing.findFirst({
+          where: { vin },
+          select: LISTING_SELECT,
+          orderBy: { createdAt: 'desc' },
+        });
+      }
+
+      if (!listing) return null;
+
+      // Parse images: stored as JSON.stringify(string[]) of absolute URLs.
+      // Handles schemeless URLs (//cs.copart.com/...) by prepending https:.
+      let images: string[] = [];
+      if (listing.images) {
+        try {
+          const parsed: unknown = JSON.parse(listing.images);
+          if (Array.isArray(parsed)) {
+            images = (parsed as unknown[])
+              .filter((u): u is string => typeof u === 'string' && u.length > 0)
+              .map((u) => (u.startsWith('//') ? `https:${u}` : u));
+          }
+        } catch {
+          // Not valid JSON — treat as a single URL (legacy API URL case)
+          const raw = listing.images.trim();
+          if (raw.length > 0) {
+            images = [raw.startsWith('//') ? `https:${raw}` : raw];
+          }
+        }
+      }
+
+      return {
+        images,
+        year: listing.year,
+        make: listing.make,
+        model: listing.modelGroup ?? listing.modelDetail ?? null,
+        trim: listing.trim,
+        color: listing.color,
+        bodyType: listing.bodyStyle,
+        engine: listing.engine,
+        transmission: listing.transmission,
+        drivetrain: listing.drive,
+        fuelType: listing.fuelType,
+        cylinders: listing.cylinders,
+        odometer: listing.odometer != null ? listing.odometer.toString() : null,
+        primaryDamage: listing.damageDescription,
+        secondaryDamage: listing.secondaryDamage,
+        hasKeys: listing.hasKeys,
+        runsDrives: listing.runsDrives,
+        titleType: listing.saleTitleType,
+        titleState: listing.saleTitleState,
+        highBid: listing.highBid != null ? listing.highBid.toString() : null,
+        buyItNow: listing.buyItNowPrice != null ? listing.buyItNowPrice.toString() : null,
+        estValue: listing.estRetailValue != null ? listing.estRetailValue.toString() : null,
+        repairCost: listing.repairCost != null ? listing.repairCost.toString() : null,
+        saleStatus: listing.saleStatus,
+        saleDate: listing.saleDate,
+        saleTime: listing.saleTime,
+        dayOfWeek: listing.dayOfWeek,
+        locationCity: listing.locationCity,
+        locationState: listing.locationState,
+        locationZip: listing.locationZip,
+        yardName: listing.yardName,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `fetchVehicleFromListing failed for lot=${lotNumber} vin=${vin}: ${(err as Error).message}`,
+      );
+      return null;
+    }
   }
 
   private async fetchCarfaxForVehicle(

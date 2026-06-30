@@ -219,7 +219,10 @@ export class VehicleInspectionsService {
     userId: string | null,
     dto: CreateVehicleInspectionDto,
   ) {
-    await this.validateYardPhysicalInspection(dto);
+    // Staff can override the yard on-site gate by acknowledging the warning.
+    if (!dto.acknowledgeYardWarning) {
+      await this.validateYardPhysicalInspection(dto);
+    }
     // Staff path (dashboard): dueAt omitted → skip timing validation entirely.
     // Customer path (portal checkout): dueAt is never sent from the portal either,
     // but the 48-hour gate is enforced at checkout time in PortalService.checkoutInspections.

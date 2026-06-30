@@ -1,6 +1,7 @@
 import {
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -22,6 +23,12 @@ export class CreateVehicleInspectionDto {
   @IsOptional()
   @IsString()
   lotNumber?: string;
+
+  // Staff acknowledged the "yard does not offer on-site inspection" warning →
+  // skip the yard physical-inspection gate.
+  @IsOptional()
+  @IsBoolean()
+  acknowledgeYardWarning?: boolean;
 
   @IsOptional()
   @IsString()

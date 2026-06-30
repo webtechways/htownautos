@@ -935,6 +935,31 @@ export class AuctionSearchService {
 
     return { ok: true };
   }
+
+  /**
+   * Read back all persisted analysis snapshots for a lot, keyed by type, so the
+   * auction detail view can restore previously-generated data (auction history,
+   * market check, comparables) on reload instead of starting empty.
+   */
+  async getAnalysisSnapshots(
+    sourceId: string,
+  ): Promise<{ data: Record<string, unknown> }> {
+    let listingId: bigint;
+    try {
+      listingId = BigInt(sourceId);
+    } catch {
+      throw new BadRequestException(`sourceId must be numeric; received "${sourceId}"`);
+    }
+
+    const rows = await this.prisma.auctionAnalysisSnapshot.findMany({
+      where: { auctionListingId: listingId },
+      select: { type: true, data: true },
+    });
+
+    const map: Record<string, unknown> = {};
+    for (const r of rows) map[r.type] = r.data;
+    return { data: map };
+  }
 }
 
 /**

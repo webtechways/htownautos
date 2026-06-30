@@ -320,6 +320,19 @@ export class AuctionSearchController {
     return this.searchService.upsertAnalysisSnapshot(sourceId, dto.type, dto.data);
   }
 
+  @Get(':source/:sourceId/analysis-snapshot')
+  @UseGuards(ClerkJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get persisted analysis snapshots for an auction listing',
+    description: 'Staff-only. Returns previously-saved analysis snapshots keyed by type so the auction detail view can restore them on reload.',
+  })
+  @ApiParam({ name: 'source', enum: ['copart', 'iaai'] })
+  @ApiParam({ name: 'sourceId', description: 'Lot number (numeric)' })
+  async getAnalysisSnapshots(@Param('sourceId') sourceId: string) {
+    return this.searchService.getAnalysisSnapshots(sourceId);
+  }
+
   // Wildcard route — MUST be last to avoid catching static routes
   @Get(':source/:sourceId')
   @Public()

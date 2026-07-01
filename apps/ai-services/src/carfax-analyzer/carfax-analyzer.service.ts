@@ -9,6 +9,16 @@ import OpenAI from 'openai';
 import { PrismaService } from '@htownautos/prisma';
 import { S3Service } from '@htownautos/common';
 
+// Browser-like headers so CheapCarfax's Cloudflare doesn't challenge our
+// server-to-server (datacenter IP) requests as a bot.
+const CARFAX_BROWSER_HEADERS: Record<string, string> = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  Accept: 'application/json, text/plain, */*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  Referer: 'https://panel.cheapcarfax.net/',
+};
+
 @Injectable()
 export class CarfaxAnalyzerService {
   private readonly logger = new Logger(CarfaxAnalyzerService.name);
@@ -372,7 +382,7 @@ ${truncatedText}`;
     }
     try {
       const res = await fetch('https://panel.cheapcarfax.net/api/user/limits', {
-        headers: { 'x-api-key': apiKey },
+        headers: { 'x-api-key': apiKey, ...CARFAX_BROWSER_HEADERS },
       });
       if (!res.ok) {
         this.logger.warn(`Carfax limits fetch failed: ${res.status}`);
@@ -423,18 +433,49 @@ ${truncatedText}`;
     }
     const vin = rawVin;
 
-    // 3. Call CheapCarfax provider
+    // 3. Call CheapCarfax provider. Their API sits behind Cloudflare, which
+    // sometimes challenges our datacenter egress IP with an HTML block page
+    // instead of JSON. Send browser-like headers and retry a few times to get
+    // past intermittent bot challenges.
     this.logger.log(`Fetching Carfax from provider for VIN ${vin} (listing ${auctionListingId})`);
-    const providerRes = await fetch(
-      `https://panel.cheapcarfax.net/api/carfax/vin/${vin}/html`,
-      { headers: { 'x-api-key': apiKey } },
-    );
+    const url = `https://panel.cheapcarfax.net/api/carfax/vin/${vin}/html`;
 
-    if (!providerRes.ok) {
-      const bodyText = await providerRes.text().catch(() => '');
+    let providerRes!: Response;
+    let bodyText = '';
+    let wasHtmlBlock = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      providerRes = await fetch(url, {
+        headers: { 'x-api-key': apiKey, ...CARFAX_BROWSER_HEADERS },
+      });
+      const contentType = providerRes.headers.get('content-type') ?? '';
+      bodyText = await providerRes.text().catch(() => '');
+      wasHtmlBlock =
+        contentType.includes('text/html') ||
+        /^\s*<(?:!doctype|html)/i.test(bodyText) ||
+        /cloudflare|attention required|cf-ray|ie6 oldie/i.test(bodyText.slice(0, 400));
+
+      if (providerRes.ok && !wasHtmlBlock) break; // good JSON response
+      if (wasHtmlBlock && attempt < 3) {
+        this.logger.warn(
+          `Carfax provider returned an HTML/Cloudflare block (attempt ${attempt}/3); retrying`,
+        );
+        await new Promise((r) => setTimeout(r, 1500 * attempt));
+        continue;
+      }
+      break; // non-html error, or out of retries — handle below
+    }
+
+    if (!providerRes.ok || wasHtmlBlock) {
+      if (wasHtmlBlock) {
+        this.logger.error(
+          `Carfax provider Cloudflare block for VIN ${vin} (status ${providerRes.status})`,
+        );
+        throw new BadRequestException(
+          'El proveedor de Carfax bloqueó temporalmente la solicitud (protección Cloudflare del lado de CheapCarfax). Reintenta en unos minutos.',
+        );
+      }
       // The provider returns its message in a JSON { message } body and does NOT
-      // always use the matching HTTP status (e.g. "Insufficient credits" comes
-      // back as 400), so inspect the message text, not just the status code.
+      // always use the matching HTTP status (e.g. "Insufficient credits" → 400).
       let providerMsg = '';
       try {
         providerMsg = (JSON.parse(bodyText)?.message ?? '').toString();
@@ -450,14 +491,16 @@ ${truncatedText}`;
       if (providerRes.status === 429 || lower.includes('limit')) {
         throw new BadRequestException('Límite diario de Carfax alcanzado');
       }
+      // Never surface a raw HTML/huge body to the client.
+      const cleanMsg = providerMsg.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
       throw new BadRequestException(
-        providerMsg
-          ? `Carfax: ${providerMsg.slice(0, 200)}`
+        cleanMsg
+          ? `Carfax: ${cleanMsg.slice(0, 160)}`
           : `Carfax provider error ${providerRes.status}`,
       );
     }
 
-    const payload = (await providerRes.json()) as {
+    const payload = JSON.parse(bodyText) as {
       yearMakeModel: string;
       id: string;
       html: string;

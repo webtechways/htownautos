@@ -1096,7 +1096,10 @@ export class TenantController {
   @ApiResponse({ status: 404, description: 'Tenant not found' })
   updateFeeConfig(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateFeeConfigDto,
+    // Accept a permissive body (like the /settings endpoint): the fee config is
+    // user-editable JSON with union number|string cells, so a strict DTO trips
+    // the global whitelist/forbidNonWhitelisted pipe. Validated in the service.
+    @Body() dto: Record<string, any>,
     @CurrentUser() user: { id: string },
   ) {
     return this.tenantService.updateFeeConfig(id, user.id, dto as any);

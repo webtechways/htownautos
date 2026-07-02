@@ -181,6 +181,11 @@ export class TenantEntity implements Tenant {
   })
   postmarkWebhookId: number | null;
 
+  @ApiPropertyOptional({
+    description: 'Per-tenant auction fee configuration (null = system default applies)',
+  })
+  feeConfig: any;
+
   constructor(partial: Partial<TenantEntity>) {
     Object.assign(this, partial);
   }

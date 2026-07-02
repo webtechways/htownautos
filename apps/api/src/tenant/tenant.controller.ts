@@ -48,6 +48,7 @@ import {
 import { CurrentUser } from '@htownautos/auth';
 import { RequireRoles, ADMIN_ROLES } from '@htownautos/auth';
 import { RolesGuard } from '@htownautos/auth';
+import { UpdateFeeConfigDto } from './dto/update-fee-config.dto';
 
 @ApiTags('Tenants')
 @ApiBearerAuth()
@@ -1046,6 +1047,59 @@ export class TenantController {
     @CurrentUser() user: { id: string },
   ) {
     return this.tenantService.getPendingInvitations(tenantId, user.id);
+  }
+
+  // ========================================
+  // FEE CONFIG ENDPOINTS
+  // ========================================
+
+  @Get(':id/fee-config')
+  @ApiOperation({
+    summary: 'Get tenant fee configuration',
+    description:
+      'Returns the per-tenant auction fee configuration. ' +
+      'Falls back to the system default if the tenant has not saved a custom config. ' +
+      'Requires active membership in the tenant.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Tenant UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({ status: 200, description: 'Fee configuration' })
+  @ApiResponse({ status: 403, description: 'Not a member of this tenant' })
+  @ApiResponse({ status: 404, description: 'Tenant not found' })
+  getFeeConfig(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.tenantService.getFeeConfig(id, user.id);
+  }
+
+  @Patch(':id/fee-config')
+  @UseGuards(RolesGuard)
+  @RequireRoles(...ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Update tenant fee configuration',
+    description:
+      'Saves a full fee configuration for the tenant. ' +
+      'Requires admin role. The body must be the complete FeeConfig object.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Tenant UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({ status: 200, description: 'Saved fee configuration' })
+  @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({ status: 403, description: 'Not an admin of this tenant' })
+  @ApiResponse({ status: 404, description: 'Tenant not found' })
+  updateFeeConfig(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateFeeConfigDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.tenantService.updateFeeConfig(id, user.id, dto as any);
   }
 }
 

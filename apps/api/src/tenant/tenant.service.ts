@@ -25,6 +25,7 @@ import { TwilioService } from '../twilio/twilio.service';
 import { TenantEmailDomainService } from './tenant-email-domain.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SearchType, PurchasePhoneNumberDto, UpdatePhoneNumberDto } from './dto/phone-number.dto';
+import { FeeConfig, DEFAULT_FEE_CONFIG } from './fee-config.default';
 
 // Invitation status constants
 export const INVITATION_STATUS = {
@@ -2416,5 +2417,53 @@ export class TenantService {
     });
 
     return { message: 'Phone number released successfully' };
+  }
+
+  // ========================================
+  // FEE CONFIG ENDPOINTS
+  // ========================================
+
+  /**
+   * Return the tenant's saved feeConfig, or DEFAULT_FEE_CONFIG if null.
+   * Verifies the requesting user belongs to the tenant (active membership).
+   */
+  async getFeeConfig(tenantId: string, requestingUserId: string): Promise<FeeConfig> {
+    const tenant = await this.findOne(tenantId);
+
+    const hasAccess = await this.verifyUserTenantAccess(requestingUserId, tenantId);
+    if (!hasAccess) {
+      throw new ForbiddenException('You do not have access to this tenant');
+    }
+
+    if (tenant.feeConfig) {
+      return tenant.feeConfig as unknown as FeeConfig;
+    }
+
+    return DEFAULT_FEE_CONFIG;
+  }
+
+  /**
+   * Save a full feeConfig object to the tenant.
+   * Only admin-role users should reach this (enforced by RolesGuard in the controller).
+   */
+  async updateFeeConfig(
+    tenantId: string,
+    requestingUserId: string,
+    config: FeeConfig,
+  ): Promise<FeeConfig> {
+    await this.findOne(tenantId);
+
+    const hasAccess = await this.verifyUserTenantAccess(requestingUserId, tenantId);
+    if (!hasAccess) {
+      throw new ForbiddenException('You do not have access to this tenant');
+    }
+
+    const updated = await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { feeConfig: config as any },
+      select: { feeConfig: true },
+    });
+
+    return updated.feeConfig as unknown as FeeConfig;
   }
 }

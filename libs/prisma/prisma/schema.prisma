@@ -490,6 +490,7 @@ model Tenant {
   zipCode                   String?
   country                   String    @default("USA")
   settings                  Json?
+  feeConfig                 Json?   @map("fee_config") // Per-tenant auction fee configuration
   twilioMessagingServiceSid String? // Twilio Messaging Service ID for SMS
   logo                      String?
   isActive                  Boolean   @default(true)

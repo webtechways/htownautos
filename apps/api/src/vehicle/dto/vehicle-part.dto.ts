@@ -23,6 +23,25 @@ export class CreateVehiclePartDto {
   notes?: string;
 }
 
+export class UpdateVehiclePartDto {
+  @ApiPropertyOptional({ description: 'Quantity used for this vehicle' })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  quantity?: number;
+
+  @ApiPropertyOptional({ description: 'Unit price at time of association' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  priceAtTime?: number;
+
+  @ApiPropertyOptional({ description: 'Installation notes' })
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
 export class CreatePartAndAssociateDto {
   // Part fields
   @ApiProperty({ description: 'Part name' })

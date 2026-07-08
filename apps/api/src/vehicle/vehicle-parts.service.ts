@@ -304,6 +304,43 @@ export class VehiclePartsService {
   }
 
   /**
+   * Update an existing vehicle-part association (quantity / unit price / notes).
+   */
+  async updateAssociation(
+    vehicleId: string,
+    vehiclePartId: string,
+    dto: { quantity?: number; priceAtTime?: number; notes?: string },
+    tenantId: string,
+  ) {
+    const vehicle = await this.prisma.vehicle.findFirst({
+      where: { id: vehicleId, tenantId },
+    });
+    if (!vehicle) {
+      throw new NotFoundException(`Vehicle with ID ${vehicleId} not found`);
+    }
+
+    const existing = await this.prisma.vehiclePart.findFirst({
+      where: { id: vehiclePartId, vehicleId },
+    });
+    if (!existing) {
+      throw new NotFoundException(
+        `Vehicle part association with ID ${vehiclePartId} not found`,
+      );
+    }
+
+    const data: Prisma.VehiclePartUpdateInput = {};
+    if (dto.quantity !== undefined) data.quantity = dto.quantity;
+    if (dto.priceAtTime !== undefined) data.priceAtTime = dto.priceAtTime;
+    if (dto.notes !== undefined) data.notes = dto.notes;
+
+    return this.prisma.vehiclePart.update({
+      where: { id: vehiclePartId },
+      data,
+      include: { part: true },
+    });
+  }
+
+  /**
    * Get available parts from inventory for association
    */
   async getAvailableParts(tenantId: string, search?: string) {

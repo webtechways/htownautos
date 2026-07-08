@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -19,7 +20,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { VehiclePartsService } from './vehicle-parts.service';
-import { CreateVehiclePartDto, CreatePartAndAssociateDto } from './dto/vehicle-part.dto';
+import { CreateVehiclePartDto, CreatePartAndAssociateDto, UpdateVehiclePartDto } from './dto/vehicle-part.dto';
 import { CurrentTenant } from '@htownautos/auth';
 
 @ApiTags('Vehicle Parts')
@@ -91,6 +92,29 @@ export class VehiclePartsController {
     @Body() dto: CreatePartAndAssociateDto,
   ) {
     return this.vehiclePartsService.createAndAssociate(vehicleId, dto, tenantId);
+  }
+
+  @Patch(':vehiclePartId')
+  @ApiOperation({
+    summary: 'Update a vehicle-part association',
+    description: 'Updates quantity, unit price, or notes of a part associated to a vehicle.',
+  })
+  @ApiParam({ name: 'vehicleId', description: 'Vehicle UUID' })
+  @ApiParam({ name: 'vehiclePartId', description: 'VehiclePart association UUID' })
+  @ApiResponse({ status: 200, description: 'Association updated' })
+  @ApiResponse({ status: 404, description: 'Vehicle or association not found' })
+  updateAssociation(
+    @CurrentTenant() tenantId: string,
+    @Param('vehicleId', ParseUUIDPipe) vehicleId: string,
+    @Param('vehiclePartId', ParseUUIDPipe) vehiclePartId: string,
+    @Body() dto: UpdateVehiclePartDto,
+  ) {
+    return this.vehiclePartsService.updateAssociation(
+      vehicleId,
+      vehiclePartId,
+      dto,
+      tenantId,
+    );
   }
 
   @Delete(':vehiclePartId')

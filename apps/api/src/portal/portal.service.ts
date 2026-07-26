@@ -254,7 +254,23 @@ export class PortalService {
         `Listing with lot number ${lotNumber} not found`,
       );
     }
-    return listing;
+
+    // Attach any Carfax report (with AI summary + a signed PDF URL) so the
+    // public detail view can surface it. Lean shape — never leak the S3 key.
+    const reports = await this.fetchAndSignCarfax(
+      (listing as { vin?: string | null }).vin ?? '',
+      lotNumber,
+    );
+    const carfax = reports.map((r: any) => ({
+      id: r.id,
+      aiSummary: r.aiSummary ?? null,
+      analysis: r.analysis ?? null,
+      signedUrl: r.signedUrl ?? null,
+      date: r.date ?? null,
+      createdAt: r.createdAt ?? null,
+    }));
+
+    return { ...listing, carfax };
   }
 
   /**

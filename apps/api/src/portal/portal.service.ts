@@ -407,8 +407,12 @@ export class PortalService {
       reports.map(async (r: any) => {
         if (!r.s3Key) return;
         try {
+          // Carfax files can be HTML (CheapCarfax) or PDF (manual upload).
+          // Serve with the right content-type + inline so it renders in an
+          // embedded <iframe> instead of downloading or failing to parse.
+          const isHtml = /\.html?$/i.test(r.s3Key);
           r.signedUrl = await this.s3.getSignedUrl(r.s3Key, CARFAX_SIGNED_URL_TTL, {
-            contentType: 'application/pdf',
+            contentType: isHtml ? 'text/html' : 'application/pdf',
             disposition: 'inline',
           });
         } catch {

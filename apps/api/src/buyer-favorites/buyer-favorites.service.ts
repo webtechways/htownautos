@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '@htownautos/prisma';
 
 /**
@@ -26,18 +30,50 @@ export class BuyerFavoritesService {
     };
   }
 
-  /** Add a favorite (idempotent). Validates the listing exists. */
-  async add(buyerId: string, tenantId: string | null, lotNumberStr: string) {
-    const lotNumber = BigInt(lotNumberStr);
+  /**
+   * Add a favorite (idempotent) by lot number OR VIN. Validates the listing
+   * exists. When only a VIN is given, resolves to the most recent listing for
+   * that VIN (a vehicle can be listed multiple times with different lots).
+   */
+  async add(
+    buyerId: string,
+    tenantId: string | null,
+    opts: { lotNumber?: string; vin?: string },
+  ) {
+    let lotNumber: bigint;
 
-    const listing = await this.prisma.auctionListing.findUnique({
-      where: { lotNumber },
-      select: { lotNumber: true },
-    });
-    if (!listing) {
-      throw new NotFoundException(
-        `Auction listing with lot ${lotNumberStr} not found`,
-      );
+    if (opts.lotNumber && opts.lotNumber.trim()) {
+      try {
+        lotNumber = BigInt(opts.lotNumber.trim());
+      } catch {
+        throw new BadRequestException(
+          `Invalid lot number "${opts.lotNumber}"`,
+        );
+      }
+      const listing = await this.prisma.auctionListing.findUnique({
+        where: { lotNumber },
+        select: { lotNumber: true },
+      });
+      if (!listing) {
+        throw new NotFoundException(
+          `Auction listing with lot ${opts.lotNumber} not found`,
+        );
+      }
+    } else if (opts.vin && opts.vin.trim()) {
+      const vin = opts.vin.trim().toUpperCase();
+      const listing = await this.prisma.auctionListing.findFirst({
+        where: { vin },
+        orderBy: { saleDate: 'desc' },
+        select: { lotNumber: true },
+      });
+      if (!listing) {
+        throw new NotFoundException(
+          `No auction listing found for VIN ${vin}`,
+        );
+      }
+      lotNumber = listing.lotNumber;
+    } else {
+      throw new BadRequestException('Provide a lotNumber or a vin');
     }
 
     const favorite = await this.prisma.buyerFavorite.upsert({
@@ -46,7 +82,7 @@ export class BuyerFavoritesService {
       create: { buyerId, tenantId, lotNumber },
     });
 
-    return { id: favorite.id, lotNumber: lotNumberStr, added: true };
+    return { id: favorite.id, lotNumber: lotNumber.toString(), added: true };
   }
 
   /** Remove a favorite (idempotent). */

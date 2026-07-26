@@ -38,14 +38,17 @@ export class BuyerFavoritesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Add a favorite auction lot to a buyer (staff/dashboard)' })
+  @ApiOperation({ summary: 'Add a favorite auction lot to a buyer by lot number or VIN (staff/dashboard)' })
   @ApiParam({ name: 'buyerId', description: 'Buyer UUID' })
   add(
     @CurrentTenant() tenantId: string,
     @Param('buyerId', ParseUUIDPipe) buyerId: string,
     @Body() dto: ToggleBuyerFavoriteDto,
   ) {
-    return this.service.add(buyerId, tenantId, dto.lotNumber);
+    return this.service.add(buyerId, tenantId, {
+      lotNumber: dto.lotNumber,
+      vin: dto.vin,
+    });
   }
 
   @Delete(':lotNumber')

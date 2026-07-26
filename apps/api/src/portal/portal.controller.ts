@@ -174,7 +174,10 @@ export class PortalController {
     @CurrentBuyer() buyer: PortalBuyer,
     @Body() dto: ToggleBuyerFavoriteDto,
   ) {
-    return this.favoritesService.add(buyer.id, buyer.tenantId, dto.lotNumber);
+    return this.favoritesService.add(buyer.id, buyer.tenantId, {
+      lotNumber: dto.lotNumber,
+      vin: dto.vin,
+    });
   }
 
   /**

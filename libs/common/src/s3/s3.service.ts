@@ -261,11 +261,23 @@ export class S3Service {
     }
   }
 
-  async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
+  async getSignedUrl(
+    key: string,
+    expiresIn: number = 3600,
+    options?: { contentType?: string; disposition?: 'inline' | 'attachment' },
+  ): Promise<string> {
     try {
       const command = new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
+        // Force how the browser handles the object (e.g. render a PDF inline
+        // in an <iframe> instead of downloading it).
+        ...(options?.contentType
+          ? { ResponseContentType: options.contentType }
+          : {}),
+        ...(options?.disposition
+          ? { ResponseContentDisposition: options.disposition }
+          : {}),
       });
 
       const url = await getSignedUrl(this.s3Client, command, { expiresIn });

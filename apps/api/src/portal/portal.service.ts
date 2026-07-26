@@ -407,7 +407,10 @@ export class PortalService {
       reports.map(async (r: any) => {
         if (!r.s3Key) return;
         try {
-          r.signedUrl = await this.s3.getSignedUrl(r.s3Key, CARFAX_SIGNED_URL_TTL);
+          r.signedUrl = await this.s3.getSignedUrl(r.s3Key, CARFAX_SIGNED_URL_TTL, {
+            contentType: 'application/pdf',
+            disposition: 'inline',
+          });
         } catch {
           /* swallow */
         }

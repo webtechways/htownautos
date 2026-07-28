@@ -551,6 +551,7 @@ model Tenant {
   shortUrls               ShortUrl[]
   rebuildItems            RebuildItem[]
   inventoryAssets         InventoryAsset[]
+  investments             Investment[]
   socialAccounts          SocialAccount[]
   socialGroups            SocialGroup[]
   partOrders              PartOrder[]
@@ -2991,6 +2992,35 @@ model InventoryAsset {
   @@index([tenantId, status])
   @@index([tenantId, category])
   @@map("inventory_assets")
+}
+
+/// Capital invested into the business and its funding sources (credit cards,
+/// credit lines, loans, friends/investors). Tracks payback terms per source.
+model Investment {
+  id              String    @id @default(uuid())
+  tenantId        String
+  amount          Decimal   @db.Decimal(14, 2)
+  // Funding source. Stored as a stable string enum validated at the DTO layer:
+  // CREDIT_CARD | CREDIT_LINE | CAPITAL_FRIEND | LOAN | INVESTOR_GUEST
+  source          String
+  // The specific account / person the money came from (e.g. "Chase Visa 1234",
+  // "Amigo Juan"). "Account off source".
+  sourceAccount   String?
+  // Amount to pay back (may exceed amount when there's interest).
+  payBackAmount   Decimal?  @db.Decimal(14, 2)
+  // Payback cadence: WEEKLY | BIWEEKLY | MONTHLY | QUARTERLY | ANNUAL | ONE_TIME | ...
+  payBackInterval String?
+  // Deadline to fully settle / liquidate.
+  settleDeadline  DateTime?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, source])
+  @@map("investments")
 }
 
 // ─── Social Media ─────────────────────────────────────────

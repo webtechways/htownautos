@@ -294,6 +294,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.inventoryAsset;
   }
 
+  get investment() {
+    return this.prisma.investment;
+  }
+
   get socialAccount() {
     return this.prisma.socialAccount;
   }

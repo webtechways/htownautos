@@ -60,6 +60,7 @@ import { ListingGroupsModule } from './listing-groups/listing-groups.module';
 import { ListingReviewsModule } from './listing-reviews/listing-reviews.module';
 import { RebuildModule } from './rebuild/rebuild.module';
 import { InventoryAssetsModule } from './inventory-assets/inventory-assets.module';
+import { InvestmentsModule } from './investments/investments.module';
 import { SocialAccountsModule } from './social-accounts/social-accounts.module';
 import { ClerkWebhooksModule } from './clerk-webhooks/clerk-webhooks.module';
 import { ShippoModule } from './shippo/shippo.module';
@@ -151,6 +152,7 @@ import { SyncWatchdogModule } from './sync-watchdog/sync-watchdog.module';
     ListingReviewsModule,
     RebuildModule,
     InventoryAssetsModule,
+    InvestmentsModule,
     SocialAccountsModule,
     ClerkWebhooksModule,
     ShippoModule,

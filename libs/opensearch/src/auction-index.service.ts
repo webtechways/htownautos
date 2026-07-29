@@ -11,40 +11,6 @@ export class AuctionIndexService implements OnModuleInit {
 
   async onModuleInit() {
     await this.ensureIndex();
-    await this.ensureDerivedMappings();
-  }
-
-  /**
-   * The production index was originally created by dynamic mapping and predates
-   * the derived fields. Adding new field mappings to a live index is safe (no
-   * reindex needed) as long as the field wasn't already dynamically mapped with
-   * a conflicting type. `geoPoint` in particular MUST be an explicit geo_point
-   * for geo_distance queries to work. Best-effort + idempotent.
-   */
-  async ensureDerivedMappings(): Promise<void> {
-    try {
-      const client = this.openSearchService.getClient();
-      await client.indices.putMapping({
-        index: AUCTION_INDEX_NAME,
-        body: {
-          properties: {
-            geoPoint: { type: 'geo_point' },
-            engineSizeL: { type: 'float' },
-            sellerCategory: {
-              type: 'keyword',
-              normalizer: 'lowercase_normalizer',
-            },
-          },
-        },
-      });
-      this.logger.log('Derived-field mappings ensured on auction index');
-    } catch (error: any) {
-      // A conflicting dynamic mapping (e.g. geoPoint already indexed as object)
-      // will throw — surface it so the operator knows a reindex is required.
-      this.logger.warn(
-        `Could not ensure derived mappings (a reindex may be required): ${error?.message}`,
-      );
-    }
   }
 
   async ensureIndex(): Promise<boolean> {
@@ -183,7 +149,9 @@ export class AuctionIndexService implements OnModuleInit {
           // === DERIVED (at index time) ===
           sellerCategory: { type: 'keyword', normalizer: 'lowercase_normalizer' },
           engineSizeL: { type: 'float' },
-          geoPoint: { type: 'geo_point' },
+          // Stored as an object; ZIP-radius uses a bounding box on lat/lon
+          // (range queries) rather than geo_distance, so no geo_point needed.
+          geoPoint: { properties: { lat: { type: 'float' }, lon: { type: 'float' } } },
 
           // === MARKETCHECK SPECIFIC: CARFAX ===
           carfax1Owner: { type: 'boolean' },

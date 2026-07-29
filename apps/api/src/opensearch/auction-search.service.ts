@@ -4,7 +4,7 @@ import { OpenSearchService, AUCTION_INDEX_NAME, AuctionSyncService } from '@htow
 import type { UnifiedAuction, AuctionAggregations, AuctionSearchResult } from '@htownautos/opensearch';
 import { PrismaService } from '@htownautos/prisma';
 import { RabbitMQService } from '@htownautos/rabbitmq';
-import { ProxyService, codesForTitleCategories, deriveTitleCategory, allKnownCodes, geocodeZip } from '@htownautos/common';
+import { ProxyService, codesForTitleCategories, deriveTitleCategory, allKnownCodes, geocodeZip, boundingBox } from '@htownautos/common';
 import type { TitleCategory, TitleOverrides } from '@htownautos/common';
 import { TitleMappingService } from '../title-mapping/title-mapping.service';
 import { AuctionAnalysisType, Prisma } from '@prisma/client';
@@ -343,17 +343,15 @@ export class AuctionSearchService {
       filter.push({ range: { engineSizeL: rangeQuery } });
     }
 
-    // ZIP radius — geocode center ZIP and match against the indexed geo_point.
-    // Skipped silently when the ZIP can't be resolved or the field is missing.
+    // ZIP radius — geocode center ZIP and bound by a box on the indexed
+    // geoPoint.lat/geoPoint.lon (object fields under the dynamic mapping).
+    // Bounding box (not geo_distance) so it works without a geo_point mapping.
     if (dto.zip && dto.radiusMiles && dto.radiusMiles > 0) {
       const center = geocodeZip(dto.zip);
       if (center) {
-        filter.push({
-          geo_distance: {
-            distance: `${dto.radiusMiles}mi`,
-            geoPoint: { lat: center.lat, lon: center.lon },
-          },
-        });
+        const box = boundingBox(center, dto.radiusMiles);
+        filter.push({ range: { 'geoPoint.lat': { gte: box.minLat, lte: box.maxLat } } });
+        filter.push({ range: { 'geoPoint.lon': { gte: box.minLon, lte: box.maxLon } } });
       }
     }
 
@@ -399,7 +397,11 @@ export class AuctionSearchService {
     // Primary title category filter (clean / nonrepairable / salvage / unknown).
     // Known categories → the concrete raw codes (base + learned overrides).
     // "unknown" → any doc whose code is NOT in the known set (incl. missing).
+    // The prod index stores codes UPPERCASE (dynamic mapping, case-sensitive)
+    // while a fresh index lowercases them (normalizer); match both cases.
     if (dto.titleCategory && dto.titleCategory.length > 0) {
+      const bothCases = (arr: string[]) =>
+        Array.from(new Set(arr.flatMap((c) => [c.toLowerCase(), c.toUpperCase()])));
       const cats = dto.titleCategory;
       const known = cats.filter((c) => c !== 'unknown');
       const wantUnknown = cats.includes('unknown');
@@ -407,11 +409,11 @@ export class AuctionSearchService {
 
       if (known.length > 0) {
         const codes = codesForTitleCategories(known, titleOverrides);
-        if (codes.length > 0) should.push({ terms: { 'saleTitleType.keyword': codes } });
+        if (codes.length > 0) should.push({ terms: { 'saleTitleType.keyword': bothCases(codes) } });
       }
       if (wantUnknown) {
         should.push({
-          bool: { must_not: { terms: { 'saleTitleType.keyword': allKnownCodes(titleOverrides) } } },
+          bool: { must_not: { terms: { 'saleTitleType.keyword': bothCases(allKnownCodes(titleOverrides)) } } },
         });
       }
       if (should.length === 1) {

@@ -11,8 +11,6 @@
  */
 import 'dotenv/config';
 import { Pool } from 'pg';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
 import {
   deriveSellerCategory,
   parseEngineSizeL,
@@ -20,52 +18,59 @@ import {
 } from '@htownautos/common';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
 
-const BATCH = 2000;
+const BATCH = 5000;
 
+// One bulk `UPDATE ... FROM (VALUES ...)` per batch — avoids Prisma's 5s
+// interactive-transaction timeout that a per-row update loop hits at scale.
 async function main() {
-  let cursor: bigint | null = null;
   let processed = 0;
 
   for (;;) {
-    const rows = await prisma.auctionListing.findMany({
-      where: {
-        auctionName: 'Copart',
-        ...(cursor != null ? { lotNumber: { gt: cursor } } : {}),
-      },
-      select: {
-        lotNumber: true,
-        engine: true,
-        rentals: true,
-        sellerName: true,
-        locationZip: true,
-      },
-      take: BATCH,
-      orderBy: { lotNumber: 'asc' },
-    });
+    const { rows } = await pool.query<{
+      lotNumber: string;
+      engine: string | null;
+      rentals: string | null;
+      sellerName: string | null;
+      locationZip: string | null;
+    }>(
+      `SELECT "lotNumber", "engine", "rentals", "sellerName", "locationZip"
+       FROM auction_listings
+       WHERE "auctionName" = 'Copart' AND "sellerCategory" IS NULL
+       LIMIT ${BATCH}`,
+    );
     if (rows.length === 0) break;
 
-    await prisma.$transaction(
-      rows.map((r) => {
-        const geo = geocodeZip(r.locationZip);
-        const engineSizeL = parseEngineSizeL(r.engine);
-        return prisma.auctionListing.update({
-          where: { lotNumber: r.lotNumber },
-          data: {
-            sellerCategory: deriveSellerCategory(r.rentals, r.sellerName),
-            engineSizeL: engineSizeL != null ? engineSizeL : null,
-            locationLat: geo ? geo.lat : null,
-            locationLng: geo ? geo.lon : null,
-          },
-        });
-      }),
+    const values: string[] = [];
+    const params: Array<string | number | null> = [];
+    let i = 1;
+    for (const r of rows) {
+      const geo = geocodeZip(r.locationZip);
+      const engineSizeL = parseEngineSizeL(r.engine);
+      params.push(
+        r.lotNumber,
+        deriveSellerCategory(r.rentals, r.sellerName),
+        engineSizeL,
+        geo ? geo.lat : null,
+        geo ? geo.lon : null,
+      );
+      values.push(
+        `($${i}::bigint,$${i + 1},$${i + 2}::numeric,$${i + 3}::double precision,$${i + 4}::double precision)`,
+      );
+      i += 5;
+    }
+
+    await pool.query(
+      `UPDATE auction_listings a
+       SET "sellerCategory" = v.cat, "engineSizeL" = v.el,
+           "locationLat" = v.lat, "locationLng" = v.lng
+       FROM (VALUES ${values.join(',')}) AS v("lotNumber", cat, el, lat, lng)
+       WHERE a."lotNumber" = v."lotNumber"`,
+      params,
     );
 
     processed += rows.length;
-    cursor = rows[rows.length - 1].lotNumber;
-    console.log(`Backfilled ${processed} lots (cursor=${cursor})`);
+    console.log(`Backfilled ${processed} lots`);
     if (rows.length < BATCH) break;
   }
 
@@ -78,6 +83,5 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect();
     await pool.end();
   });

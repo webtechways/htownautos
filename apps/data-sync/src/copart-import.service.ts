@@ -968,46 +968,57 @@ export class CopartImportService implements OnModuleInit {
    * `@htownautos/common` so OpenSearch and Postgres stay identical.
    */
   private async deriveAuctionAttributes(): Promise<number> {
-    const BATCH = 2000;
+    const BATCH = 5000;
     let processed = 0;
 
-    // Loop until no more rows need deriving.
+    // One bulk `UPDATE ... FROM (VALUES ...)` per batch via the raw pg pool.
+    // A Prisma interactive $transaction of thousands of per-row updates blows
+    // the 5s transaction timeout; a single statement per batch does not.
+    // Keyed on sellerCategory (always set below) so every processed row leaves
+    // the predicate on the next pass — the loop always terminates.
     for (;;) {
-      // Keyed on sellerCategory (always set to a non-null value below) so every
-      // processed row leaves the predicate on the next pass — the loop always
-      // terminates. engine/geo are derived opportunistically in the same pass;
-      // the one-time backfill script recomputes everything for existing rows.
-      const rows = await this.prisma.auctionListing.findMany({
-        where: {
-          auctionName: 'Copart',
-          sellerCategory: null,
-        },
-        select: {
-          lotNumber: true,
-          engine: true,
-          rentals: true,
-          sellerName: true,
-          locationZip: true,
-        },
-        take: BATCH,
-        orderBy: { lotNumber: 'asc' },
-      });
+      const { rows } = await this.pool.query<{
+        lotNumber: string;
+        engine: string | null;
+        rentals: string | null;
+        sellerName: string | null;
+        locationZip: string | null;
+      }>(
+        `SELECT "lotNumber", "engine", "rentals", "sellerName", "locationZip"
+         FROM auction_listings
+         WHERE "auctionName" = 'Copart' AND "sellerCategory" IS NULL
+         LIMIT ${BATCH}`,
+      );
       if (rows.length === 0) break;
 
-      await this.prisma.$transaction(
-        rows.map((r) => {
-          const geo = geocodeZip(r.locationZip);
-          const engineSizeL = parseEngineSizeL(r.engine);
-          return this.prisma.auctionListing.update({
-            where: { lotNumber: r.lotNumber },
-            data: {
-              sellerCategory: deriveSellerCategory(r.rentals, r.sellerName),
-              engineSizeL: engineSizeL != null ? engineSizeL : undefined,
-              locationLat: geo ? geo.lat : undefined,
-              locationLng: geo ? geo.lon : undefined,
-            },
-          });
-        }),
+      const values: string[] = [];
+      const params: Array<string | number | null> = [];
+      let i = 1;
+      for (const r of rows) {
+        const geo = geocodeZip(r.locationZip);
+        const engineSizeL = parseEngineSizeL(r.engine);
+        params.push(
+          r.lotNumber,
+          deriveSellerCategory(r.rentals, r.sellerName),
+          engineSizeL,
+          geo ? geo.lat : null,
+          geo ? geo.lon : null,
+        );
+        values.push(
+          `($${i}::bigint,$${i + 1},$${i + 2}::numeric,$${i + 3}::double precision,$${i + 4}::double precision)`,
+        );
+        i += 5;
+      }
+
+      await this.pool.query(
+        `UPDATE auction_listings a
+         SET "sellerCategory" = v.cat,
+             "engineSizeL"    = v.el,
+             "locationLat"    = v.lat,
+             "locationLng"    = v.lng
+         FROM (VALUES ${values.join(',')}) AS v("lotNumber", cat, el, lat, lng)
+         WHERE a."lotNumber" = v."lotNumber"`,
+        params,
       );
 
       processed += rows.length;

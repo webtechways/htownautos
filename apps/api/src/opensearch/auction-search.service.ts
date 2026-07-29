@@ -4,7 +4,9 @@ import { OpenSearchService, AUCTION_INDEX_NAME, AuctionSyncService } from '@htow
 import type { UnifiedAuction, AuctionAggregations, AuctionSearchResult } from '@htownautos/opensearch';
 import { PrismaService } from '@htownautos/prisma';
 import { RabbitMQService } from '@htownautos/rabbitmq';
-import { ProxyService } from '@htownautos/common';
+import { ProxyService, codesForTitleCategories, deriveTitleCategory, allKnownCodes, geocodeZip } from '@htownautos/common';
+import type { TitleCategory, TitleOverrides } from '@htownautos/common';
+import { TitleMappingService } from '../title-mapping/title-mapping.service';
 import { AuctionAnalysisType, Prisma } from '@prisma/client';
 import { SearchAuctionsDto } from './dto/search-auctions.dto';
 
@@ -73,6 +75,7 @@ export class AuctionSearchService {
     private readonly rabbitMQ: RabbitMQService,
     private readonly proxyService: ProxyService,
     private readonly syncService: AuctionSyncService,
+    private readonly titleMapping: TitleMappingService,
   ) {}
 
   async search(dto: SearchAuctionsDto): Promise<AuctionSearchResult> {
@@ -114,8 +117,11 @@ export class AuctionSearchService {
       }
     }
 
+    // Learned title-code → category overrides (staff assignments)
+    const titleOverrides = await this.titleMapping.getOverrides();
+
     // Build query
-    const query = this.buildQuery(dto, carfaxSourceIds, inspectableYardNames);
+    const query = this.buildQuery(dto, carfaxSourceIds, inspectableYardNames, titleOverrides);
 
     // Build sort
     const sort = this.buildSort(sortBy, sortOrder);
@@ -156,7 +162,7 @@ export class AuctionSearchService {
       };
 
       if (dto.includeAggregations && result.aggregations) {
-        response.aggregations = this.parseAggregations(result.aggregations);
+        response.aggregations = this.parseAggregations(result.aggregations, titleOverrides);
       }
 
       return response;
@@ -174,7 +180,7 @@ export class AuctionSearchService {
     return parseInt(`${y}${m}${d}`, 10);
   }
 
-  private buildQuery(dto: SearchAuctionsDto, carfaxSourceIds?: string[], inspectableYardNames?: string[]): any {
+  private buildQuery(dto: SearchAuctionsDto, carfaxSourceIds?: string[], inspectableYardNames?: string[], titleOverrides?: TitleOverrides): any {
     const must: any[] = [];
     const filter: any[] = [];
 
@@ -309,9 +315,46 @@ export class AuctionSearchService {
       filter.push({ term: { 'fuelType.keyword': dto.fuelType } });
     }
 
-    // Drivetrain filter
-    if (dto.drivetrain) {
-      filter.push({ term: { 'drivetrain.keyword': dto.drivetrain } });
+    // Drivetrain filter (multi)
+    if (dto.drivetrain && dto.drivetrain.length > 0) {
+      filter.push({ terms: { 'drivetrain.keyword': dto.drivetrain } });
+    }
+
+    // Color filter (multi)
+    if (dto.color && dto.color.length > 0) {
+      filter.push({ terms: { 'color.keyword': dto.color } });
+    }
+
+    // Cylinders filter (multi)
+    if (dto.cylinders && dto.cylinders.length > 0) {
+      filter.push({ terms: { 'cylinders.keyword': dto.cylinders } });
+    }
+
+    // Source / seller category filter (multi) — derived field indexed at sync time
+    if (dto.sellerCategory && dto.sellerCategory.length > 0) {
+      filter.push({ terms: { 'sellerCategory.keyword': dto.sellerCategory } });
+    }
+
+    // Engine size range (litres) — derived field indexed at sync time
+    if (dto.engineSizeMin !== undefined || dto.engineSizeMax !== undefined) {
+      const rangeQuery: any = {};
+      if (dto.engineSizeMin !== undefined) rangeQuery.gte = dto.engineSizeMin;
+      if (dto.engineSizeMax !== undefined) rangeQuery.lte = dto.engineSizeMax;
+      filter.push({ range: { engineSizeL: rangeQuery } });
+    }
+
+    // ZIP radius — geocode center ZIP and match against the indexed geo_point.
+    // Skipped silently when the ZIP can't be resolved or the field is missing.
+    if (dto.zip && dto.radiusMiles && dto.radiusMiles > 0) {
+      const center = geocodeZip(dto.zip);
+      if (center) {
+        filter.push({
+          geo_distance: {
+            distance: `${dto.radiusMiles}mi`,
+            geoPoint: { lat: center.lat, lon: center.lon },
+          },
+        });
+      }
     }
 
     // Location state filter
@@ -346,11 +389,36 @@ export class AuctionSearchService {
       filter.push({ term: { 'saleStatus.keyword': dto.saleStatus } });
     }
 
-    // Sale title type filter
+    // Sale title type filter (raw codes)
     if (dto.saleTitleType && dto.saleTitleType.length > 0) {
       filter.push({
         terms: { 'saleTitleType.keyword': dto.saleTitleType },
       });
+    }
+
+    // Primary title category filter (clean / nonrepairable / salvage / unknown).
+    // Known categories → the concrete raw codes (base + learned overrides).
+    // "unknown" → any doc whose code is NOT in the known set (incl. missing).
+    if (dto.titleCategory && dto.titleCategory.length > 0) {
+      const cats = dto.titleCategory;
+      const known = cats.filter((c) => c !== 'unknown');
+      const wantUnknown = cats.includes('unknown');
+      const should: any[] = [];
+
+      if (known.length > 0) {
+        const codes = codesForTitleCategories(known, titleOverrides);
+        if (codes.length > 0) should.push({ terms: { 'saleTitleType.keyword': codes } });
+      }
+      if (wantUnknown) {
+        should.push({
+          bool: { must_not: { terms: { 'saleTitleType.keyword': allKnownCodes(titleOverrides) } } },
+        });
+      }
+      if (should.length === 1) {
+        filter.push(should[0]);
+      } else if (should.length > 1) {
+        filter.push({ bool: { should, minimum_should_match: 1 } });
+      }
     }
 
     // Has keys filter
@@ -515,7 +583,19 @@ export class AuctionSearchService {
         terms: { field: 'saleStatus.keyword', size: 10 },
       },
       titleTypes: {
-        terms: { field: 'saleTitleType.keyword', size: 20 },
+        terms: { field: 'saleTitleType.keyword', size: 40 },
+      },
+      colors: {
+        terms: { field: 'color.keyword', size: 40 },
+      },
+      cylinders: {
+        terms: { field: 'cylinders.keyword', size: 20 },
+      },
+      drivetrains: {
+        terms: { field: 'drivetrain.keyword', size: 20 },
+      },
+      sellerCategories: {
+        terms: { field: 'sellerCategory.keyword', size: 10 },
       },
       yards: {
         terms: { field: 'yardName.keyword', size: 100 },
@@ -535,13 +615,28 @@ export class AuctionSearchService {
     };
   }
 
-  private parseAggregations(aggs: any): AuctionAggregations {
+  private parseAggregations(aggs: any, titleOverrides?: TitleOverrides): AuctionAggregations {
     const parseBuckets = (buckets: any[]): Array<{ key: any; count: number }> => {
       return (buckets || []).map((bucket) => ({
         key: bucket.key,
         count: bucket.doc_count,
       }));
     };
+
+    // Roll raw title-type buckets up into the primary categories (incl. unknown).
+    const titleTypeBuckets = parseBuckets(aggs.titleTypes?.buckets);
+    const categoryCounts: Record<TitleCategory, number> = {
+      clean: 0,
+      nonrepairable: 0,
+      salvage: 0,
+      unknown: 0,
+    };
+    for (const b of titleTypeBuckets) {
+      categoryCounts[deriveTitleCategory(String(b.key), titleOverrides)] += b.count;
+    }
+    const titleCategories = (Object.keys(categoryCounts) as TitleCategory[])
+      .map((key) => ({ key, count: categoryCounts[key] }))
+      .filter((b) => b.count > 0);
 
     return {
       sources: parseBuckets(aggs.sources?.buckets),
@@ -555,7 +650,12 @@ export class AuctionSearchService {
       fuelTypes: parseBuckets(aggs.fuelTypes?.buckets),
       damageTypes: parseBuckets(aggs.damageTypes?.buckets),
       saleStatuses: parseBuckets(aggs.saleStatuses?.buckets),
-      titleTypes: parseBuckets(aggs.titleTypes?.buckets),
+      titleTypes: titleTypeBuckets,
+      titleCategories,
+      colors: parseBuckets(aggs.colors?.buckets),
+      cylinders: parseBuckets(aggs.cylinders?.buckets),
+      drivetrains: parseBuckets(aggs.drivetrains?.buckets),
+      sellerCategories: parseBuckets(aggs.sellerCategories?.buckets),
       yards: parseBuckets(aggs.yards?.buckets),
       sellers: parseBuckets(aggs.sellers?.buckets),
       lotCondCodes: parseBuckets(aggs.lotCondCodes?.buckets),
@@ -569,8 +669,9 @@ export class AuctionSearchService {
    * Supports cascading filters - when make is selected, models are filtered to that make
    */
   async getFilterOptions(dto?: SearchAuctionsDto): Promise<AuctionAggregations> {
+    const titleOverrides = await this.titleMapping.getOverrides();
     // Build query based on current filter selections for cascading
-    const query = dto ? this.buildQuery(dto) : { match_all: {} };
+    const query = dto ? this.buildQuery(dto, undefined, undefined, titleOverrides) : { match_all: {} };
 
     const searchBody: any = {
       size: 0,
@@ -580,7 +681,7 @@ export class AuctionSearchService {
 
     try {
       const result = await this.openSearchService.search(AUCTION_INDEX_NAME, searchBody);
-      return this.parseAggregations(result.aggregations);
+      return this.parseAggregations(result.aggregations, titleOverrides);
     } catch (error) {
       this.logger.error(`Error getting filter options: ${error.message}`);
       throw error;

@@ -1854,6 +1854,19 @@ model MarketCheckAuctionCache {
   @@map("marketcheck_auction_cache")
 }
 
+/// Learned mapping of a raw Copart `saleTitleType` code → primary title
+/// category. Seeded empty; staff assign unknown codes from the auction listing
+/// UI and every lot with that code is categorized accordingly from then on.
+model AuctionTitleTypeMapping {
+  code         String   @id // lowercased raw saleTitleType code
+  category     String // clean | nonrepairable | salvage
+  assignedById String? // Clerk user id of the staff member who assigned it
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("auction_title_type_mappings")
+}
+
 model AuctionListing {
   auctionName           String?                   @default("Copart")
   copartId              Int?
@@ -1916,6 +1929,12 @@ model AuctionListing {
   saleLight             String?
   autoGrade             String?
   announcements         String?
+  // Derived at import time (see copart-import.service.ts) — kept in sync with
+  // the OpenSearch document so both backends filter identically.
+  sellerCategory        String?                   // Insurance | Rental | Repo | Other
+  engineSizeL           Decimal?                  @db.Decimal(4, 1)
+  locationLat           Float?
+  locationLng           Float?
   // Freshness tracking — updated every sync run when the lot appears in the feed.
   // Listings whose lastSeenAt is older than the staleness threshold get isStale=true.
   lastSeenAt            DateTime?
@@ -1956,6 +1975,9 @@ model AuctionListing {
   @@index([lastSeenAt])
   @@index([yardId])
   @@index([discarded])
+  @@index([sellerCategory])
+  @@index([saleTitleType])
+  @@index([locationLat, locationLng])
   @@map("auction_listings")
 }
 

@@ -53,6 +53,7 @@ import { PresenceModule } from './presence/presence.module';
 import { TwilioModule } from './twilio/twilio.module';
 import { CallFlowModule } from './call-flow/call-flow.module';
 import { OpenSearchModule } from './opensearch/opensearch.module';
+import { TitleMappingModule } from './title-mapping/title-mapping.module';
 import { StripeModule } from './stripe/stripe.module';
 import { ShortUrlModule } from './short-url/short-url.module';
 import { ProxySyncModule } from './proxy-sync/proxy-sync.module';
@@ -145,6 +146,7 @@ import { SyncWatchdogModule } from './sync-watchdog/sync-watchdog.module';
     TwilioModule,
     CallFlowModule,
     OpenSearchModule,
+    TitleMappingModule,
     StripeModule,
     ShortUrlModule,
     ProxySyncModule,

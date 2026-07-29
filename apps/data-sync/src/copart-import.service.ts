@@ -5,6 +5,11 @@ import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { parse as csvParse } from 'csv-parse';
 import { PrismaService } from '@htownautos/prisma';
 import { AuctionSyncService } from '@htownautos/opensearch';
+import {
+  deriveSellerCategory,
+  parseEngineSizeL,
+  geocodeZip,
+} from '@htownautos/common';
 import { WantedMatchNotifierService } from './wanted-match-notifier.service';
 
 // Maps CSV header names → staging column names
@@ -422,6 +427,20 @@ export class CopartImportService implements OnModuleInit {
           e?.stack,
         );
       }
+    }
+
+    // Step 7c: Derive filter attributes (Source / engine size / geo) for lots
+    // that don't have them yet. Runs before reindex so OpenSearch picks up the
+    // values too. Non-fatal.
+    try {
+      const derived = await this.deriveAuctionAttributes();
+      if (derived > 0) {
+        this.logger.log(`Derived filter attributes for ${derived} lot(s)`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `Derive-attributes step failed (non-fatal): ${(err as Error)?.message}`,
+      );
     }
 
     // Step 8: Mark as stale any listings not seen in this run (after the grace period)
@@ -939,6 +958,63 @@ export class CopartImportService implements OnModuleInit {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Derive Source (sellerCategory), engine size (litres) and geo coordinates
+   * from the raw feed columns and persist them. Only touches lots that don't
+   * have the values yet (new lots each run; the whole table on first pass /
+   * via the backfill script). Shared derivation logic lives in
+   * `@htownautos/common` so OpenSearch and Postgres stay identical.
+   */
+  private async deriveAuctionAttributes(): Promise<number> {
+    const BATCH = 2000;
+    let processed = 0;
+
+    // Loop until no more rows need deriving.
+    for (;;) {
+      // Keyed on sellerCategory (always set to a non-null value below) so every
+      // processed row leaves the predicate on the next pass — the loop always
+      // terminates. engine/geo are derived opportunistically in the same pass;
+      // the one-time backfill script recomputes everything for existing rows.
+      const rows = await this.prisma.auctionListing.findMany({
+        where: {
+          auctionName: 'Copart',
+          sellerCategory: null,
+        },
+        select: {
+          lotNumber: true,
+          engine: true,
+          rentals: true,
+          sellerName: true,
+          locationZip: true,
+        },
+        take: BATCH,
+        orderBy: { lotNumber: 'asc' },
+      });
+      if (rows.length === 0) break;
+
+      await this.prisma.$transaction(
+        rows.map((r) => {
+          const geo = geocodeZip(r.locationZip);
+          const engineSizeL = parseEngineSizeL(r.engine);
+          return this.prisma.auctionListing.update({
+            where: { lotNumber: r.lotNumber },
+            data: {
+              sellerCategory: deriveSellerCategory(r.rentals, r.sellerName),
+              engineSizeL: engineSizeL != null ? engineSizeL : undefined,
+              locationLat: geo ? geo.lat : undefined,
+              locationLng: geo ? geo.lon : undefined,
+            },
+          });
+        }),
+      );
+
+      processed += rows.length;
+      if (rows.length < BATCH) break;
+    }
+
+    return processed;
   }
 
   private async truncateStaging(): Promise<void> {

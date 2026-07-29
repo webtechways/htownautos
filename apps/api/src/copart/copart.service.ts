@@ -2,6 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@htownautos/prisma';
 import { QueryCopartDto } from './dto/query-copart.dto';
 import { Prisma } from '@prisma/client';
+import {
+  codesForTitleCategories,
+  deriveTitleCategory,
+  allKnownCodes,
+  TITLE_CATEGORIES,
+  TITLE_CATEGORY_LABELS,
+  geocodeZip,
+  boundingBox,
+} from '@htownautos/common';
+import type { TitleCategory } from '@htownautos/common';
+import { TitleMappingService } from '../title-mapping/title-mapping.service';
 
 // ── Portal filter helpers ──────────────────────────────────────────────────────
 
@@ -25,6 +36,14 @@ export interface PortalFiltersResult {
   damageTypes: Facet[];
   saleStatuses: Facet[];
   titleTypes: Facet[];
+  titleCategories: Facet[];
+  sources: Facet[];
+  colors: Facet[];
+  cylinders: Facet[];
+  drivetrains: Facet[];
+  bodyStyles: Facet[];
+  fuelTypes: Facet[];
+  transmissions: Facet[];
   states: Facet[];
   keys: Facet[];
 }
@@ -80,7 +99,10 @@ const STATE_MAP: Record<string, string> = {
 
 @Injectable()
 export class CopartService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private titleMapping: TitleMappingService,
+  ) {}
 
   async findAll(query: QueryCopartDto) {
     const {
@@ -90,6 +112,8 @@ export class CopartService {
       make,
       model,
       year,
+      yearMin,
+      yearMax,
       damageDescription,
       saleStatus,
       locationState,
@@ -101,6 +125,18 @@ export class CopartService {
       runsDrives,
       runsAndDrives,
       saleTitleType,
+      titleCategory,
+      sellerCategory,
+      color,
+      cylinders,
+      drive,
+      bodyStyle,
+      fuelType,
+      transmission,
+      engineSizeMin,
+      engineSizeMax,
+      zip,
+      radius,
       trim,
       saleDateFrom,
       saleDateTo,
@@ -114,6 +150,42 @@ export class CopartService {
 
     // Parse IDs filter (comma-separated string)
     const idList = ids ? ids.split(',').filter((id) => id.trim()) : null;
+
+    // ZIP radius → bounding box on locationLat/Lng (cheap, index-friendly).
+    // Exact-circle refinement is unnecessary at the radii the UI offers.
+    let geoBox: Prisma.AuctionListingWhereInput = {};
+    if (zip && radius && radius > 0) {
+      const center = geocodeZip(zip);
+      if (center) {
+        const box = boundingBox(center, radius);
+        geoBox = {
+          locationLat: { gte: box.minLat, lte: box.maxLat },
+          locationLng: { gte: box.minLon, lte: box.maxLon },
+        };
+      }
+    }
+
+    // titleCategory → where clause. Known cats → raw codes (base + learned
+    // overrides); "unknown" → codes NOT in the known set. Multiple cats OR.
+    const titleOverrides = await this.titleMapping.getOverrides();
+    let titleCategoryClause: Prisma.AuctionListingWhereInput = {};
+    if (titleCategory) {
+      const cats = csv(titleCategory);
+      const known = cats.filter((c) => c !== 'unknown');
+      const wantUnknown = cats.includes('unknown');
+      const or: Prisma.AuctionListingWhereInput[] = [];
+      if (known.length > 0) {
+        const codes = codesForTitleCategories(known, titleOverrides);
+        if (codes.length > 0) or.push({ saleTitleType: { in: codes, mode: 'insensitive' } });
+      }
+      if (wantUnknown) {
+        or.push({
+          NOT: { saleTitleType: { in: allKnownCodes(titleOverrides), mode: 'insensitive' } },
+        });
+      }
+      if (or.length === 1) titleCategoryClause = or[0];
+      else if (or.length > 1) titleCategoryClause = { OR: or };
+    }
 
     // Build where clause
     const where: Prisma.AuctionListingWhereInput = {
@@ -152,22 +224,37 @@ export class CopartService {
               }
           : {},
 
-        // Year filter
-        year ? { year } : {},
+        // Year filter — exact, or min/max range
+        year
+          ? { year }
+          : yearMin || yearMax
+            ? {
+                year: {
+                  ...(yearMin && { gte: yearMin }),
+                  ...(yearMax && { lte: yearMax }),
+                },
+              }
+            : {},
 
-        // Damage filter
+        // Damage filter — comma-separated = multi (exact IN); single = contains
         damageDescription
-          ? { damageDescription: { contains: damageDescription, mode: 'insensitive' } }
+          ? damageDescription.includes(',')
+            ? { damageDescription: { in: csv(damageDescription) } }
+            : { damageDescription: { contains: damageDescription, mode: 'insensitive' } }
           : {},
 
-        // Sale status filter
+        // Sale status filter — comma-separated = multi (exact IN); single = contains
         saleStatus
-          ? { saleStatus: { contains: saleStatus, mode: 'insensitive' } }
+          ? saleStatus.includes(',')
+            ? { saleStatus: { in: csv(saleStatus) } }
+            : { saleStatus: { contains: saleStatus, mode: 'insensitive' } }
           : {},
 
-        // Location state filter
+        // Location state filter — comma-separated = multi (exact IN); single = equals
         locationState
-          ? { locationState: { equals: locationState, mode: 'insensitive' } }
+          ? locationState.includes(',')
+            ? { locationState: { in: csv(locationState) } }
+            : { locationState: { equals: locationState, mode: 'insensitive' } }
           : {},
 
         // Price range (using estRetailValue)
@@ -207,10 +294,47 @@ export class CopartService {
           ? { NOT: { runsDrives: { contains: 'not', mode: 'insensitive' } } }
           : {},
 
-        // Title type filter
+        // Title type filter (raw)
         saleTitleType
           ? { saleTitleType: { equals: saleTitleType, mode: 'insensitive' } }
           : {},
+
+        // Primary title category (clean / nonrepairable / salvage / unknown)
+        titleCategoryClause,
+
+        // Source / seller category (multi)
+        sellerCategory ? { sellerCategory: { in: csv(sellerCategory) } } : {},
+
+        // Color (multi)
+        color ? { color: { in: csv(color), mode: 'insensitive' } } : {},
+
+        // Cylinders (multi)
+        cylinders ? { cylinders: { in: csv(cylinders) } } : {},
+
+        // Drivetrain (multi)
+        drive ? { drive: { in: csv(drive), mode: 'insensitive' } } : {},
+
+        // Body style (multi)
+        bodyStyle ? { bodyStyle: { in: csv(bodyStyle), mode: 'insensitive' } } : {},
+
+        // Fuel type (multi)
+        fuelType ? { fuelType: { in: csv(fuelType), mode: 'insensitive' } } : {},
+
+        // Transmission (multi)
+        transmission ? { transmission: { in: csv(transmission), mode: 'insensitive' } } : {},
+
+        // Engine size range (litres)
+        engineSizeMin || engineSizeMax
+          ? {
+              engineSizeL: {
+                ...(engineSizeMin && { gte: engineSizeMin }),
+                ...(engineSizeMax && { lte: engineSizeMax }),
+              },
+            }
+          : {},
+
+        // ZIP radius bounding box
+        geoBox,
 
         // Trim filter (cascades from model) — comma-separated = multi-select
         trim
@@ -416,6 +540,13 @@ export class CopartService {
       titleRaw,
       stateRaw,
       keysRaw,
+      sourceRaw,
+      colorRaw,
+      cylinderRaw,
+      driveRaw,
+      bodyRaw,
+      fuelRaw,
+      transRaw,
     ] = await Promise.all([
       // years — no vehicle filter; order desc
       this.prisma.auctionListing.groupBy({
@@ -503,6 +634,62 @@ export class CopartService {
         _count: { _all: true },
         orderBy: { hasKeys: 'asc' },
       }),
+
+      // sellerCategory (Source) — scoped to vehicleSel
+      this.prisma.auctionListing.groupBy({
+        by: ['sellerCategory'],
+        where: { ...vehicleSel, sellerCategory: { not: null } },
+        _count: { _all: true },
+        orderBy: { sellerCategory: 'asc' },
+      }),
+
+      // colors — scoped to vehicleSel
+      this.prisma.auctionListing.groupBy({
+        by: ['color'],
+        where: { ...vehicleSel, color: { not: null } },
+        _count: { _all: true },
+        orderBy: { color: 'asc' },
+      }),
+
+      // cylinders — scoped to vehicleSel
+      this.prisma.auctionListing.groupBy({
+        by: ['cylinders'],
+        where: { ...vehicleSel, cylinders: { not: null } },
+        _count: { _all: true },
+        orderBy: { cylinders: 'asc' },
+      }),
+
+      // drivetrain — scoped to vehicleSel
+      this.prisma.auctionListing.groupBy({
+        by: ['drive'],
+        where: { ...vehicleSel, drive: { not: null } },
+        _count: { _all: true },
+        orderBy: { drive: 'asc' },
+      }),
+
+      // body styles — scoped to vehicleSel
+      this.prisma.auctionListing.groupBy({
+        by: ['bodyStyle'],
+        where: { ...vehicleSel, bodyStyle: { not: null } },
+        _count: { _all: true },
+        orderBy: { bodyStyle: 'asc' },
+      }),
+
+      // fuel types — scoped to vehicleSel
+      this.prisma.auctionListing.groupBy({
+        by: ['fuelType'],
+        where: { ...vehicleSel, fuelType: { not: null } },
+        _count: { _all: true },
+        orderBy: { fuelType: 'asc' },
+      }),
+
+      // transmissions — scoped to vehicleSel
+      this.prisma.auctionListing.groupBy({
+        by: ['transmission'],
+        where: { ...vehicleSel, transmission: { not: null } },
+        _count: { _all: true },
+        orderBy: { transmission: 'asc' },
+      }),
     ]);
 
     // ── Map raw groupBy results to Facet shapes ────────────────────────────────
@@ -588,7 +775,68 @@ export class CopartService {
         count: r._count._all,
       }));
 
-    return { years, makes, models, trims, damageTypes, saleStatuses, titleTypes, states, keys };
+    // Roll the raw title-type buckets up into the primary categories (incl.
+    // unknown), honouring the learned staff overrides.
+    const titleOverrides = await this.titleMapping.getOverrides();
+    const categoryCounts: Record<TitleCategory, number> = {
+      clean: 0,
+      nonrepairable: 0,
+      salvage: 0,
+      unknown: 0,
+    };
+    for (const r of titleRaw as Array<{ saleTitleType: string | null; _count: { _all: number } }>) {
+      if (!r.saleTitleType) continue;
+      categoryCounts[deriveTitleCategory(r.saleTitleType, titleOverrides)] += r._count._all;
+    }
+    const titleCategories: Facet[] = TITLE_CATEGORIES.map((cat) => ({
+      value: cat,
+      label: TITLE_CATEGORY_LABELS[cat],
+      count: categoryCounts[cat],
+    })).filter((f) => f.count > 0);
+
+    const mapSimpleFacet = (
+      rows: Array<Record<string, unknown>>,
+      key: string,
+    ): Facet[] =>
+      rows
+        .filter((r) => r[key] !== null && r[key] !== '')
+        .map((r) => ({
+          value: String(r[key]),
+          label: titleCase(String(r[key])),
+          count: (r._count as { _all: number })._all,
+        }));
+
+    const sources: Facet[] = mapSimpleFacet(sourceRaw as Array<Record<string, unknown>>, 'sellerCategory')
+      // Source labels are already canonical (Insurance/Rental/Repo/Other)
+      .map((f) => ({ ...f, label: f.value }));
+    const colors: Facet[] = mapSimpleFacet(colorRaw as Array<Record<string, unknown>>, 'color');
+    const cylinders: Facet[] = (cylinderRaw as Array<{ cylinders: string | null; _count: { _all: number } }>)
+      .filter((r) => r.cylinders !== null && r.cylinders !== '')
+      .map((r) => ({ value: r.cylinders as string, label: r.cylinders as string, count: r._count._all }));
+    const drivetrains: Facet[] = mapSimpleFacet(driveRaw as Array<Record<string, unknown>>, 'drive');
+    const bodyStyles: Facet[] = mapSimpleFacet(bodyRaw as Array<Record<string, unknown>>, 'bodyStyle');
+    const fuelTypes: Facet[] = mapSimpleFacet(fuelRaw as Array<Record<string, unknown>>, 'fuelType');
+    const transmissions: Facet[] = mapSimpleFacet(transRaw as Array<Record<string, unknown>>, 'transmission');
+
+    return {
+      years,
+      makes,
+      models,
+      trims,
+      damageTypes,
+      saleStatuses,
+      titleTypes,
+      titleCategories,
+      sources,
+      colors,
+      cylinders,
+      drivetrains,
+      bodyStyles,
+      fuelTypes,
+      transmissions,
+      states,
+      keys,
+    };
   }
 
   async getStats() {

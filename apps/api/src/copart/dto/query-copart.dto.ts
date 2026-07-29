@@ -29,6 +29,16 @@ export class QueryCopartDto {
   year?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  yearMin?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  yearMax?: number;
+
+  @IsOptional()
   @IsString()
   damageDescription?: string;
 
@@ -67,6 +77,54 @@ export class QueryCopartDto {
   @IsOptional()
   @IsString()
   saleTitleType?: string;
+
+  @IsOptional()
+  @IsString()
+  titleCategory?: string; // comma-separated: clean,nonrepairable,salvage
+
+  @IsOptional()
+  @IsString()
+  sellerCategory?: string; // comma-separated: Insurance,Rental,Repo,Other
+
+  @IsOptional()
+  @IsString()
+  color?: string; // comma-separated
+
+  @IsOptional()
+  @IsString()
+  cylinders?: string; // comma-separated
+
+  @IsOptional()
+  @IsString()
+  drive?: string; // comma-separated (drivetrain)
+
+  @IsOptional()
+  @IsString()
+  bodyStyle?: string; // comma-separated
+
+  @IsOptional()
+  @IsString()
+  fuelType?: string; // comma-separated
+
+  @IsOptional()
+  @IsString()
+  transmission?: string; // comma-separated
+
+  @IsOptional()
+  @Type(() => Number)
+  engineSizeMin?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  engineSizeMax?: number;
+
+  @IsOptional()
+  @IsString()
+  zip?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  radius?: number;
 
   @IsOptional()
   @IsString()

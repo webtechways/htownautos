@@ -162,10 +162,65 @@ export class SearchAuctionsDto {
   @IsString()
   fuelType?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by drivetrain' })
+  @ApiPropertyOptional({ description: 'Filter by drivetrain (comma-separated for multiple)' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    if (typeof value === 'string') return value.split(',');
+    return value;
+  })
+  drivetrain?: string[];
+
+  @ApiPropertyOptional({ description: 'Filter by exterior color (comma-separated for multiple)' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    if (typeof value === 'string') return value.split(',');
+    return value;
+  })
+  color?: string[];
+
+  @ApiPropertyOptional({ description: 'Filter by cylinder count (comma-separated for multiple)' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    if (typeof value === 'string') return value.split(',');
+    return value;
+  })
+  cylinders?: string[];
+
+  @ApiPropertyOptional({ description: 'Filter by Source / seller category (Insurance, Rental, Repo, Other)' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    if (typeof value === 'string') return value.split(',');
+    return value;
+  })
+  sellerCategory?: string[];
+
+  @ApiPropertyOptional({ description: 'Minimum engine size in litres' })
+  @IsOptional()
+  @Type(() => Number)
+  engineSizeMin?: number;
+
+  @ApiPropertyOptional({ description: 'Maximum engine size in litres' })
+  @IsOptional()
+  @Type(() => Number)
+  engineSizeMax?: number;
+
+  @ApiPropertyOptional({ description: 'Center ZIP code for radius search' })
   @IsOptional()
   @IsString()
-  drivetrain?: string;
+  zip?: string;
+
+  @ApiPropertyOptional({ description: 'Radius in miles around the ZIP code' })
+  @IsOptional()
+  @Type(() => Number)
+  radiusMiles?: number;
 
   @ApiPropertyOptional({ description: 'Filter by location state (comma-separated for multiple)' })
   @IsOptional()
@@ -209,7 +264,7 @@ export class SearchAuctionsDto {
   @IsString()
   saleStatus?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by sale title type (comma-separated)' })
+  @ApiPropertyOptional({ description: 'Filter by sale title type (comma-separated raw codes)' })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
@@ -218,6 +273,16 @@ export class SearchAuctionsDto {
     return value;
   })
   saleTitleType?: string[];
+
+  @ApiPropertyOptional({ description: 'Filter by primary title category (comma-separated: clean, nonrepairable, salvage)' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    if (typeof value === 'string') return value.split(',');
+    return value;
+  })
+  titleCategory?: string[];
 
   @ApiPropertyOptional({ description: 'Filter by has keys (Yes/No)' })
   @IsOptional()

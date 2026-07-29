@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from '@htownautos/prisma';
 import { ProxyService } from '@htownautos/common';
 import { OpenSearchLibModule } from '@htownautos/opensearch';
+import { TitleMappingModule } from '../title-mapping/title-mapping.module';
 import { AuctionSearchService } from './auction-search.service';
 import { AuctionSearchController } from './auction-search.controller';
 import { AuctionFacetsService } from './auction-facets.service';
@@ -18,6 +19,7 @@ import { AuctionFacetsController } from './auction-facets.controller';
     ConfigModule,
     PrismaModule,
     OpenSearchLibModule,
+    TitleMappingModule,
   ],
   controllers: [AuctionSearchController, AuctionFacetsController],
   providers: [

@@ -29,6 +29,24 @@ export {
   buildTenantEmail,
   resolveTenantUserIdentity,
 } from './utils/tenant-email.utils';
+export {
+  TITLE_CATEGORIES,
+  ASSIGNABLE_TITLE_CATEGORIES,
+  TITLE_CATEGORY_LABELS,
+  TITLE_CATEGORY_CODES,
+  deriveTitleCategory,
+  codesForTitleCategories,
+  allKnownCodes,
+} from './utils/title-category.utils';
+export type { TitleCategory, TitleOverrides } from './utils/title-category.utils';
+export {
+  SELLER_CATEGORIES,
+  deriveSellerCategory,
+  parseEngineSizeL,
+} from './utils/auction-derive.utils';
+export type { SellerCategory } from './utils/auction-derive.utils';
+export { geocodeZip, haversineMiles, boundingBox } from './utils/geo.utils';
+export type { LatLng } from './utils/geo.utils';
 
 // Interceptors
 export { AuditLogInterceptor } from './interceptors/audit-log.interceptor';

@@ -3,6 +3,11 @@ import { PrismaService } from '@htownautos/prisma';
 import { OpenSearchService } from './opensearch.service';
 import { AUCTION_INDEX_NAME } from './auction-index.service';
 import { UnifiedAuction } from './dto/unified-auction.interface';
+import {
+  deriveSellerCategory,
+  parseEngineSizeL,
+  geocodeZip,
+} from '@htownautos/common';
 
 @Injectable()
 export class AuctionSyncService {
@@ -220,6 +225,22 @@ export class AuctionSyncService {
       yardNumber: listing.yardNumber || null,
       itemNumber: listing.itemNumber || null,
       sellerName: listing.sellerName || null,
+
+      // Derived fields (prefer DB-persisted values, fall back to computing here)
+      sellerCategory:
+        listing.sellerCategory ||
+        deriveSellerCategory(listing.rentals, listing.sellerName),
+      engineSizeL:
+        listing.engineSizeL != null
+          ? Number(listing.engineSizeL)
+          : parseEngineSizeL(listing.engine),
+      geoPoint: (() => {
+        if (listing.locationLat != null && listing.locationLng != null) {
+          return { lat: Number(listing.locationLat), lon: Number(listing.locationLng) };
+        }
+        const g = geocodeZip(listing.locationZip);
+        return g ? { lat: g.lat, lon: g.lon } : null;
+      })(),
 
       // Discard state — incremental: written each time a lot is discarded/un-discarded
       discarded: listing.discarded ?? false,

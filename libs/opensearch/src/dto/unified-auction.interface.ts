@@ -76,6 +76,11 @@ export interface UnifiedAuction {
   itemNumber: number | null;
   sellerName: string | null;
 
+  // Derived at index time (see AuctionSyncService)
+  sellerCategory: string | null;      // Insurance | Rental | Repo | Other
+  engineSizeL: number | null;         // parsed litres
+  geoPoint: { lat: number; lon: number } | null; // from locationZip centroid
+
   // Discard state (written on discard/un-discard, absent on legacy docs → treated as not discarded)
   discarded?: boolean;
   discardReason?: string | null;
@@ -123,6 +128,11 @@ export interface AuctionAggregations {
   damageTypes: Array<{ key: string; count: number }>;
   saleStatuses: Array<{ key: string; count: number }>;
   titleTypes: Array<{ key: string; count: number }>;
+  titleCategories: Array<{ key: string; count: number }>;
+  colors: Array<{ key: string; count: number }>;
+  cylinders: Array<{ key: string; count: number }>;
+  drivetrains: Array<{ key: string; count: number }>;
+  sellerCategories: Array<{ key: string; count: number }>;
   yards: Array<{ key: string; count: number }>;
   sellers: Array<{ key: string; count: number }>;
   lotCondCodes: Array<{ key: string; count: number }>;

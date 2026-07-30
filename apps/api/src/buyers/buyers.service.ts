@@ -89,6 +89,30 @@ export class BuyersService {
     return { ok: true };
   }
 
+  /**
+   * Persist an ID document from a Media row uploaded via an upload-session
+   * (e.g. the customer's phone through the QR link). Verifies the media belongs
+   * to this buyer before adopting its storage key.
+   */
+  async saveIdDocumentFromMedia(
+    id: string,
+    tenantId: string,
+    side: 'front' | 'back',
+    mediaId: string,
+  ): Promise<{ ok: true }> {
+    await this.ensureBuyerExists(id, tenantId);
+    const media = await this.prisma.media.findFirst({
+      where: { id: mediaId, buyerId: id },
+      select: { storageKey: true, url: true },
+    });
+    if (!media?.storageKey) throw new NotFoundException('Media not found for this buyer');
+    await this.buyer.update({
+      where: { id },
+      data: side === 'front' ? { idFrontKey: media.storageKey } : { idBackKey: media.storageKey },
+    });
+    return { ok: true };
+  }
+
   /** Short-lived presigned GET URL to view an ID document, or null if unset. */
   async getIdDocumentUrl(
     id: string,

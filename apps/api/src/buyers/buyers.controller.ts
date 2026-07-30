@@ -93,6 +93,17 @@ export class BuyersController {
     return this.service.saveIdDocument(id, tenantId, body.side, body.key);
   }
 
+  @Patch(':id/id-document/from-media')
+  @AuditLog({ action: 'update', resource: 'buyer', level: 'high', pii: true, compliance: ['glba'] })
+  @ApiOperation({ summary: 'Adopt an ID document from a buyer upload-session media' })
+  saveIdDocumentFromMedia(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { side: 'front' | 'back'; mediaId: string },
+  ) {
+    return this.service.saveIdDocumentFromMedia(id, tenantId, body.side, body.mediaId);
+  }
+
   @Get(':id/id-document/:side')
   @AuditLog({ action: 'read', resource: 'buyer', level: 'high', pii: true, compliance: ['glba'] })
   @ApiOperation({ summary: 'Short-lived presigned URL to view a buyer ID document' })

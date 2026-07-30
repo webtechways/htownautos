@@ -89,10 +89,13 @@ For each damage found, provide:
 - partCost: Estimated cost in USD for the replacement part or repair (use realistic market prices)
 - laborCost: Estimated labor cost in USD for repair/replacement/diagnostic (use realistic shop rates)
 
-Return ONLY a valid JSON array, no markdown, no code blocks, no explanation. Example:
-[{"part":"Front Bumper","description":"Deep crack on lower section with paint peeling","level":6,"partCost":350.00,"laborCost":200.00},{"part":"Dashboard - Check Engine Light","description":"Check engine warning light illuminated on instrument cluster","level":5,"partCost":200.00,"laborCost":150.00}]
+Also provide an overall damage assessment:
+- damagePercent: An integer 0-100 estimating the vehicle's TOTAL damage severity (0 = pristine, 33 = light/cosmetic, 66 = moderate structural, 100 = severe/total loss). Weigh the number, severity (level) and location of damages, warning lights and deployed airbags.
 
-If no damages are visible, return an empty array: []`;
+Return ONLY a valid JSON object, no markdown, no code blocks, no explanation, with this exact shape:
+{"damagePercent": 45, "damages": [{"part":"Front Bumper","description":"Deep crack on lower section with paint peeling","level":6,"partCost":350.00,"laborCost":200.00},{"part":"Dashboard - Check Engine Light","description":"Check engine warning light illuminated on instrument cluster","level":5,"partCost":200.00,"laborCost":150.00}]}
+
+If no damages are visible, return: {"damagePercent": 0, "damages": []}`;
 
     this.logger.log(
       `→ OpenAI Vision API: Analyzing ${selectedImages.length} images for listing ${auctionListingId}`,
@@ -123,14 +126,25 @@ If no damages are visible, return an empty array: []`;
         throw new InternalServerErrorException('OpenAI returned empty response');
       }
 
-      // Parse JSON - strip any markdown code fences if present
+      // Parse JSON - strip any markdown code fences if present.
+      // Accepts the new object shape { damagePercent, damages } and, for
+      // backward compatibility, a bare array of damages.
       let damages: DamageItem[];
+      let damagePercent: number | null = null;
       try {
         const cleaned = content
           .replace(/^```(?:json)?\s*/i, '')
           .replace(/\s*```$/i, '')
           .trim();
-        damages = JSON.parse(cleaned);
+        const parsed = JSON.parse(cleaned);
+        if (Array.isArray(parsed)) {
+          damages = parsed;
+        } else {
+          damages = Array.isArray(parsed.damages) ? parsed.damages : [];
+          if (typeof parsed.damagePercent === 'number') {
+            damagePercent = Math.min(100, Math.max(0, Math.round(parsed.damagePercent)));
+          }
+        }
       } catch {
         this.logger.error(`Failed to parse OpenAI response as JSON: ${content}`);
         throw new InternalServerErrorException(
@@ -142,11 +156,19 @@ If no damages are visible, return an empty array: []`;
         throw new InternalServerErrorException('Expected array from damage analysis');
       }
 
+      // Fallback: derive a percentage from the highest damage level when the
+      // model didn't return one (level 1-10 → 10-100%).
+      if (damagePercent === null) {
+        const maxLevel = damages.reduce((m, d) => Math.max(m, Number(d.level) || 0), 0);
+        damagePercent = Math.min(100, Math.round(maxLevel * 10));
+      }
+
       // Save to database in a transaction
       const analysis = await this.prisma.$transaction(async (tx) => {
         const created = await tx.auctionVehicleAnalysis.create({
           data: {
             auctionListingId: BigInt(auctionListingId),
+            damagePercent,
           },
         });
 
@@ -194,6 +216,35 @@ If no damages are visible, return an empty array: []`;
         'Failed to analyze images for damage detection',
       );
     }
+  }
+
+  /**
+   * Latest damagePercent per lot for a batch of lot numbers — powers the
+   * "Damage %" column in the listing tables. Returns only lots that have an
+   * analysis with a non-null percent.
+   */
+  async getDamagePercents(
+    ids: string[],
+  ): Promise<Record<string, number>> {
+    const lotNumbers = ids
+      .map((id) => {
+        try { return BigInt(id); } catch { return null; }
+      })
+      .filter((v): v is bigint => v !== null);
+    if (lotNumbers.length === 0) return {};
+
+    const rows = await this.prisma.auctionVehicleAnalysis.findMany({
+      where: { auctionListingId: { in: lotNumbers }, damagePercent: { not: null } },
+      select: { auctionListingId: true, damagePercent: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const out: Record<string, number> = {};
+    for (const r of rows) {
+      const key = r.auctionListingId.toString();
+      if (!(key in out) && r.damagePercent !== null) out[key] = r.damagePercent; // first = latest
+    }
+    return out;
   }
 
   async getAnalyses(auctionListingId: string) {

@@ -2692,6 +2692,8 @@ model SimilarAuctionCar {
 model AuctionVehicleAnalysis {
   id               String   @id @default(uuid())
   auctionListingId BigInt
+  // Overall AI-assessed damage severity, 0-100 (green 0-33 / yellow 34-66 / red 67-100).
+  damagePercent    Int?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

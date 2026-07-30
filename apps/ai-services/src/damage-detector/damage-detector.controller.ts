@@ -30,6 +30,13 @@ export class DamageDetectorController {
     return { data: result };
   }
 
+  @Post('batch')
+  @ApiOperation({ summary: 'Latest damage % for a batch of lot numbers' })
+  async batch(@Body() body: { ids: string[] }) {
+    const data = await this.damageDetectorService.getDamagePercents(body?.ids ?? []);
+    return { data };
+  }
+
   @Get(':auctionListingId')
   @ApiOperation({ summary: 'Get existing damage analyses for an auction listing' })
   @ApiParam({ name: 'auctionListingId', description: 'Auction listing ID' })

@@ -60,8 +60,14 @@ export class BuyerVehiclePreferencesController {
     @CurrentTenant() tenantId: string,
     @Param('buyerId', ParseUUIDPipe) buyerId: string,
     @Query('inspectableOnly') inspectableOnly?: string,
+    @Query('trustedSeller') trustedSeller?: string,
   ) {
-    return this.service.matches(buyerId, tenantId, inspectableOnly === 'true');
+    return this.service.matches(
+      buyerId,
+      tenantId,
+      inspectableOnly === 'true',
+      trustedSeller === 'true',
+    );
   }
 
   @Post()

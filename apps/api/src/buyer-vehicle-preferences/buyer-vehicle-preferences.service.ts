@@ -158,7 +158,12 @@ export class BuyerVehiclePreferencesService {
    * @param inspectableOnly When true, restricts results to listings whose
    *   yard has physicalInspectionAvailable = true.
    */
-  async matches(buyerId: string, tenantId: string, inspectableOnly = false) {
+  async matches(
+    buyerId: string,
+    tenantId: string,
+    inspectableOnly = false,
+    trustedSeller = false,
+  ) {
     await this.ensureBuyer(buyerId, tenantId);
 
     const prefs = await this.prisma.buyerVehiclePreference.findMany({
@@ -189,6 +194,12 @@ export class BuyerVehiclePreferencesService {
 
     if (inspectableOnly) {
       andClauses.push({ yard: { is: { physicalInspectionAvailable: true } } });
+    }
+
+    // Trusted-seller filter: only lots from a recognised source
+    // (Insurance / Rental / Repo), excluding "Other"/unknown sellers.
+    if (trustedSeller) {
+      andClauses.push({ sellerCategory: { in: ['Insurance', 'Rental', 'Repo'] } });
     }
 
     // Load dismissed lots for this buyer and exclude them from results.

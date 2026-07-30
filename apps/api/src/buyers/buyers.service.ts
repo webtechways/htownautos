@@ -50,6 +50,88 @@ export class BuyersService {
     this.buyer = prisma.getModel('buyer');
   }
 
+  // ── Buyer files (PDF/images/docs — private S3, staff-only) ─────────────────
+
+  async presignFile(
+    id: string,
+    tenantId: string,
+    filename: string,
+    contentType: string,
+  ): Promise<{ uploadUrl: string; key: string }> {
+    await this.ensureBuyerExists(id, tenantId);
+    const ext = (filename.split('.').pop() || 'bin').toLowerCase().slice(0, 8);
+    const { uploadUrl, key } = await this.s3.generatePresignedPutUrl(
+      `files/buyers/${id}`,
+      ext,
+      contentType,
+      true, // private
+    );
+    return { uploadUrl, key };
+  }
+
+  async saveFile(
+    id: string,
+    tenantId: string,
+    body: { key: string; filename: string; contentType: string; size: number },
+  ): Promise<{ id: string; filename: string }> {
+    await this.ensureBuyerExists(id, tenantId);
+    if (!body.key.startsWith(`files/buyers/${id}/`)) {
+      throw new NotFoundException('Invalid file key');
+    }
+    const mediaType = body.contentType === 'application/pdf'
+      ? 'document'
+      : body.contentType.startsWith('image/')
+        ? 'image'
+        : 'document';
+    const media = await this.prisma.media.create({
+      data: {
+        filename: body.filename,
+        url: this.s3.buildPublicUrl(body.key),
+        mimeType: body.contentType,
+        size: body.size || 0,
+        mediaType,
+        category: 'file',
+        storageKey: body.key,
+        isPublic: false,
+        buyerId: id,
+        tenantId: tenantId || undefined,
+      },
+      select: { id: true, filename: true },
+    });
+    return media;
+  }
+
+  async listFiles(
+    id: string,
+    tenantId: string,
+  ): Promise<Array<{ id: string; filename: string; mimeType: string; size: number; createdAt: Date; url: string | null }>> {
+    await this.ensureBuyerExists(id, tenantId);
+    const rows = await this.prisma.media.findMany({
+      where: { buyerId: id, category: 'file', isActive: true },
+      select: { id: true, filename: true, mimeType: true, size: true, createdAt: true, storageKey: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return Promise.all(
+      rows.map(async (r) => ({
+        id: r.id,
+        filename: r.filename,
+        mimeType: r.mimeType,
+        size: r.size,
+        createdAt: r.createdAt,
+        url: r.storageKey ? await this.s3.getSignedUrl(r.storageKey, 300) : null,
+      })),
+    );
+  }
+
+  async deleteFile(id: string, tenantId: string, mediaId: string): Promise<{ ok: true }> {
+    await this.ensureBuyerExists(id, tenantId);
+    await this.prisma.media.updateMany({
+      where: { id: mediaId, buyerId: id },
+      data: { isActive: false },
+    });
+    return { ok: true };
+  }
+
   // ── KYC ID documents (private S3, staff-only) ──────────────────────────────
 
   /** Presigned PUT URL to upload an ID document (front/back) to a private key. */

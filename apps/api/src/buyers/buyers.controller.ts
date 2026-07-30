@@ -70,6 +70,47 @@ export class BuyersController {
     return this.service.create(dto, tenantId);
   }
 
+  // ── Buyer files (PDF/images/docs — private, staff-only) ────────────────────
+
+  @Post(':id/files/presign')
+  @ApiOperation({ summary: 'Presigned PUT URL to upload a buyer file' })
+  presignFile(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { filename: string; contentType: string },
+  ) {
+    return this.service.presignFile(id, tenantId, body.filename, body.contentType);
+  }
+
+  @Post(':id/files')
+  @ApiOperation({ summary: 'Register an uploaded buyer file' })
+  saveFile(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { key: string; filename: string; contentType: string; size: number },
+  ) {
+    return this.service.saveFile(id, tenantId, body);
+  }
+
+  @Get(':id/files')
+  @ApiOperation({ summary: 'List a buyer files (with short-lived download URLs)' })
+  listFiles(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.service.listFiles(id, tenantId);
+  }
+
+  @Delete(':id/files/:mediaId')
+  @ApiOperation({ summary: 'Delete a buyer file' })
+  deleteFile(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('mediaId', ParseUUIDPipe) mediaId: string,
+  ) {
+    return this.service.deleteFile(id, tenantId, mediaId);
+  }
+
   // ── KYC ID documents (private, staff-only, audited) ────────────────────────
 
   @Post(':id/id-document/presign')

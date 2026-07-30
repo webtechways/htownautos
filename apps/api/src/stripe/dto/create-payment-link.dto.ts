@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsString, IsNotEmpty, IsIn, Min } from 'class-validator';
+import { IsInt, IsString, IsNotEmpty, IsIn, IsOptional, Min } from 'class-validator';
 
 export class CreatePaymentLinkDto {
   @ApiProperty({
@@ -19,18 +19,23 @@ export class CreatePaymentLinkDto {
   description: string;
 
   @ApiProperty({
-    description: 'Message note sent to the customer along with the link',
+    description:
+      'Message note sent to the customer along with the link. Not required ' +
+      "when deliveryMethod is 'link' (generate-only, nothing is sent).",
     example: 'Hi! Please use this link to complete your payment.',
+    required: false,
   })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  note: string;
+  note?: string;
 
   @ApiProperty({
-    description: 'Delivery method for the payment link',
-    enum: ['sms', 'email'],
+    description:
+      "Delivery method. 'sms'/'email' send the link to the customer; " +
+      "'link' only generates the URL and returns it (staff copies/sends it manually).",
+    enum: ['sms', 'email', 'link'],
     example: 'sms',
   })
-  @IsIn(['sms', 'email'])
-  deliveryMethod: 'sms' | 'email';
+  @IsIn(['sms', 'email', 'link'])
+  deliveryMethod: 'sms' | 'email' | 'link';
 }

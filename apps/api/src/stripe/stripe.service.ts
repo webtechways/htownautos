@@ -606,8 +606,8 @@ export class StripeService {
     tenantId: string,
     amountInCents: number,
     description: string,
-    note: string,
-    deliveryMethod: 'sms' | 'email',
+    note: string | undefined,
+    deliveryMethod: 'sms' | 'email' | 'link',
     senderId: string,
   ) {
     const buyer = await this.getBuyer(buyerId, tenantId);
@@ -649,13 +649,17 @@ export class StripeService {
     );
     const linkUrl = shortUrl;
 
-    // Send via SMS or Email
+    // Fall back to the description when no explicit note is provided.
+    const message = note?.trim() || description;
+
+    // Send via SMS or Email — or, when deliveryMethod is 'link', send nothing
+    // and just return the URL so staff can copy it and deliver it manually.
     if (deliveryMethod === 'sms') {
       const phone = buyer.phoneMain;
       if (!phone) {
         throw new BadRequestException('Buyer has no phone number for SMS');
       }
-      const body = `${note}\n\nPayment amount: ${amountFormatted}\nPay here: ${linkUrl}`;
+      const body = `${message}\n\nPayment amount: ${amountFormatted}\nPay here: ${linkUrl}`;
       await this.smsService.sendSms(tenantId, senderId, {
         buyerId,
         body,
@@ -663,7 +667,7 @@ export class StripeService {
       this.logger.log(
         `Payment link sent via SMS to buyer ${buyerId} — ${amountFormatted}`,
       );
-    } else {
+    } else if (deliveryMethod === 'email') {
       const email = buyer.email;
       if (!email) {
         throw new BadRequestException('Buyer has no email address');
@@ -673,16 +677,21 @@ export class StripeService {
         subject: `Payment Request — ${amountFormatted}`,
         htmlBody: this.getPaymentLinkHtml(
           `${buyer.firstName} ${buyer.lastName}`.trim(),
-          note,
+          message,
           amountFormatted,
           description,
           linkUrl,
         ),
-        textBody: `${note}\n\nAmount: ${amountFormatted}\nDescription: ${description}\nPay here: ${linkUrl}`,
+        textBody: `${message}\n\nAmount: ${amountFormatted}\nDescription: ${description}\nPay here: ${linkUrl}`,
         fromName: 'HTown Autos',
       });
       this.logger.log(
         `Payment link sent via email to buyer ${buyerId} — ${amountFormatted}`,
+      );
+    } else {
+      // deliveryMethod === 'link': generate-only, nothing is sent.
+      this.logger.log(
+        `Payment link generated (copy-only) for buyer ${buyerId} — ${amountFormatted}`,
       );
     }
 

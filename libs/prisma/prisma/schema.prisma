@@ -787,6 +787,10 @@ model Buyer {
   driversLicenseNumber     String?
   driversLicenseState      String?
   driversLicenseExpiration DateTime?
+  // KYC ID document images — PRIVATE S3 keys (kyc/ prefix). Never public URLs;
+  // viewed only via short-lived presigned GET, staff-auth-gated.
+  idFrontKey               String?
+  idBackKey                String?
   employmentStatusId       String?
   currentEmployer          String?
   employerPhone            String?

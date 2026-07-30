@@ -70,6 +70,40 @@ export class BuyersController {
     return this.service.create(dto, tenantId);
   }
 
+  // ── KYC ID documents (private, staff-only, audited) ────────────────────────
+
+  @Post(':id/id-document/presign')
+  @ApiOperation({ summary: 'Presigned PUT URL to upload a buyer ID document' })
+  presignIdDocument(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { side: 'front' | 'back'; contentType: string },
+  ) {
+    return this.service.presignIdDocument(id, tenantId, body.side, body.contentType);
+  }
+
+  @Patch(':id/id-document')
+  @AuditLog({ action: 'update', resource: 'buyer', level: 'high', pii: true, compliance: ['glba'] })
+  @ApiOperation({ summary: 'Persist an uploaded buyer ID document key' })
+  saveIdDocument(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { side: 'front' | 'back'; key: string },
+  ) {
+    return this.service.saveIdDocument(id, tenantId, body.side, body.key);
+  }
+
+  @Get(':id/id-document/:side')
+  @AuditLog({ action: 'read', resource: 'buyer', level: 'high', pii: true, compliance: ['glba'] })
+  @ApiOperation({ summary: 'Short-lived presigned URL to view a buyer ID document' })
+  getIdDocument(
+    @CurrentTenant() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('side') side: 'front' | 'back',
+  ) {
+    return this.service.getIdDocumentUrl(id, tenantId, side);
+  }
+
   @Get('check-duplicate')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Check if buyer with email or phone already exists' })

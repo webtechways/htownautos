@@ -7,7 +7,7 @@ import { UpdateBuyerDto } from './dto/update-buyer.dto';
 import { QueryBuyerDto } from './dto/query-buyer.dto';
 import { BuyerEntity } from './entities/buyer.entity';
 import { PaginatedResponseDto } from '@htownautos/common';
-import { normalizePhoneNumber } from '@htownautos/common';
+import { normalizePhoneNumber, S3Service } from '@htownautos/common';
 import { randomBytes } from 'crypto';
 
 /** Shared include for buyer queries */
@@ -45,8 +45,65 @@ export class BuyersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly clerkService: ClerkService,
+    private readonly s3: S3Service,
   ) {
     this.buyer = prisma.getModel('buyer');
+  }
+
+  // ── KYC ID documents (private S3, staff-only) ──────────────────────────────
+
+  /** Presigned PUT URL to upload an ID document (front/back) to a private key. */
+  async presignIdDocument(
+    id: string,
+    tenantId: string,
+    side: 'front' | 'back',
+    contentType: string,
+  ): Promise<{ uploadUrl: string; key: string }> {
+    await this.ensureBuyerExists(id, tenantId);
+    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+    const { uploadUrl, key } = await this.s3.generatePresignedPutUrl(
+      `kyc/buyers/${id}/${side}`,
+      ext,
+      contentType,
+      true, // private
+    );
+    return { uploadUrl, key };
+  }
+
+  /** Persist the uploaded ID document key on the buyer. */
+  async saveIdDocument(
+    id: string,
+    tenantId: string,
+    side: 'front' | 'back',
+    key: string,
+  ): Promise<{ ok: true }> {
+    await this.ensureBuyerExists(id, tenantId);
+    // Only accept keys under this buyer's KYC prefix — never an arbitrary key.
+    if (!key.startsWith(`kyc/buyers/${id}/`)) {
+      throw new NotFoundException('Invalid document key');
+    }
+    await this.buyer.update({
+      where: { id },
+      data: side === 'front' ? { idFrontKey: key } : { idBackKey: key },
+    });
+    return { ok: true };
+  }
+
+  /** Short-lived presigned GET URL to view an ID document, or null if unset. */
+  async getIdDocumentUrl(
+    id: string,
+    tenantId: string,
+    side: 'front' | 'back',
+  ): Promise<{ url: string | null }> {
+    await this.ensureBuyerExists(id, tenantId);
+    const row = await this.buyer.findUnique({
+      where: { id },
+      select: { idFrontKey: true, idBackKey: true },
+    });
+    const key = side === 'front' ? row?.idFrontKey : row?.idBackKey;
+    if (!key) return { url: null };
+    const url = await this.s3.getSignedUrl(key, 300);
+    return { url };
   }
 
   async create(dto: CreateBuyerDto, tenantId: string): Promise<BuyerEntity> {

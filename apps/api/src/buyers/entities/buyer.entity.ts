@@ -124,6 +124,12 @@ export class BuyerEntity implements Omit<Buyer, 'monthlyHousingCost' | 'monthlyI
   @ApiPropertyOptional()
   driversLicenseExpiration: Date | null;
 
+  @ApiPropertyOptional()
+  idFrontKey: string | null;
+
+  @ApiPropertyOptional()
+  idBackKey: string | null;
+
   // Employment
   @ApiPropertyOptional()
   employmentStatusId: string | null;

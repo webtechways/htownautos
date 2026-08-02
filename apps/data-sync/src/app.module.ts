@@ -7,6 +7,7 @@ import { RabbitMQModule } from '@htownautos/rabbitmq';
 import { CopartImportService } from './copart-import.service';
 import { SyncTriggerListener } from './sync-trigger.listener';
 import { WantedMatchNotifierService } from './wanted-match-notifier.service';
+import { SellerClassificationNotifierService } from './seller-classification-notifier.service';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { WantedMatchNotifierService } from './wanted-match-notifier.service';
     CopartImportService,
     SyncTriggerListener,
     WantedMatchNotifierService,
+    SellerClassificationNotifierService,
   ],
 })
 export class AppModule {}

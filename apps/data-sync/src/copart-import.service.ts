@@ -11,6 +11,7 @@ import {
   geocodeZip,
 } from '@htownautos/common';
 import { WantedMatchNotifierService } from './wanted-match-notifier.service';
+import { SellerClassificationNotifierService } from './seller-classification-notifier.service';
 
 // Maps CSV header names → staging column names
 const CSV_HEADER_MAP: Record<string, string> = {
@@ -161,6 +162,7 @@ export class CopartImportService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly syncService: AuctionSyncService,
     private readonly wantedMatchNotifier: WantedMatchNotifierService,
+    private readonly sellerClassificationNotifier: SellerClassificationNotifierService,
   ) {
     this.pool = new Pool({
       connectionString: this.configService.get<string>('DATABASE_URL'),
@@ -440,6 +442,16 @@ export class CopartImportService implements OnModuleInit {
     } catch (err) {
       this.logger.error(
         `Derive-attributes step failed (non-fatal): ${(err as Error)?.message}`,
+      );
+    }
+
+    // Step 7d: Seed brand-new sellers into the classification table and notify
+    // staff to classify them (Settings → Sellers). Non-fatal.
+    try {
+      await this.sellerClassificationNotifier.seedAndNotify();
+    } catch (err) {
+      this.logger.error(
+        `Seller-classification step failed (non-fatal): ${(err as Error)?.message}`,
       );
     }
 

@@ -1871,6 +1871,26 @@ model AuctionTitleTypeMapping {
   @@map("auction_title_type_mappings")
 }
 
+/// Staff-curated seller trust + Source classification, managed from
+/// Settings → Sellers. Replaces the fixed deriveSellerCategory heuristic for the
+/// "Trusted Seller" matching filter and the Source facet. Rows are auto-seeded by
+/// the sync for any new sellerName (reviewed=false) which triggers a staff
+/// notification to classify them. Global (auction data is shared across tenants).
+model AuctionSellerClassification {
+  sellerKey    String   @id // lowercased + trimmed sellerName (stable key)
+  sellerName   String // display casing as seen on lots
+  category     String // Insurance | Rental | Repo | Other (override)
+  trusted      Boolean  @default(false)
+  reviewed     Boolean  @default(false) // false = auto-seeded by sync, needs staff review
+  assignedById String? // Clerk user id of the staff member who classified it
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([reviewed])
+  @@index([trusted])
+  @@map("auction_seller_classifications")
+}
+
 model AuctionListing {
   auctionName           String?                   @default("Copart")
   copartId              Int?

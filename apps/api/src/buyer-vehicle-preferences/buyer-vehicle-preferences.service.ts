@@ -5,6 +5,7 @@ import { preferenceToWhere } from '@htownautos/auction-matching';
 import { CreateBuyerVehiclePreferenceDto } from './dto/create-buyer-vehicle-preference.dto';
 import { UpdateBuyerVehiclePreferenceDto } from './dto/update-buyer-vehicle-preference.dto';
 import { isFutureSale } from './sale-time.util';
+import { SellerClassificationService } from '../seller-classification/seller-classification.service';
 
 function serialize(pref: any) {
   return {
@@ -62,7 +63,10 @@ function serializeListing(l: any) {
 
 @Injectable()
 export class BuyerVehiclePreferencesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sellerClassification: SellerClassificationService,
+  ) {}
 
   private async ensureBuyer(buyerId: string, tenantId: string): Promise<void> {
     const exists = await this.prisma.buyer.findFirst({
@@ -196,10 +200,14 @@ export class BuyerVehiclePreferencesService {
       andClauses.push({ yard: { is: { physicalInspectionAvailable: true } } });
     }
 
-    // Trusted-seller filter: only lots from a recognised source
-    // (Insurance / Rental / Repo), excluding "Other"/unknown sellers.
+    // Trusted-seller filter: only lots from sellers staff have marked trusted in
+    // Settings → Sellers (AuctionSellerClassification). Replaces the old fixed
+    // Insurance/Rental/Repo heuristic. An empty trusted list yields 0 matches,
+    // same as before when nothing qualified.
     if (trustedSeller) {
-      andClauses.push({ sellerCategory: { in: ['Insurance', 'Rental', 'Repo'] } });
+      const trustedNames =
+        await this.sellerClassification.getTrustedSellerNames();
+      andClauses.push({ sellerName: { in: trustedNames } });
     }
 
     // Load dismissed lots for this buyer and exclude them from results.

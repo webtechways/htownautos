@@ -640,6 +640,26 @@ export class AuctionSearchService {
       .map((key) => ({ key, count: categoryCounts[key] }))
       .filter((b) => b.count > 0);
 
+    // A handful of malformed Copart CSV rows land a Sale-Status value (or a bare
+    // number) in the Runs/Drives column. Keep the Runs/Drives facet clean by
+    // dropping numeric-only keys and any key that is really a Sale Status — this
+    // preserves every legit value (Run & Drive Verified, DEFAULT, Vehicle
+    // Starts, …) without a brittle whitelist. See [[copart-csv-parser-bug]].
+    const saleStatuses = parseBuckets(aggs.saleStatuses?.buckets);
+    const saleStatusKeys = new Set(
+      saleStatuses.map((b) => String(b.key).trim().toLowerCase()),
+    );
+    const isNumericLike = (s: string) => /^-?\d+(?:\.\d+)?$/.test(s);
+    const runsDrivesOptions = parseBuckets(
+      aggs.runsDrivesOptions?.buckets,
+    ).filter((b) => {
+      const key = String(b.key).trim();
+      if (!key) return false;
+      if (isNumericLike(key)) return false;
+      if (saleStatusKeys.has(key.toLowerCase())) return false;
+      return true;
+    });
+
     return {
       sources: parseBuckets(aggs.sources?.buckets),
       makes: parseBuckets(aggs.makes?.buckets),
@@ -651,7 +671,7 @@ export class AuctionSearchService {
       transmissions: parseBuckets(aggs.transmissions?.buckets),
       fuelTypes: parseBuckets(aggs.fuelTypes?.buckets),
       damageTypes: parseBuckets(aggs.damageTypes?.buckets),
-      saleStatuses: parseBuckets(aggs.saleStatuses?.buckets),
+      saleStatuses,
       titleTypes: titleTypeBuckets,
       titleCategories,
       colors: parseBuckets(aggs.colors?.buckets),
@@ -661,7 +681,7 @@ export class AuctionSearchService {
       yards: parseBuckets(aggs.yards?.buckets),
       sellers: parseBuckets(aggs.sellers?.buckets),
       lotCondCodes: parseBuckets(aggs.lotCondCodes?.buckets),
-      runsDrivesOptions: parseBuckets(aggs.runsDrivesOptions?.buckets),
+      runsDrivesOptions,
       saleLights: parseBuckets(aggs.saleLights?.buckets),
     };
   }

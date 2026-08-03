@@ -8,6 +8,7 @@ import { CopartImportService } from './copart-import.service';
 import { SyncTriggerListener } from './sync-trigger.listener';
 import { WantedMatchNotifierService } from './wanted-match-notifier.service';
 import { SellerClassificationNotifierService } from './seller-classification-notifier.service';
+import { AuctionAliasNotifierService } from './auction-alias-notifier.service';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { SellerClassificationNotifierService } from './seller-classification-not
     SyncTriggerListener,
     WantedMatchNotifierService,
     SellerClassificationNotifierService,
+    AuctionAliasNotifierService,
   ],
 })
 export class AppModule {}

@@ -4,7 +4,7 @@ import { OpenSearchService, AUCTION_INDEX_NAME, AuctionSyncService } from '@htow
 import type { UnifiedAuction, AuctionAggregations, AuctionSearchResult } from '@htownautos/opensearch';
 import { PrismaService } from '@htownautos/prisma';
 import { RabbitMQService } from '@htownautos/rabbitmq';
-import { ProxyService, codesForTitleCategories, deriveTitleCategory, allKnownCodes, geocodeZip, boundingBox } from '@htownautos/common';
+import { ProxyService, codesForTitleCategories, deriveTitleCategory, allKnownCodes, geocodeZip, boundingBox, normalizeToken } from '@htownautos/common';
 import type { TitleCategory, TitleOverrides } from '@htownautos/common';
 import { TitleMappingService } from '../title-mapping/title-mapping.service';
 import { AuctionAnalysisType, Prisma } from '@prisma/client';
@@ -14,6 +14,13 @@ export interface DiscardFields {
   discarded: boolean;
   discardReason: string | null;
   discardedAt: Date | null;
+}
+
+/** Normalize incoming filter values so they match the canonical `.keyword` fields. */
+function canonTerms(values: string[]): string[] {
+  return values
+    .map((v) => normalizeToken(v))
+    .filter((v): v is string => !!v);
 }
 
 // Copart Images API Response types
@@ -270,14 +277,15 @@ export class AuctionSearchService {
       filter.push({ range: { year: rangeQuery } });
     }
 
-    // Make filter
+    // Make filter — canonical (values come from the canonical facet; normalize
+    // for safety so old/raw inputs still match).
     if (dto.make && dto.make.length > 0) {
-      filter.push({ terms: { 'make.keyword': dto.make } });
+      filter.push({ terms: { 'makeCanonical.keyword': canonTerms(dto.make) } });
     }
 
-    // Model filter
+    // Model filter — canonical
     if (dto.model && dto.model.length > 0) {
-      filter.push({ terms: { 'model.keyword': dto.model } });
+      filter.push({ terms: { 'modelCanonical.keyword': canonTerms(dto.model) } });
     }
 
     // Body type filter
@@ -285,9 +293,9 @@ export class AuctionSearchService {
       filter.push({ terms: { 'bodyType.keyword': dto.bodyType } });
     }
 
-    // Trim filter
+    // Trim filter — canonical
     if (dto.trim && dto.trim.length > 0) {
-      filter.push({ terms: { 'trim.keyword': dto.trim } });
+      filter.push({ terms: { 'trimCanonical.keyword': canonTerms(dto.trim) } });
     }
 
     // Yard name filter
@@ -320,9 +328,9 @@ export class AuctionSearchService {
       filter.push({ terms: { 'drivetrain.keyword': dto.drivetrain } });
     }
 
-    // Color filter (multi)
+    // Color filter (multi) — canonical
     if (dto.color && dto.color.length > 0) {
-      filter.push({ terms: { 'color.keyword': dto.color } });
+      filter.push({ terms: { 'colorCanonical.keyword': canonTerms(dto.color) } });
     }
 
     // Cylinders filter (multi)
@@ -555,13 +563,13 @@ export class AuctionSearchService {
         terms: { field: 'source.keyword', size: 10 },
       },
       makes: {
-        terms: { field: 'make.keyword', size: 50 },
+        terms: { field: 'makeCanonical.keyword', size: 50 },
       },
       models: {
-        terms: { field: 'model.keyword', size: 100 },
+        terms: { field: 'modelCanonical.keyword', size: 100 },
       },
       trims: {
-        terms: { field: 'trim.keyword', size: 100 },
+        terms: { field: 'trimCanonical.keyword', size: 100 },
       },
       years: {
         terms: { field: 'year', size: 30, order: { _key: 'desc' } },
@@ -588,7 +596,7 @@ export class AuctionSearchService {
         terms: { field: 'saleTitleType.keyword', size: 40 },
       },
       colors: {
-        terms: { field: 'color.keyword', size: 40 },
+        terms: { field: 'colorCanonical.keyword', size: 40 },
       },
       cylinders: {
         terms: { field: 'cylinders.keyword', size: 20 },

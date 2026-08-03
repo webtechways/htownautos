@@ -55,6 +55,7 @@ import { CallFlowModule } from './call-flow/call-flow.module';
 import { OpenSearchModule } from './opensearch/opensearch.module';
 import { TitleMappingModule } from './title-mapping/title-mapping.module';
 import { SellerClassificationModule } from './seller-classification/seller-classification.module';
+import { AuctionAliasModule } from './auction-alias/auction-alias.module';
 import { StripeModule } from './stripe/stripe.module';
 import { ShortUrlModule } from './short-url/short-url.module';
 import { ProxySyncModule } from './proxy-sync/proxy-sync.module';
@@ -149,6 +150,7 @@ import { SyncWatchdogModule } from './sync-watchdog/sync-watchdog.module';
     OpenSearchModule,
     TitleMappingModule,
     SellerClassificationModule,
+    AuctionAliasModule,
     StripeModule,
     ShortUrlModule,
     ProxySyncModule,

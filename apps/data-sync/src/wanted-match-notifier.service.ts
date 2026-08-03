@@ -6,6 +6,7 @@ import {
   futureSaleWhere,
   WantedPreferenceCriteria,
 } from '@htownautos/auction-matching';
+import { loadAliasMaps } from './alias-maps.util';
 
 /** How many lotNumbers to pack into a single `lotNumber IN (...)` clause. */
 const LOT_IN_CHUNK = 1_000;
@@ -122,6 +123,7 @@ export class WantedMatchNotifierService {
 
     const lotChunks = chunk(newLots, LOT_IN_CHUNK);
     const future = futureSaleWhere();
+    const aliasMaps = await loadAliasMaps(this.prisma);
 
     // buyerId → group of matched lots
     const byBuyer = new Map<string, BuyerGroup>();
@@ -141,7 +143,7 @@ export class WantedMatchNotifierService {
         colors: pref.colors,
         maxCost: pref.maxCost,
       };
-      const prefWhere = preferenceToWhere(criteria);
+      const prefWhere = preferenceToWhere(criteria, aliasMaps);
 
       for (const lots of lotChunks) {
         const listings = await this.prisma.auctionListing.findMany({

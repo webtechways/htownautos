@@ -9,9 +9,12 @@ import {
   deriveSellerCategory,
   parseEngineSizeL,
   geocodeZip,
+  canonicalize,
 } from '@htownautos/common';
 import { WantedMatchNotifierService } from './wanted-match-notifier.service';
 import { SellerClassificationNotifierService } from './seller-classification-notifier.service';
+import { AuctionAliasNotifierService } from './auction-alias-notifier.service';
+import { loadAliasMaps } from './alias-maps.util';
 
 // Maps CSV header names → staging column names
 const CSV_HEADER_MAP: Record<string, string> = {
@@ -163,6 +166,7 @@ export class CopartImportService implements OnModuleInit {
     private readonly syncService: AuctionSyncService,
     private readonly wantedMatchNotifier: WantedMatchNotifierService,
     private readonly sellerClassificationNotifier: SellerClassificationNotifierService,
+    private readonly auctionAliasNotifier: AuctionAliasNotifierService,
   ) {
     this.pool = new Pool({
       connectionString: this.configService.get<string>('DATABASE_URL'),
@@ -442,6 +446,29 @@ export class CopartImportService implements OnModuleInit {
     } catch (err) {
       this.logger.error(
         `Derive-attributes step failed (non-fatal): ${(err as Error)?.message}`,
+      );
+    }
+
+    // Step 7c.2: Compute canonical make/model/trim/color for new lots (dedupe for
+    // facets + matching). Runs before reindex so OpenSearch gets them too. Non-fatal.
+    try {
+      const canon = await this.canonicalizeListings();
+      if (canon > 0) {
+        this.logger.log(`Canonicalized filter values for ${canon} lot(s)`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `Canonicalize step failed (non-fatal): ${(err as Error)?.message}`,
+      );
+    }
+
+    // Step 7e: Seed brand-new normalized make/model/trim/color values and notify
+    // staff to review/merge them (Settings → Vehicle Data). Non-fatal.
+    try {
+      await this.auctionAliasNotifier.seedAndNotify();
+    } catch (err) {
+      this.logger.error(
+        `Alias-review step failed (non-fatal): ${(err as Error)?.message}`,
       );
     }
 
@@ -1029,6 +1056,69 @@ export class CopartImportService implements OnModuleInit {
              "locationLat"    = v.lat,
              "locationLng"    = v.lng
          FROM (VALUES ${values.join(',')}) AS v("lotNumber", cat, el, lat, lng)
+         WHERE a."lotNumber" = v."lotNumber"`,
+        params,
+      );
+
+      processed += rows.length;
+      if (rows.length < BATCH) break;
+    }
+
+    return processed;
+  }
+
+  /**
+   * Compute canonical (deduped, UPPERCASE) make/model/trim/color from the raw
+   * columns + the staff alias overrides, for lots that don't have them yet (new
+   * lots each run; the whole table via the migration's deterministic backfill /
+   * the backfill script). Keyed on `makeCanonical IS NULL` (make is required, so
+   * it always gets a value) → the loop always terminates. Mirrors
+   * deriveAuctionAttributes' batched raw-pool pattern.
+   */
+  private async canonicalizeListings(): Promise<number> {
+    const BATCH = 5000;
+    const maps = await loadAliasMaps(this.prisma);
+    let processed = 0;
+
+    for (;;) {
+      const { rows } = await this.pool.query<{
+        lotNumber: string;
+        make: string | null;
+        modelGroup: string | null;
+        trim: string | null;
+        color: string | null;
+      }>(
+        `SELECT "lotNumber", "make", "modelGroup", "trim", "color"
+         FROM auction_listings
+         WHERE "makeCanonical" IS NULL AND "make" IS NOT NULL
+         LIMIT ${BATCH}`,
+      );
+      if (rows.length === 0) break;
+
+      const values: string[] = [];
+      const params: Array<string | null> = [];
+      let i = 1;
+      for (const r of rows) {
+        params.push(
+          r.lotNumber,
+          canonicalize(r.make, maps.make) ?? '(UNKNOWN)',
+          canonicalize(r.modelGroup, maps.model),
+          canonicalize(r.trim, maps.trim),
+          canonicalize(r.color, maps.color),
+        );
+        values.push(
+          `($${i}::bigint,$${i + 1}::text,$${i + 2}::text,$${i + 3}::text,$${i + 4}::text)`,
+        );
+        i += 5;
+      }
+
+      await this.pool.query(
+        `UPDATE auction_listings a
+         SET "makeCanonical"  = v.mk,
+             "modelCanonical" = v.mo,
+             "trimCanonical"  = v.tr,
+             "colorCanonical" = v.co
+         FROM (VALUES ${values.join(',')}) AS v("lotNumber", mk, mo, tr, co)
          WHERE a."lotNumber" = v."lotNumber"`,
         params,
       );

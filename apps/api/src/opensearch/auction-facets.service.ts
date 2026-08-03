@@ -1,18 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
+import { canonicalize } from '@htownautos/common';
+import { AuctionAliasService } from '../auction-alias/auction-alias.service';
 
 /**
  * Aggregated facets from the auction_listings table.
  *
- * Everything comes straight from the Copart feed (live data). Stale lots
- * are excluded by default so the form only offers options that still
- * exist in the current inventory — guarantees that filtering by a buyer's
- * saved preferences will always have matching candidates.
+ * Options come from the CANONICAL columns (makeCanonical / modelCanonical / …)
+ * so each value appears exactly once — no case/whitespace/spelling duplicates.
+ * Incoming make/model params are canonicalized too, so an option chosen here
+ * always matches the same canonical column the buyer-matching filters on. Stale
+ * lots are excluded so the form only offers options still in inventory.
  */
 @Injectable()
 export class AuctionFacetsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly aliases: AuctionAliasService,
+  ) {}
 
   async makes(params: {
     yearFrom?: number;
@@ -20,17 +26,17 @@ export class AuctionFacetsService {
   }): Promise<string[]> {
     const { yearFrom, yearTo } = params;
     const rows = await this.prisma.auctionListing.findMany({
-      select: { make: true },
-      distinct: ['make'],
+      select: { makeCanonical: true },
+      distinct: ['makeCanonical'],
       where: {
-        make: { not: null },
+        makeCanonical: { not: null },
         isStale: false,
         ...yearRangeClause(yearFrom, yearTo),
       },
-      orderBy: { make: 'asc' },
+      orderBy: { makeCanonical: 'asc' },
       take: 1000,
     });
-    return rows.map((r) => r.make!).filter(Boolean);
+    return rows.map((r) => r.makeCanonical!).filter(Boolean);
   }
 
   async models(params: {
@@ -40,19 +46,20 @@ export class AuctionFacetsService {
   }): Promise<string[]> {
     const { make, yearFrom, yearTo } = params;
     if (!make) return [];
+    const makeC = canonicalize(make, await this.aliases.getCanonicalMap('make'));
     const rows = await this.prisma.auctionListing.findMany({
-      select: { modelGroup: true },
-      distinct: ['modelGroup'],
+      select: { modelCanonical: true },
+      distinct: ['modelCanonical'],
       where: {
-        make: { equals: make, mode: 'insensitive' },
-        modelGroup: { not: null },
+        makeCanonical: makeC,
+        modelCanonical: { not: null },
         isStale: false,
         ...yearRangeClause(yearFrom, yearTo),
       },
-      orderBy: { modelGroup: 'asc' },
+      orderBy: { modelCanonical: 'asc' },
       take: 1000,
     });
-    return rows.map((r) => r.modelGroup!).filter(Boolean);
+    return rows.map((r) => r.modelCanonical!).filter(Boolean);
   }
 
   async trims(params: {
@@ -63,31 +70,36 @@ export class AuctionFacetsService {
   }): Promise<string[]> {
     const { make, models, yearFrom, yearTo } = params;
     if (!make || models.length === 0) return [];
+    const makeC = canonicalize(make, await this.aliases.getCanonicalMap('make'));
+    const modelMap = await this.aliases.getCanonicalMap('model');
+    const modelsC = models
+      .map((m) => canonicalize(m, modelMap))
+      .filter((v): v is string => !!v);
     const rows = await this.prisma.auctionListing.findMany({
-      select: { trim: true },
-      distinct: ['trim'],
+      select: { trimCanonical: true },
+      distinct: ['trimCanonical'],
       where: {
-        make: { equals: make, mode: 'insensitive' },
-        modelGroup: { in: models, mode: 'insensitive' },
-        trim: { not: null },
+        makeCanonical: makeC,
+        modelCanonical: { in: modelsC },
+        trimCanonical: { not: null },
         isStale: false,
         ...yearRangeClause(yearFrom, yearTo),
       },
-      orderBy: { trim: 'asc' },
+      orderBy: { trimCanonical: 'asc' },
       take: 2000,
     });
-    return rows.map((r) => r.trim!).filter(Boolean);
+    return rows.map((r) => r.trimCanonical!).filter(Boolean);
   }
 
   async colors(): Promise<string[]> {
     const rows = await this.prisma.auctionListing.findMany({
-      select: { color: true },
-      distinct: ['color'],
-      where: { color: { not: null }, isStale: false },
-      orderBy: { color: 'asc' },
+      select: { colorCanonical: true },
+      distinct: ['colorCanonical'],
+      where: { colorCanonical: { not: null }, isStale: false },
+      orderBy: { colorCanonical: 'asc' },
       take: 500,
     });
-    return rows.map((r) => r.color!).filter(Boolean);
+    return rows.map((r) => r.colorCanonical!).filter(Boolean);
   }
 
   async titleTypes(): Promise<string[]> {

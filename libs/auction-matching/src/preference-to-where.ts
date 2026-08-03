@@ -1,4 +1,8 @@
 import { Prisma } from '@prisma/client';
+import { canonicalize, type AliasMap, type CanonicalField } from '@htownautos/common';
+
+/** Optional per-field alias maps so preference values match the canonical columns. */
+export type CanonicalMaps = Partial<Record<CanonicalField, AliasMap>>;
 
 /**
  * Minimal shape of a buyer's wanted-vehicle preference needed to build an
@@ -23,11 +27,13 @@ export interface WantedPreferenceCriteria {
  * Converts one buyer preference into a Prisma `where` subclause against
  * `AuctionListing`.
  *
- * Semantics (kept identical to the original on-demand matcher):
- *   - `make` is required and matched case-insensitively.
+ * Semantics:
+ *   - make / models / trims / colors match on the canonical columns
+ *     (makeCanonical / modelCanonical / trimCanonical / colorCanonical), after
+ *     canonicalizing the preference value (normalize + alias). This dedupes case /
+ *     whitespace / spelling variants, so a buyer no longer needs to pick every
+ *     variant. `titleTypes` keeps its own case-insensitive match.
  *   - year range is inclusive; either bound is optional.
- *   - models / trims / titleTypes / colors are case-insensitive membership
- *     filters; an empty array means "any".
  *   - maxMileage / maxCost are NULL-tolerant: a listing with an unknown
  *     odometer/highBid is NOT excluded, because "unknown" must not preempt a
  *     potential match. maxCost is a hard cap — a bid already above budget
@@ -36,10 +42,16 @@ export interface WantedPreferenceCriteria {
  */
 export function preferenceToWhere(
   pref: WantedPreferenceCriteria,
+  maps: CanonicalMaps = {},
 ): Prisma.AuctionListingWhereInput {
+  const canonList = (values: string[], map?: AliasMap): string[] =>
+    values
+      .map((v) => canonicalize(v, map))
+      .filter((v): v is string => !!v);
+
   const where: Prisma.AuctionListingWhereInput = {
     isStale: false,
-    make: { equals: pref.make, mode: 'insensitive' },
+    makeCanonical: { equals: canonicalize(pref.make, maps.make) },
   };
 
   if (pref.yearFrom || pref.yearTo) {
@@ -49,16 +61,16 @@ export function preferenceToWhere(
     where.year = year;
   }
   if (pref.models.length > 0) {
-    where.modelGroup = { in: pref.models, mode: 'insensitive' };
+    where.modelCanonical = { in: canonList(pref.models, maps.model) };
   }
   if (pref.trims.length > 0) {
-    where.trim = { in: pref.trims, mode: 'insensitive' };
+    where.trimCanonical = { in: canonList(pref.trims, maps.trim) };
   }
   if (pref.titleTypes.length > 0) {
     where.saleTitleType = { in: pref.titleTypes, mode: 'insensitive' };
   }
   if (pref.colors.length > 0) {
-    where.color = { in: pref.colors, mode: 'insensitive' };
+    where.colorCanonical = { in: canonList(pref.colors, maps.color) };
   }
 
   const andClauses: Prisma.AuctionListingWhereInput[] = [];

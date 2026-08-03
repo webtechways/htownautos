@@ -6,6 +6,7 @@ import { CreateBuyerVehiclePreferenceDto } from './dto/create-buyer-vehicle-pref
 import { UpdateBuyerVehiclePreferenceDto } from './dto/update-buyer-vehicle-preference.dto';
 import { isFutureSale } from './sale-time.util';
 import { SellerClassificationService } from '../seller-classification/seller-classification.service';
+import { AuctionAliasService } from '../auction-alias/auction-alias.service';
 
 function serialize(pref: any) {
   return {
@@ -66,6 +67,7 @@ export class BuyerVehiclePreferencesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sellerClassification: SellerClassificationService,
+    private readonly aliases: AuctionAliasService,
   ) {}
 
   private async ensureBuyer(buyerId: string, tenantId: string): Promise<void> {
@@ -175,7 +177,8 @@ export class BuyerVehiclePreferencesService {
     });
     if (prefs.length === 0) return [];
 
-    const orClauses = prefs.map(preferenceToWhere);
+    const aliasMaps = await this.aliases.getAllMaps();
+    const orClauses = prefs.map((p) => preferenceToWhere(p, aliasMaps));
 
     // Cheap SQL pre-filter: drop anything whose saleDate is clearly in the
     // past (yesterday or earlier). Keeps the fine-grained tz-aware filter

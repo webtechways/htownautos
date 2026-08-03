@@ -74,6 +74,13 @@ export class AuctionIndexService implements OnModuleInit {
           bodyType: { type: 'keyword', normalizer: 'lowercase_normalizer' },
           color: { type: 'keyword', normalizer: 'lowercase_normalizer' },
           interiorColor: { type: 'keyword', normalizer: 'lowercase_normalizer' },
+          // Canonical filter values — text + exact `.keyword` subfield (matches
+          // both this designed mapping and the dynamic mapping prod fell back to,
+          // so aggregations/filters on `<field>Canonical.keyword` always resolve).
+          makeCanonical: { type: 'text', fields: { keyword: { type: 'keyword' } } },
+          modelCanonical: { type: 'text', fields: { keyword: { type: 'keyword' } } },
+          trimCanonical: { type: 'text', fields: { keyword: { type: 'keyword' } } },
+          colorCanonical: { type: 'text', fields: { keyword: { type: 'keyword' } } },
 
           // === MECHANICAL ===
           engine: { type: 'keyword' },

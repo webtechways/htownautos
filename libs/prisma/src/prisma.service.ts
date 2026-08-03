@@ -154,6 +154,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.auctionSellerClassification;
   }
 
+  get auctionValueAlias() {
+    return this.prisma.auctionValueAlias;
+  }
+
   get auctionFavorite() {
     return this.prisma.auctionFavorite;
   }
@@ -368,6 +372,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
 
   get $queryRawUnsafe() {
     return this.prisma.$queryRawUnsafe.bind(this.prisma);
+  }
+
+  get $executeRawUnsafe() {
+    return this.prisma.$executeRawUnsafe.bind(this.prisma);
   }
 
   // Allow dynamic access to Prisma models

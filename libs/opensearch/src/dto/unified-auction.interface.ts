@@ -15,6 +15,11 @@ export interface UnifiedAuction {
   bodyType: string | null;
   color: string | null;
   interiorColor: string | null;
+  // Canonical (deduped, UPPERCASE) filter values — aggregations/filters use these.
+  makeCanonical: string | null;
+  modelCanonical: string | null;
+  trimCanonical: string | null;
+  colorCanonical: string | null;
 
   // Mechanical
   engine: string | null;

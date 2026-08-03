@@ -1871,6 +1871,27 @@ model AuctionTitleTypeMapping {
   @@map("auction_title_type_mappings")
 }
 
+/// Staff-curated alias → canonical value for auction filter fields (make / model
+/// / trim / color), managed from Settings → Vehicle Data. `aliasKey` is a
+/// normalizeToken() variant seen in the feed; `canonical` is the UPPERCASE value
+/// it should collapse into (e.g. "PRO MASTER" → "PROMASTER"). Auto-seeded by the
+/// sync (reviewed=false, canonical=identity) which notifies staff to merge them.
+/// Read live (cached) by ingestion, facets and matching — no reindex to apply.
+model AuctionValueAlias {
+  id           String   @id @default(uuid())
+  field        String // make | model | trim | color
+  aliasKey     String // normalizeToken(raw) — the variant as seen
+  canonical    String // UPPERCASE canonical value staff chose
+  reviewed     Boolean  @default(false)
+  assignedById String? // Clerk user id of the staff member who set it
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([field, aliasKey])
+  @@index([field, reviewed])
+  @@map("auction_value_aliases")
+}
+
 /// Staff-curated seller trust + Source classification, managed from
 /// Settings → Sellers. Replaces the fixed deriveSellerCategory heuristic for the
 /// "Trusted Seller" matching filter and the Source facet. Rows are auto-seeded by
@@ -1959,6 +1980,13 @@ model AuctionListing {
   engineSizeL           Decimal?                  @db.Decimal(4, 1)
   locationLat           Float?
   locationLng           Float?
+  // Canonical (deduped, UPPERCASE) filter values — derived from make / modelGroup
+  // / trim / color via normalizeToken + the AuctionValueAlias overrides. Facets,
+  // aggregations and buyer matching all read these so every surface agrees.
+  makeCanonical         String?
+  modelCanonical        String?
+  trimCanonical         String?
+  colorCanonical        String?
   // Freshness tracking — updated every sync run when the lot appears in the feed.
   // Listings whose lastSeenAt is older than the staleness threshold get isStale=true.
   lastSeenAt            DateTime?
@@ -2000,6 +2028,10 @@ model AuctionListing {
   @@index([yardId])
   @@index([discarded])
   @@index([sellerCategory])
+  @@index([makeCanonical])
+  @@index([modelCanonical])
+  @@index([trimCanonical])
+  @@index([colorCanonical])
   @@index([saleTitleType])
   @@index([locationLat, locationLng])
   @@map("auction_listings")

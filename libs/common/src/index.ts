@@ -45,6 +45,12 @@ export {
   parseEngineSizeL,
 } from './utils/auction-derive.utils';
 export type { SellerCategory } from './utils/auction-derive.utils';
+export {
+  CANONICAL_FIELDS,
+  normalizeToken,
+  canonicalize,
+} from './utils/auction-canonical.utils';
+export type { CanonicalField, AliasMap } from './utils/auction-canonical.utils';
 export { geocodeZip, haversineMiles, boundingBox } from './utils/geo.utils';
 export type { LatLng } from './utils/geo.utils';
 

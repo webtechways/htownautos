@@ -7,6 +7,7 @@ import {
   deriveSellerCategory,
   parseEngineSizeL,
   geocodeZip,
+  normalizeToken,
 } from '@htownautos/common';
 
 @Injectable()
@@ -167,6 +168,12 @@ export class AuctionSyncService {
       bodyType: listing.bodyStyle || null,
       color: listing.color || null,
       interiorColor: null,
+      // Canonical filter values — prefer the DB-persisted column, fall back to the
+      // deterministic normalization (alias merges live in the DB column).
+      makeCanonical: listing.makeCanonical || normalizeToken(listing.make),
+      modelCanonical: listing.modelCanonical || normalizeToken(listing.modelGroup),
+      trimCanonical: listing.trimCanonical || normalizeToken(listing.trim),
+      colorCanonical: listing.colorCanonical || normalizeToken(listing.color),
 
       // Mechanical
       engine: listing.engine || null,

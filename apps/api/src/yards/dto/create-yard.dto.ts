@@ -31,6 +31,10 @@ export class CreateYardDto {
   @MaxLength(200)
   name!: string;
 
+  @ApiPropertyOptional({ description: 'Public catalog slug from the source site', example: 'tx-houston' })
+  @IsOptional() @IsString() @MaxLength(120)
+  slug?: string;
+
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500)
   address?: string;
 

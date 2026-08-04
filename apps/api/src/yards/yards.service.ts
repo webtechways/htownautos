@@ -33,6 +33,7 @@ export class YardsService {
         OR: [
           { name: { contains: query.search, mode: 'insensitive' } },
           { city: { contains: query.search, mode: 'insensitive' } },
+          { slug: { contains: query.search, mode: 'insensitive' } },
         ],
       }),
     };
@@ -94,6 +95,7 @@ export class YardsService {
           source: dto.source,
           yardNumber: dto.yardNumber,
           name: dto.name,
+          slug: dto.slug,
           address: dto.address,
           city: dto.city,
           state: dto.state,
@@ -132,6 +134,7 @@ export class YardsService {
           ...(dto.source !== undefined && { source: dto.source }),
           ...(dto.yardNumber !== undefined && { yardNumber: dto.yardNumber }),
           ...(dto.name !== undefined && { name: dto.name }),
+          ...(dto.slug !== undefined && { slug: dto.slug }),
           ...(dto.address !== undefined && { address: dto.address }),
           ...(dto.city !== undefined && { city: dto.city }),
           ...(dto.state !== undefined && { state: dto.state }),

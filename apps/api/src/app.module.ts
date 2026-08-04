@@ -43,6 +43,7 @@ import { BuyerFavoritesModule } from './buyer-favorites/buyer-favorites.module';
 import { VehicleInspectionsModule } from './vehicle-inspections/vehicle-inspections.module';
 import { InspectionShareLinksModule } from './inspection-share-links/inspection-share-links.module';
 import { YardsModule } from './yards/yards.module';
+import { AuctionSaleResultsModule } from './auction-sale-results/auction-sale-results.module';
 import { EmailModule } from './email/email.module';
 import { TasksModule } from './tasks/tasks.module';
 import { NotesModule } from './notes/notes.module';
@@ -138,6 +139,7 @@ import { SyncWatchdogModule } from './sync-watchdog/sync-watchdog.module';
     VehicleInspectionsModule,
     InspectionShareLinksModule,
     YardsModule,
+    AuctionSaleResultsModule,
     EmailModule,
     TasksModule,
     NotesModule,

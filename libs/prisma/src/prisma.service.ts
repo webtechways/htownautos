@@ -234,6 +234,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.auctionAnalysisSnapshot;
   }
 
+  get auctionSaleResult() {
+    return this.prisma.auctionSaleResult;
+  }
+
   get shortUrl() {
     return this.prisma.shortUrl;
   }

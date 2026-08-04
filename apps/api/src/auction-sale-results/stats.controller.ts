@@ -1,0 +1,33 @@
+import { Controller, Get, Query } from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Public } from '@htownautos/auth';
+import { StatsService } from './stats.service';
+import { QueryStatsDto } from './dto/query-stats.dto';
+
+/**
+ * Read/search + facets over auction_sale_results for the dashboard "Stats
+ * Listing". Separate controller from the ingest one so the ingest API-key
+ * guard doesn't apply here. Marked @Public() to match the global (non-tenant)
+ * auction data pattern used by /auctions/search.
+ */
+@ApiTags('Auction Sale Results')
+@Controller('auction-sale-results')
+export class StatsController {
+  constructor(private readonly stats: StatsService) {}
+
+  @Get()
+  @Public()
+  @ApiOperation({ summary: 'Search stored sale results (Stats Listing)' })
+  @ApiResponse({ status: 200, description: 'Paginated results + optional aggregations' })
+  search(@Query() dto: QueryStatsDto) {
+    return this.stats.search(dto);
+  }
+
+  @Get('filters')
+  @Public()
+  @ApiOperation({ summary: 'Facet counts for the Stats Listing sidebar' })
+  @ApiResponse({ status: 200, description: 'Aggregations' })
+  getFilters(@Query() dto: QueryStatsDto) {
+    return this.stats.getFilters(dto);
+  }
+}

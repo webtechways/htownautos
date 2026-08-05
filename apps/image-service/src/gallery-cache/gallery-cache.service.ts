@@ -1,20 +1,18 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { RabbitMQService } from '@htownautos/rabbitmq';
 import { PrismaService } from '@htownautos/prisma';
-import { S3Service, ProxyService } from '@htownautos/common';
+import { Prisma } from '@prisma/client';
+import {
+  S3Service,
+  ProxyService,
+  mapWithConcurrency,
+  GALLERY_CACHE_QUEUE,
+} from '@htownautos/common';
+import type { GalleryCacheMessage } from '@htownautos/common';
 
-interface GalleryImage {
-  sequence: number;
-  thumbnail: string;
-  fullSize: string;
-}
-
-interface GalleryCacheMessage {
-  lotNumber: string;
-  images: GalleryImage[];
-}
-
-const GALLERY_CACHE_QUEUE = 'gallery.cache';
+// Fallback config if the singleton control row is missing.
+const DEFAULT_MAX_ATTEMPTS = 5;
+const DEFAULT_CONCURRENCY = 4;
 
 @Injectable()
 export class GalleryCacheService implements OnModuleInit {
@@ -28,7 +26,9 @@ export class GalleryCacheService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    await this.rabbitMQ.consume(GALLERY_CACHE_QUEUE, (msg) => this.handleMessage(msg as unknown as GalleryCacheMessage));
+    await this.rabbitMQ.consume(GALLERY_CACHE_QUEUE, (msg) =>
+      this.handleMessage(msg as unknown as GalleryCacheMessage),
+    );
     this.logger.log(`Subscribed to ${GALLERY_CACHE_QUEUE} queue`);
   }
 
@@ -37,58 +37,63 @@ export class GalleryCacheService implements OnModuleInit {
 
     if (!lotNumber || !images?.length) {
       this.logger.warn(`[GalleryCache] Invalid message: missing lotNumber or images`);
+      if (lotNumber) {
+        await this.finalizeJob(lotNumber, 'failed', [], 'No images to cache');
+      }
       return;
     }
 
-    this.logger.log(`[GalleryCache] Processing lot ${lotNumber} (${images.length} images)`);
+    const { maxAttempts, concurrency, perSequenceDelayMs } = await this.getConfig();
+    this.logger.log(
+      `[GalleryCache] Processing lot ${lotNumber} (${images.length} images, ` +
+        `concurrency=${concurrency}, maxAttempts=${maxAttempts})`,
+    );
 
-    // Upload all images concurrently (thumbnail + fullSize per image)
-    const uploadPromises = images.flatMap((img) => [
-      this.uploadImage(lotNumber, img.sequence, 'thb', img.thumbnail),
-      this.uploadImage(lotNumber, img.sequence, 'hrs', img.fullSize),
-    ]);
+    // Download + upload each sequence (thumbnail + full) with bounded concurrency.
+    // Each proxied request rotates the Webshare exit IP; blocks retry up to maxAttempts.
+    const perSequence = await mapWithConcurrency(images, concurrency, async (img) => {
+      const [thumbnail, fullSize] = await Promise.all([
+        this.uploadImage(lotNumber, img.sequence, 'thb', img.thumbnail, maxAttempts),
+        this.uploadImage(lotNumber, img.sequence, 'hrs', img.fullSize, maxAttempts),
+      ]);
+      if (perSequenceDelayMs > 0) await this.sleep(perSequenceDelayMs);
+      return { sequence: img.sequence, thumbnail, fullSize };
+    });
 
-    const results = await Promise.allSettled(uploadPromises);
-
-    // Track which sequences succeeded (both thb and hrs must succeed)
-    const successMap = new Map<number, { thumbnail?: string; fullSize?: string }>();
+    // A sequence is "cached" if at least one of thumb/full uploaded; "failed" only
+    // if BOTH stayed blocked after every retry (those go to the errors table).
+    const cachedImages: { sequence: number; thumbnail: string; fullSize: string }[] = [];
+    const failedSequences: number[] = [];
 
     for (let i = 0; i < images.length; i++) {
-      const thbResult = results[i * 2];
-      const hrsResult = results[i * 2 + 1];
-      const seq = images[i].sequence;
+      const img = images[i];
+      const r = perSequence[i];
+      const uploaded = r.status === 'fulfilled' ? r.value : null;
+      const s3Thumb = uploaded?.thumbnail ?? null;
+      const s3Full = uploaded?.fullSize ?? null;
 
-      const entry: { thumbnail?: string; fullSize?: string } = {};
-
-      if (thbResult.status === 'fulfilled' && thbResult.value) {
-        entry.thumbnail = thbResult.value;
-      }
-      if (hrsResult.status === 'fulfilled' && hrsResult.value) {
-        entry.fullSize = hrsResult.value;
-      }
-
-      if (entry.thumbnail || entry.fullSize) {
-        successMap.set(seq, entry);
+      if (s3Thumb || s3Full) {
+        cachedImages.push({
+          sequence: img.sequence,
+          thumbnail: s3Thumb || img.thumbnail,
+          fullSize: s3Full || img.fullSize,
+        });
+      } else {
+        failedSequences.push(img.sequence);
       }
     }
-
-    const cachedImages = images
-      .filter((img) => successMap.has(img.sequence))
-      .map((img) => {
-        const cached = successMap.get(img.sequence)!;
-        return {
-          sequence: img.sequence,
-          thumbnail: cached.thumbnail || img.thumbnail,
-          fullSize: cached.fullSize || img.fullSize,
-        };
-      });
 
     if (cachedImages.length === 0) {
       this.logger.error(`[GalleryCache] All uploads failed for lot ${lotNumber}`);
+      await this.finalizeJob(
+        lotNumber,
+        'failed',
+        failedSequences,
+        `All ${images.length} images blocked after ${maxAttempts} attempts`,
+      );
       return;
     }
 
-    // Build cache object and save to DB
     const cacheData = {
       lotNumber,
       imageCount: cachedImages.length,
@@ -103,10 +108,23 @@ export class GalleryCacheService implements OnModuleInit {
       },
     });
 
-    const failed = images.length - cachedImages.length;
-    this.logger.log(
-      `[GalleryCache] Lot ${lotNumber}: ${cachedImages.length}/${images.length} images cached` +
-        (failed > 0 ? ` (${failed} failed)` : ''),
+    const failed = failedSequences.length;
+    if (failed > 0) {
+      this.logger.warn(
+        `[GalleryCache] Lot ${lotNumber}: ${cachedImages.length}/${images.length} cached ` +
+          `(${failed} sequences failed after ${maxAttempts} attempts: ${failedSequences.join(', ')})`,
+      );
+    } else {
+      this.logger.log(
+        `[GalleryCache] Lot ${lotNumber}: ${cachedImages.length}/${images.length} images cached`,
+      );
+    }
+
+    await this.finalizeJob(
+      lotNumber,
+      'done',
+      failedSequences,
+      failed > 0 ? `${failed} image(s) failed after ${maxAttempts} attempts` : null,
     );
   }
 
@@ -115,25 +133,79 @@ export class GalleryCacheService implements OnModuleInit {
     sequence: number,
     suffix: string,
     sourceUrl: string,
+    maxAttempts: number,
   ): Promise<string | null> {
     if (!sourceUrl) return null;
 
     const key = `gallery/${lotNumber}/${sequence}_${suffix}.jpg`;
 
     try {
-      // Download from Copart via proxy
-      const response = await this.proxyService.fetchViaProxy(sourceUrl);
+      // Download from Copart via the Webshare backbone proxy (retries on block).
+      const response = await this.proxyService.fetchViaProxy(sourceUrl, { maxAttempts });
       if (!response.ok) {
         throw new Error(`Failed to fetch ${sourceUrl}: ${response.status}`);
       }
       const buffer = Buffer.from(await response.arrayBuffer());
-
-      // Upload buffer to S3
       await this.s3.uploadBufferToKey(buffer, key, 'image/jpeg', 'public-read');
       return this.s3.buildPublicUrl(key);
     } catch (error: any) {
       this.logger.warn(`[GalleryCache] Failed to upload ${key}: ${error.message}`);
       return null;
     }
+  }
+
+  /**
+   * Finalize the ImageCacheJob for this lot (if one exists). No-op for the
+   * on-demand path, which has no job row. A successful on-demand cache also
+   * closes any pending backfill job for the same lot (dedup).
+   */
+  private async finalizeJob(
+    lotNumber: string,
+    status: 'done' | 'failed',
+    failedSequences: number[],
+    lastError: string | null,
+  ): Promise<void> {
+    try {
+      await this.prisma.imageCacheJob.updateMany({
+        where: { lotNumber: BigInt(lotNumber) },
+        data: {
+          status,
+          failedSequences: failedSequences.length ? failedSequences : Prisma.DbNull,
+          lastError,
+          lastAttemptAt: new Date(),
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `[GalleryCache] Could not finalize job for lot ${lotNumber}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private async getConfig(): Promise<{
+    maxAttempts: number;
+    concurrency: number;
+    perSequenceDelayMs: number;
+  }> {
+    try {
+      const cfg = await this.prisma.imageScrapeConfig.findUnique({
+        where: { id: 'singleton' },
+      });
+      return {
+        maxAttempts: cfg?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
+        concurrency: cfg?.concurrency ?? DEFAULT_CONCURRENCY,
+        perSequenceDelayMs: cfg?.perSequenceDelayMs ?? 0,
+      };
+    } catch {
+      return {
+        maxAttempts: DEFAULT_MAX_ATTEMPTS,
+        concurrency: DEFAULT_CONCURRENCY,
+        perSequenceDelayMs: 0,
+      };
+    }
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((r) => setTimeout(r, ms));
   }
 }

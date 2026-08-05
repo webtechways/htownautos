@@ -60,6 +60,7 @@ import { AuctionAliasModule } from './auction-alias/auction-alias.module';
 import { StripeModule } from './stripe/stripe.module';
 import { ShortUrlModule } from './short-url/short-url.module';
 import { ProxySyncModule } from './proxy-sync/proxy-sync.module';
+import { ImageCacheModule } from './image-cache/image-cache.module';
 import { ListingGroupsModule } from './listing-groups/listing-groups.module';
 import { ListingReviewsModule } from './listing-reviews/listing-reviews.module';
 import { RebuildModule } from './rebuild/rebuild.module';
@@ -156,6 +157,7 @@ import { SyncWatchdogModule } from './sync-watchdog/sync-watchdog.module';
     StripeModule,
     ShortUrlModule,
     ProxySyncModule,
+    ImageCacheModule,
     ListingGroupsModule,
     ListingReviewsModule,
     RebuildModule,

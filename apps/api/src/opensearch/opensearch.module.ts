@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from '@htownautos/prisma';
-import { ProxyService } from '@htownautos/common';
+import { ProxyService, CopartImagesService } from '@htownautos/common';
 import { OpenSearchLibModule } from '@htownautos/opensearch';
 import { TitleMappingModule } from '../title-mapping/title-mapping.module';
 import { AuctionAliasModule } from '../auction-alias/auction-alias.module';
@@ -26,6 +26,7 @@ import { AuctionFacetsController } from './auction-facets.controller';
   controllers: [AuctionSearchController, AuctionFacetsController],
   providers: [
     ProxyService,
+    CopartImagesService,
     AuctionSearchService,
     AuctionFacetsService,
   ],

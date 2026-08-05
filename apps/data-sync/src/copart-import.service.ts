@@ -14,6 +14,7 @@ import {
 import { WantedMatchNotifierService } from './wanted-match-notifier.service';
 import { SellerClassificationNotifierService } from './seller-classification-notifier.service';
 import { AuctionAliasNotifierService } from './auction-alias-notifier.service';
+import { ImageCacheEnqueuerService } from './image-cache-enqueuer.service';
 import { loadAliasMaps } from './alias-maps.util';
 
 // Maps CSV header names → staging column names
@@ -167,6 +168,7 @@ export class CopartImportService implements OnModuleInit {
     private readonly wantedMatchNotifier: WantedMatchNotifierService,
     private readonly sellerClassificationNotifier: SellerClassificationNotifierService,
     private readonly auctionAliasNotifier: AuctionAliasNotifierService,
+    private readonly imageCacheEnqueuer: ImageCacheEnqueuerService,
   ) {
     this.pool = new Pool({
       connectionString: this.configService.get<string>('DATABASE_URL'),
@@ -431,6 +433,23 @@ export class CopartImportService implements OnModuleInit {
         this.logger.error(
           `Wanted-match notification step failed (non-fatal): ${e?.message}`,
           e?.stack,
+        );
+      }
+    }
+
+    // Step 7b.2: Enqueue brand-new lots for proactive image caching. Uncontrolled
+    // by design (only the crawler is rate-limited); non-fatal. Unlike wanted-match
+    // this has no bulk guard — flooding the queue is harmless and the backfill
+    // seeder would pick these up anyway.
+    if (newLotNumbers.length > 0) {
+      try {
+        const enqueued = await this.imageCacheEnqueuer.enqueueNewLots(newLotNumbers);
+        if (enqueued > 0) {
+          this.logger.log(`Enqueued ${enqueued} new lot(s) for image caching`);
+        }
+      } catch (err) {
+        this.logger.error(
+          `Image-cache enqueue step failed (non-fatal): ${(err as Error)?.message}`,
         );
       }
     }

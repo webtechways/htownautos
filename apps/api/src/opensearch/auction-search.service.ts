@@ -1,11 +1,10 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { OpenSearchService, AUCTION_INDEX_NAME, AuctionSyncService } from '@htownautos/opensearch';
 import type { UnifiedAuction, AuctionAggregations, AuctionSearchResult } from '@htownautos/opensearch';
 import { PrismaService } from '@htownautos/prisma';
 import { RabbitMQService } from '@htownautos/rabbitmq';
-import { ProxyService, codesForTitleCategories, deriveTitleCategory, allKnownCodes, geocodeZip, boundingBox, normalizeToken } from '@htownautos/common';
-import type { TitleCategory, TitleOverrides } from '@htownautos/common';
+import { CopartImagesService, GALLERY_CACHE_QUEUE, codesForTitleCategories, deriveTitleCategory, allKnownCodes, geocodeZip, boundingBox, normalizeToken } from '@htownautos/common';
+import type { TitleCategory, TitleOverrides, GalleryImage, GalleryResponse, GalleryCacheMessage } from '@htownautos/common';
 import { TitleMappingService } from '../title-mapping/title-mapping.service';
 import { AuctionAnalysisType, Prisma } from '@prisma/client';
 import { SearchAuctionsDto } from './dto/search-auctions.dto';
@@ -23,54 +22,15 @@ function canonTerms(values: string[]): string[] {
     .filter((v): v is string => !!v);
 }
 
-// Copart Images API Response types
-interface CopartImageLink {
-  url: string;
-  isThumbNail: boolean;
-  isHdImage: boolean;
-  isBlurred: boolean;
-  isEngineSound: boolean;
-}
+// Gallery image/response types + the queue contract now live in @htownautos/common
+// (shared with the data-sync crawler and image-service consumer).
 
-interface CopartImageSequence {
-  sequence: number;
-  link: CopartImageLink[];
-}
-
-interface CopartImagesApiResponse {
-  imgCount: number;
-  lotImages: CopartImageSequence[];
-}
-
-// Our simplified gallery response
-export interface GalleryImage {
-  sequence: number;
-  thumbnail: string;  // thb image
-  fullSize: string;   // hrs image (high resolution)
-}
-
-export interface GalleryResponse {
-  lotNumber: string;
-  imageCount: number;
-  images: GalleryImage[];
-}
-
-// Internal cache structure stored in DB (public S3 URLs)
-interface GalleryCacheImage {
-  sequence: number;
-  thumbnail: string;
-  fullSize: string;
-}
-
+// Internal cache structure stored in DB (public S3 URLs).
 interface GalleryCacheData {
   lotNumber: string;
   imageCount: number;
-  images: GalleryCacheImage[];
+  images: { sequence: number; thumbnail: string; fullSize: string }[];
 }
-
-const GALLERY_CACHE_TTL_DAYS = 30;
-
-export const GALLERY_CACHE_QUEUE = 'gallery.cache';
 
 @Injectable()
 export class AuctionSearchService {
@@ -80,7 +40,7 @@ export class AuctionSearchService {
     private readonly openSearchService: OpenSearchService,
     private readonly prisma: PrismaService,
     private readonly rabbitMQ: RabbitMQService,
-    private readonly proxyService: ProxyService,
+    private readonly copartImages: CopartImagesService,
     private readonly syncService: AuctionSyncService,
     private readonly titleMapping: TitleMappingService,
   ) {}
@@ -924,14 +884,20 @@ export class AuctionSearchService {
 
   /** Bypass: fetch directly from Copart API, no cache read/write */
   async getCopartGalleryRaw(lotNumberStr: string): Promise<GalleryResponse> {
-    const images = await this.fetchCopartImages(lotNumberStr);
+    let images: GalleryImage[] = [];
+    try {
+      images = await this.copartImages.fetchImages(lotNumberStr);
+    } catch (err) {
+      this.logger.warn(`[Gallery] Raw fetch blocked for lot ${lotNumberStr}: ${(err as Error).message}`);
+    }
     return { lotNumber: lotNumberStr, imageCount: images.length, images };
   }
 
   /**
    * Get gallery images for a Copart listing.
-   * - If galleryCache exists in DB → return public S3 URLs (no Copart call)
-   * - If no cache → fetch from Copart, return immediately, cache to S3 in background
+   * - If galleryCache exists in DB → return public S3 URLs (no Copart call).
+   *   The cache is permanent (no TTL); it's only cleared manually.
+   * - If no cache → fetch from Copart, return immediately, cache to S3 in background.
    */
   async getCopartGallery(lotNumberStr: string): Promise<GalleryResponse> {
     const listing = await this.prisma.auctionListing.findUnique({
@@ -945,97 +911,34 @@ export class AuctionSearchService {
 
     const lotNumber = listing.lotNumber.toString();
 
-    // --- CACHE HIT: check TTL and return public S3 URLs ---
-    if (listing.galleryCache && listing.galleryCachedAt) {
-      const ageMs = Date.now() - listing.galleryCachedAt.getTime();
-      const ageDays = ageMs / (1000 * 60 * 60 * 24);
-
-      if (ageDays < GALLERY_CACHE_TTL_DAYS) {
-        try {
-          const cached: GalleryCacheData = JSON.parse(listing.galleryCache);
-          this.logger.log(`[Gallery] Cache HIT for lot ${lotNumber} (${cached.imageCount} images, ${ageDays.toFixed(1)}d old)`);
-          return cached;
-        } catch {
-          this.logger.warn(`[Gallery] Invalid cache JSON for lot ${lotNumber}, refetching`);
-        }
-      } else {
-        this.logger.log(`[Gallery] Cache EXPIRED for lot ${lotNumber} (${ageDays.toFixed(1)}d old), refetching`);
+    // --- CACHE HIT: return public S3 URLs (permanent, no expiry) ---
+    if (listing.galleryCache) {
+      try {
+        const cached: GalleryCacheData = JSON.parse(listing.galleryCache);
+        this.logger.log(`[Gallery] Cache HIT for lot ${lotNumber} (${cached.imageCount} images)`);
+        return cached;
+      } catch {
+        this.logger.warn(`[Gallery] Invalid cache JSON for lot ${lotNumber}, refetching`);
       }
     }
 
     // --- CACHE MISS: fetch from Copart, publish cache job to RabbitMQ ---
     this.logger.log(`[Gallery] Cache MISS for lot ${lotNumber}, fetching from Copart`);
-    const images = await this.fetchCopartImages(lotNumber);
+    let images: GalleryImage[] = [];
+    try {
+      images = await this.copartImages.fetchImages(lotNumber);
+    } catch (err) {
+      // Blocked after every retry — return an empty gallery rather than 500.
+      this.logger.warn(`[Gallery] Fetch blocked for lot ${lotNumber}: ${(err as Error).message}`);
+    }
 
-    // Publish to RabbitMQ for async caching (fire-and-forget)
+    // Publish to RabbitMQ for async S3 caching (fire-and-forget, no jobId → on-demand).
     if (images.length > 0) {
-      this.rabbitMQ.publish(GALLERY_CACHE_QUEUE, { lotNumber, images }).catch(() => {});
+      const msg: GalleryCacheMessage = { lotNumber, images };
+      this.rabbitMQ.publish(GALLERY_CACHE_QUEUE, msg).catch(() => {});
     }
 
     return { lotNumber, imageCount: images.length, images };
-  }
-
-  /** Fetch and parse images from Copart API */
-  private async fetchCopartImages(lotNumber: string): Promise<GalleryImage[]> {
-    const apiUrl = `https://inventoryv2.copart.io/v1/lotImages/${lotNumber}`;
-
-    try {
-      const response = await this.proxyService.fetchViaProxy(apiUrl);
-
-      if (!response.ok) {
-        this.logger.warn(`[Gallery] Copart API returned ${response.status} for lot ${lotNumber}`);
-        return [];
-      }
-
-      const data: CopartImagesApiResponse = await response.json();
-
-      if (!data.lotImages || !Array.isArray(data.lotImages)) {
-        return [];
-      }
-
-      return data.lotImages
-        .filter((img) => img.sequence < 90)
-        .sort((a, b) => a.sequence - b.sequence)
-        .map((img) => {
-          const thumbnailLink = img.link?.find((l) => l.isThumbNail);
-          const hdLink = img.link?.find((l) => l.isHdImage);
-          const fallbackUrl = img.link?.[0]?.url?.trim() || '';
-
-          return {
-            sequence: img.sequence,
-            thumbnail: thumbnailLink?.url?.trim() || fallbackUrl,
-            fullSize: hdLink?.url?.trim() || fallbackUrl,
-          };
-        })
-        .filter((img) => img.thumbnail || img.fullSize);
-    } catch (error) {
-      this.logger.error(`[Gallery] Error fetching Copart API for lot ${lotNumber}: ${error.message}`);
-      return [];
-    }
-  }
-
-  /** Cleanup expired gallery caches from DB (runs daily at 3am) */
-  @Cron(CronExpression.EVERY_DAY_AT_3AM)
-  async cleanupExpiredGalleryCache() {
-    try {
-      const cutoff = new Date(Date.now() - GALLERY_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000);
-      const result = await this.prisma.auctionListing.updateMany({
-        where: {
-          galleryCachedAt: { lt: cutoff },
-          galleryCache: { not: null },
-        },
-        data: {
-          galleryCache: null,
-          galleryCachedAt: null,
-        },
-      });
-
-      if (result.count > 0) {
-        this.logger.log(`[Gallery] Cleaned ${result.count} expired gallery caches from DB`);
-      }
-    } catch (err) {
-      this.logger.warn(`[Gallery] Failed to cleanup expired caches: ${err.message}`);
-    }
   }
 
   // ── Analysis snapshot upsert ───────────────────────────────────────────────

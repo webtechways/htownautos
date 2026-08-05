@@ -60,27 +60,45 @@ export class ProxySyncService implements OnModuleInit {
         return;
       }
 
-      // Delete old proxies and insert new ones in a transaction
-      await this.prisma.$transaction([
-        this.prisma.proxy.deleteMany(),
-        this.prisma.proxy.createMany({
-          data: proxies.map((p) => ({
-            address: p.proxy_address,
-            port: p.port,
-            username: p.username || null,
-            password: p.password || null,
-            authMethod: 'username_password',
-            connectionMethod: 'direct',
-            country: p.country_code || null,
-            city: p.city_name || null,
-            status: p.valid ? 'active' : 'inactive',
-            lastCheckedAt: p.last_verification ? new Date(p.last_verification) : null,
-            isActive: p.valid,
-          })),
-        }),
-      ]);
+      // Non-destructive refresh: upsert the current feed, then retire (not delete)
+      // any proxy that dropped out. Keeps the historical inventory visible in
+      // Settings → Image Cache even after Webshare rotates the list.
+      const runAt = new Date();
 
-      this.logger.log(`[ProxySync] Refreshed ${proxies.length} proxies`);
+      for (const p of proxies) {
+        const data = {
+          username: p.username || null,
+          password: p.password || null,
+          authMethod: 'username_password',
+          connectionMethod: 'direct',
+          country: p.country_code || null,
+          city: p.city_name || null,
+          status: p.valid ? 'active' : 'inactive',
+          lastCheckedAt: p.last_verification ? new Date(p.last_verification) : null,
+          isActive: p.valid,
+          lastSeenInFeedAt: runAt,
+          retiredAt: null,
+        };
+        await this.prisma.proxy.upsert({
+          where: { address_port: { address: p.proxy_address, port: p.port } },
+          update: data,
+          create: { address: p.proxy_address, port: p.port, ...data },
+        });
+      }
+
+      // Anything not touched this run (older/null lastSeenInFeedAt) is gone from
+      // the feed → retire it, but keep the row for history.
+      const retired = await this.prisma.proxy.updateMany({
+        where: {
+          retiredAt: null,
+          OR: [{ lastSeenInFeedAt: null }, { lastSeenInFeedAt: { lt: runAt } }],
+        },
+        data: { retiredAt: runAt, isActive: false, status: 'retired' },
+      });
+
+      this.logger.log(
+        `[ProxySync] Upserted ${proxies.length} proxies, retired ${retired.count} stale`,
+      );
     } catch (error: any) {
       this.logger.error(`[ProxySync] Failed: ${error.message}`);
     }

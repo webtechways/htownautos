@@ -2996,11 +2996,49 @@ model Proxy {
   status           String    @default("active")
   lastCheckedAt    DateTime?
   isActive         Boolean   @default(true)
+  // Non-destructive Webshare sync: keep historical inventory instead of wiping.
+  lastSeenInFeedAt DateTime? // last time this proxy appeared in the Webshare feed
+  retiredAt        DateTime? // set when it dropped out of the feed (kept for history)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
   @@unique([address, port])
   @@map("proxies")
+}
+
+// One row per Copart lot whose gallery still needs to be cached to S3.
+// Fed by the new-lot enqueuer (data-sync) and the backfill seeder; drained by
+// the pausable image-cache crawler. The image-service consumer finalizes each
+// row's status (done/failed) after uploading to S3. Global (auction data is shared).
+model ImageCacheJob {
+  lotNumber       BigInt    @id
+  status          String    @default("pending") // pending | processing | done | failed
+  priority        Int? // = AuctionListing.saleDate (YYYYMMDD); soonest auction first
+  attempts        Int       @default(0)
+  failedSequences Json? // sequences that never cached after maxAttempts
+  lastError       String?
+  lastAttemptAt   DateTime?
+  source          String    @default("backfill") // new_lot | backfill | manual
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, priority])
+  @@map("image_cache_jobs")
+}
+
+// Singleton control row for the image scraping/caching subsystem, edited from
+// Settings → Image Cache. The crawler reads it every tick.
+model ImageScrapeConfig {
+  id                 String   @id @default("singleton")
+  paused             Boolean  @default(false)
+  lotsPerTick        Int      @default(6) // lots dispatched per crawler tick (~1/min cron)
+  maxAttempts        Int      @default(5) // proxy retries per image before giving up
+  perSequenceDelayMs Int      @default(0) // optional pause between sequences in the consumer
+  concurrency        Int      @default(4) // bounded parallel image up/downloads per lot
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("image_scrape_config")
 }
 
 model AuctionListingGroup {

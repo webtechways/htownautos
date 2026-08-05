@@ -63,4 +63,13 @@ export { S3Service } from './s3/s3.service';
 export type { UploadResult, PresignResult, HeadObjectResult } from './s3/s3.service';
 
 // Proxy Service
-export { ProxyService } from './proxy/proxy.service';
+export { ProxyService, ImageFetchBlockedError } from './proxy/proxy.service';
+
+// Copart images (shared gallery fetch + queue contract)
+export { CopartImagesService } from './copart/copart-images.service';
+export type { GalleryImage, GalleryResponse } from './copart/copart-images.service';
+export { GALLERY_CACHE_QUEUE } from './copart/gallery-cache.constants';
+export type { GalleryCacheMessage } from './copart/gallery-cache.constants';
+
+// Concurrency
+export { mapWithConcurrency } from './utils/concurrency.utils';

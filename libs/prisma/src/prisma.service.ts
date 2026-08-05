@@ -246,6 +246,14 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.proxy;
   }
 
+  get imageCacheJob() {
+    return this.prisma.imageCacheJob;
+  }
+
+  get imageScrapeConfig() {
+    return this.prisma.imageScrapeConfig;
+  }
+
   get auctionListingGroup() {
     return this.prisma.auctionListingGroup;
   }
@@ -376,6 +384,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
 
   get $queryRawUnsafe() {
     return this.prisma.$queryRawUnsafe.bind(this.prisma);
+  }
+
+  get $executeRaw() {
+    return this.prisma.$executeRaw.bind(this.prisma);
   }
 
   get $executeRawUnsafe() {

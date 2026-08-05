@@ -28,13 +28,21 @@ const DEFAULT_HEADERS: Record<string, string> = {
 const DEFAULT_MAX_ATTEMPTS = 5;
 const CREDS_CACHE_MS = 5 * 60_000;
 
+interface ProxyRow {
+  address: string;
+  port: number;
+  username: string | null;
+  password: string | null;
+}
+
 @Injectable()
 export class ProxyService {
   private readonly logger = new Logger(ProxyService.name);
 
-  // Cached backbone proxy URL (Webshare rotates the exit IP per connection).
-  private cachedProxyUrl: string | null = null;
-  private cachedProxyUrlAt = 0;
+  // Cached pool of active direct proxies; a random one is used per request/retry
+  // (Webshare "direct" mode — the backbone endpoint is not reachable from prod).
+  private proxyCache: ProxyRow[] = [];
+  private proxyCacheAt = 0;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -52,8 +60,8 @@ export class ProxyService {
   }
 
   /**
-   * Fetch a URL through the Webshare backbone proxy. Webshare rotates the exit IP
-   * on every new connection, so each attempt effectively uses a different proxy.
+   * Fetch a URL through a random Webshare "direct" proxy from the active pool.
+   * Each attempt picks a different random proxy, so retries rotate the exit IP.
    *
    * Retries up to `maxAttempts` on blocks (403/429/5xx) and network errors, opening
    * a fresh connection each time. Throws `ImageFetchBlockedError` if all attempts
@@ -72,7 +80,7 @@ export class ProxyService {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       let agent: ProxyAgent | undefined;
       try {
-        const proxyUrl = await this.getBackboneProxyUrl();
+        const proxyUrl = await this.pickProxyUrl();
         let res: Response;
         if (proxyUrl) {
           agent = new ProxyAgent(proxyUrl);
@@ -134,38 +142,35 @@ export class ProxyService {
   }
 
   /**
-   * Resolve the Webshare backbone proxy URL. Prefers explicit env config; falls
-   * back to credentials from the synced proxy inventory (all rows share the same
-   * account username/password). Returns null when nothing is configured.
+   * Pick a random active direct proxy URL (`http://user:pass@ip:port`). An explicit
+   * `PROXY_BACKBONE_URL` env still wins if set (in case backbone is enabled later).
+   * Returns null (→ direct fetch) only when the pool is empty.
    */
-  private async getBackboneProxyUrl(): Promise<string | null> {
+  private async pickProxyUrl(): Promise<string | null> {
     if (process.env.PROXY_BACKBONE_URL) return process.env.PROXY_BACKBONE_URL;
 
-    const host = process.env.PROXY_BACKBONE_HOST || 'p.webshare.io:3128';
-    const user = process.env.PROXY_BACKBONE_USER;
-    const pass = process.env.PROXY_BACKBONE_PASS;
-    if (user && pass) return `http://${user}:${pass}@${host}`;
+    const pool = await this.getProxyPool();
+    if (pool.length === 0) {
+      this.logger.warn('[Proxy] No active proxies in inventory — fetching direct');
+      return null;
+    }
+    const p = pool[Math.floor(Math.random() * pool.length)];
+    return p.username && p.password
+      ? `http://${p.username}:${p.password}@${p.address}:${p.port}`
+      : `http://${p.address}:${p.port}`;
+  }
 
+  /** In-memory cache of the active proxy pool (refreshed every few minutes). */
+  private async getProxyPool(): Promise<ProxyRow[]> {
     const now = Date.now();
-    if (this.cachedProxyUrl && now - this.cachedProxyUrlAt < CREDS_CACHE_MS) {
-      return this.cachedProxyUrl;
+    if (this.proxyCache.length && now - this.proxyCacheAt < CREDS_CACHE_MS) {
+      return this.proxyCache;
     }
-
-    const proxy = await this.prisma.proxy.findFirst({
-      where: { isActive: true, username: { not: null }, password: { not: null } },
-      select: { username: true, password: true },
+    this.proxyCache = await this.prisma.proxy.findMany({
+      where: { isActive: true },
+      select: { address: true, port: true, username: true, password: true },
     });
-    this.cachedProxyUrlAt = now;
-    this.cachedProxyUrl =
-      proxy?.username && proxy?.password
-        ? `http://${proxy.username}:${proxy.password}@${host}`
-        : null;
-
-    if (!this.cachedProxyUrl) {
-      this.logger.warn(
-        '[Proxy] No backbone credentials (env or proxy inventory) — fetching direct',
-      );
-    }
-    return this.cachedProxyUrl;
+    this.proxyCacheAt = now;
+    return this.proxyCache;
   }
 }

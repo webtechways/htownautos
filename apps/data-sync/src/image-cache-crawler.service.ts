@@ -147,7 +147,9 @@ export class ImageCacheCrawlerService {
       try {
         const images = await this.copartImages.fetchImages(lotNumber, { maxAttempts });
         if (images.length === 0) {
-          await this.markFailed(job.lotNumber, 'No images returned from Copart (empty/404)');
+          // 404 / no images published yet → not an error, just unavailable. Mark
+          // skipped so it leaves the queue and never lands in the errors table.
+          await this.markSkipped(job.lotNumber);
           continue;
         }
         const msg: GalleryCacheMessage = { lotNumber, images, jobId: lotNumber };
@@ -181,6 +183,14 @@ export class ImageCacheCrawlerService {
     await this.prisma.imageCacheJob.update({
       where: { lotNumber },
       data: { status: 'failed', lastError: error, lastAttemptAt: new Date() },
+    });
+  }
+
+  /** Terminal, non-error state for lots with no images available (404/empty). */
+  private async markSkipped(lotNumber: bigint): Promise<void> {
+    await this.prisma.imageCacheJob.update({
+      where: { lotNumber },
+      data: { status: 'skipped', lastError: null, lastAttemptAt: new Date() },
     });
   }
 }

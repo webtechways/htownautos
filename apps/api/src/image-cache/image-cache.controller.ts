@@ -70,4 +70,10 @@ export class ImageCacheController {
   proxies() {
     return this.service.listProxies();
   }
+
+  @Post('proxies/resync')
+  @ApiOperation({ summary: 'Pull the current Webshare proxy list and refresh inventory' })
+  resyncProxies() {
+    return this.service.resyncProxies();
+  }
 }

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
+import { ProxySyncService } from '../proxy-sync/proxy-sync.service';
 import { UpdateImageScrapeConfigDto } from './dto/update-image-scrape-config.dto';
 
 const CONFIG_ID = 'singleton';
@@ -12,6 +13,8 @@ const DEFAULT_CONFIG = {
   maxAttempts: 5,
   perSequenceDelayMs: 0,
   concurrency: 4,
+  proxyResyncHours: 168,
+  proxyLastSyncAt: null as Date | null,
 };
 
 export interface Paginated<T> {
@@ -36,7 +39,15 @@ function clampPage(page?: number, limit?: number) {
 export class ImageCacheService {
   private readonly logger = new Logger(ImageCacheService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly proxySync: ProxySyncService,
+  ) {}
+
+  /** Manually pull the current Webshare proxy list and refresh the inventory. */
+  async resyncProxies() {
+    return this.proxySync.syncProxies();
+  }
 
   async getConfig() {
     const cfg = await this.prisma.imageScrapeConfig.findUnique({ where: { id: CONFIG_ID } });

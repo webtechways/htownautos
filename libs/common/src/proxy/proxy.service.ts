@@ -27,6 +27,8 @@ const DEFAULT_HEADERS: Record<string, string> = {
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 const CREDS_CACHE_MS = 5 * 60_000;
+// Hard cap per attempt so a slow/dead proxy can never hang the crawler loop.
+const REQUEST_TIMEOUT_MS = 20_000;
 
 interface ProxyRow {
   address: string;
@@ -83,14 +85,23 @@ export class ProxyService {
         const proxyUrl = await this.pickProxyUrl();
         let res: Response;
         if (proxyUrl) {
-          agent = new ProxyAgent(proxyUrl);
+          agent = new ProxyAgent({
+            uri: proxyUrl,
+            connectTimeout: 10_000,
+            headersTimeout: REQUEST_TIMEOUT_MS,
+            bodyTimeout: REQUEST_TIMEOUT_MS,
+          });
           res = (await undiciFetch(url, {
             dispatcher: agent,
             headers: DEFAULT_HEADERS,
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           })) as unknown as Response;
         } else {
           // No proxy configured (local/dev) → direct fetch.
-          res = await fetch(url, { headers: DEFAULT_HEADERS });
+          res = await fetch(url, {
+            headers: DEFAULT_HEADERS,
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          });
         }
 
         lastStatus = res.status;

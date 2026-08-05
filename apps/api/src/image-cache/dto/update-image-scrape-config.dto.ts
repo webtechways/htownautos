@@ -29,4 +29,10 @@ export class UpdateImageScrapeConfigDto {
   @Min(1)
   @Max(32)
   concurrency?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(8760)
+  proxyResyncHours?: number;
 }

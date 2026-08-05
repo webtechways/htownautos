@@ -8,6 +8,7 @@ export interface IngestSummary {
   upserted: number;
   matched: number;
   unmatched: number;
+  bidUpdated: number;
   unmatchedLots: string[];
 }
 
@@ -29,6 +30,7 @@ export class AuctionSaleResultsService {
       upserted: 0,
       matched: 0,
       unmatched: 0,
+      bidUpdated: 0,
       unmatchedLots: [],
     };
 
@@ -108,6 +110,16 @@ export class AuctionSaleResultsService {
           update: data,
         });
         summary.upserted++;
+
+        // Reflect the scraped final bid onto the listing itself (overwrite
+        // highBid) — only when the lot matched and a bid was reported.
+        if (listing && item.bid != null) {
+          await this.prisma.auctionListing.update({
+            where: { lotNumber: lot },
+            data: { highBid: item.bid },
+          });
+          summary.bidUpdated++;
+        }
       } catch (err: any) {
         this.logger.error(
           `Failed to ingest lot ${item?.lot}: ${err?.message ?? err}`,
@@ -116,7 +128,7 @@ export class AuctionSaleResultsService {
     }
 
     this.logger.log(
-      `Ingest done: received=${summary.received} upserted=${summary.upserted} matched=${summary.matched} unmatched=${summary.unmatched}`,
+      `Ingest done: received=${summary.received} upserted=${summary.upserted} matched=${summary.matched} unmatched=${summary.unmatched} bidUpdated=${summary.bidUpdated}`,
     );
     return summary;
   }

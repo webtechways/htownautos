@@ -1,10 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
+import { S3Service } from '@htownautos/common';
 import { ProxySyncService } from '../proxy-sync/proxy-sync.service';
 import { UpdateImageScrapeConfigDto } from './dto/update-image-scrape-config.dto';
 
 const CONFIG_ID = 'singleton';
+// Re-list the gallery/ prefix at most this often (storage changes slowly).
+const STORAGE_TTL_MS = 60 * 60_000;
+const GALLERY_PREFIX = 'gallery/';
 
 const DEFAULT_CONFIG = {
   id: CONFIG_ID,
@@ -39,9 +43,16 @@ function clampPage(page?: number, limit?: number) {
 export class ImageCacheService {
   private readonly logger = new Logger(ImageCacheService.name);
 
+  // Cached S3 storage total for the gallery/ prefix (refreshed in the background).
+  private storageBytes = 0;
+  private storageObjects = 0;
+  private storageComputedAt: Date | null = null;
+  private storageComputing = false;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly proxySync: ProxySyncService,
+    private readonly s3: S3Service,
   ) {}
 
   /** Manually pull the current Webshare proxy list and refresh the inventory. */
@@ -77,13 +88,44 @@ export class ImageCacheService {
     const perTick = config.lotsPerTick || 1;
     const etaMinutes = Math.ceil(counts.pending / perTick);
 
+    // Refresh the S3 storage total in the background (throttled); never blocks.
+    this.maybeRefreshStorage();
+
     return {
       counts,
       queueDepth: counts.pending + counts.processing,
       cachedListings: cachedCount,
       etaMinutes,
+      storageBytes: this.storageBytes,
+      storageObjects: this.storageObjects,
+      storageComputedAt: this.storageComputedAt,
       config,
     };
+  }
+
+  /** Kick off a storage recompute if stale and not already running (non-blocking). */
+  private maybeRefreshStorage() {
+    if (this.storageComputing) return;
+    const fresh =
+      this.storageComputedAt &&
+      Date.now() - this.storageComputedAt.getTime() < STORAGE_TTL_MS;
+    if (fresh) return;
+
+    this.storageComputing = true;
+    this.s3
+      .sumPrefixSize(GALLERY_PREFIX)
+      .then(({ bytes, objects }) => {
+        this.storageBytes = bytes;
+        this.storageObjects = objects;
+        this.storageComputedAt = new Date();
+        this.logger.log(
+          `[Storage] gallery/ = ${(bytes / 1e9).toFixed(2)} GB across ${objects} objects`,
+        );
+      })
+      .catch((err) => this.logger.warn(`[Storage] compute failed: ${err.message}`))
+      .finally(() => {
+        this.storageComputing = false;
+      });
   }
 
   async listJobs(params: { status?: string; page?: number; limit?: number }): Promise<Paginated<any>> {

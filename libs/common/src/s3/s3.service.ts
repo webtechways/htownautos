@@ -9,6 +9,7 @@ import {
   UploadPartCommand,
   CompleteMultipartUploadCommand,
   AbortMultipartUploadCommand,
+  ListObjectsV2Command,
   type ObjectCannedACL,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -65,6 +66,35 @@ export class S3Service {
       return `${this.cdnBaseUrl}/${key}`;
     }
     return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+  }
+
+  /**
+   * Sum the total size (bytes) and object count under a key prefix by paginating
+   * ListObjectsV2. Used for the "Storage" stat over the `gallery/` prefix. This
+   * lists every object, so call it from a throttled/background path, not per-request.
+   */
+  async sumPrefixSize(prefix: string): Promise<{ bytes: number; objects: number }> {
+    let bytes = 0;
+    let objects = 0;
+    let token: string | undefined;
+
+    do {
+      const res = await this.s3Client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: token,
+          MaxKeys: 1000,
+        }),
+      );
+      for (const o of res.Contents ?? []) {
+        bytes += o.Size ?? 0;
+        objects += 1;
+      }
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
+
+    return { bytes, objects };
   }
 
   /** Generate an S3 key: {folder}/{year}/{uuid}/original.{ext} */

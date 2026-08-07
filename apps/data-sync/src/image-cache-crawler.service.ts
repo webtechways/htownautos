@@ -95,7 +95,9 @@ export class ImageCacheCrawlerService {
     const saleFloor =
       future.OR?.find((c) => typeof c.saleDate?.gte === 'number')?.saleDate?.gte ?? 0;
 
-    // INSERT missing lots as pending backfill jobs, soonest auction first.
+    // Only backfill RECENTLY-ARRIVED lots (last 48h) — the old backlog is
+    // intentionally ignored; new arrivals come through the enqueuer, this is a
+    // safety net for any the enqueuer missed. Soonest auction first.
     const inserted = await this.prisma.$executeRaw`
       INSERT INTO "image_cache_jobs" ("lotNumber", "status", "priority", "source", "updatedAt")
       SELECT al."lotNumber", 'pending', al."saleDate", 'backfill', NOW()
@@ -104,6 +106,7 @@ export class ImageCacheCrawlerService {
         AND al."galleryCache" IS NULL
         AND al."isStale" = false
         AND al."discarded" = false
+        AND al."createdAt" >= NOW() - INTERVAL '48 hours'
         AND (al."saleDate" IS NULL OR al."saleDate" >= ${saleFloor})
         AND NOT EXISTS (SELECT 1 FROM "image_cache_jobs" j WHERE j."lotNumber" = al."lotNumber")
       ORDER BY al."saleDate" ASC NULLS LAST

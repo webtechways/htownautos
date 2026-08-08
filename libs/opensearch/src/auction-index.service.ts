@@ -160,9 +160,6 @@ export class AuctionIndexService implements OnModuleInit {
           // (range queries) rather than geo_distance, so no geo_point needed.
           geoPoint: { properties: { lat: { type: 'float' }, lon: { type: 'float' } } },
 
-          // Post-sale flag: final price received (drives the "final price" filter).
-          bidded: { type: 'boolean' },
-
           // === MARKETCHECK SPECIFIC: CARFAX ===
           carfax1Owner: { type: 'boolean' },
           carfaxCleanTitle: { type: 'boolean' },

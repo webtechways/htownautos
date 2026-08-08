@@ -112,12 +112,11 @@ export class AuctionSaleResultsService {
         summary.upserted++;
 
         // Reflect the scraped final bid onto the listing itself (overwrite
-        // highBid) and flag it as auctioned (bidded) — only when the lot matched
-        // and a bid was reported. `bidded` powers the Auction Listing filter.
+        // highBid) — only when the lot matched and a bid was reported.
         if (listing && item.bid != null) {
           await this.prisma.auctionListing.update({
             where: { lotNumber: lot },
-            data: { highBid: item.bid, bidded: true },
+            data: { highBid: item.bid },
           });
           summary.bidUpdated++;
         }

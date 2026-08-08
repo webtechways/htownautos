@@ -380,12 +380,6 @@ export class SearchAuctionsDto {
   @IsBoolean()
   inspectableOnly?: boolean;
 
-  @ApiPropertyOptional({ description: 'When true, show only lots that already received a final price (post-sale ingest).' })
-  @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsBoolean()
-  bidded?: boolean;
-
   // === AGGREGATIONS ===
 
   @ApiPropertyOptional({ description: 'Include aggregations in response', default: false })

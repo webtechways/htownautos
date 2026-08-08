@@ -104,6 +104,18 @@ export class AuctionSearchService {
       track_total_hits: true,
     };
 
+    // Exact VIN search: multiple lots can share a VIN (relisted). Collapse to one
+    // per VIN and keep the most recently published lot (newest createdAt first);
+    // the older ones are historical.
+    const isVinSearch = this.classifySearch(dto.search).kind === 'vin';
+    if (isVinSearch) {
+      searchBody.collapse = { field: 'vin.keyword' };
+      searchBody.sort = [
+        { createdAt: { order: 'desc', unmapped_type: 'long' } },
+        { _score: { order: 'desc' } },
+      ];
+    }
+
     if (aggs) {
       searchBody.aggs = aggs;
     }
@@ -111,10 +123,12 @@ export class AuctionSearchService {
     try {
       const result = await this.openSearchService.search(AUCTION_INDEX_NAME, searchBody);
 
-      const total = result.hits.total.value || 0;
-      const totalPages = Math.ceil(total / limit);
-
       const data: UnifiedAuction[] = result.hits.hits.map((hit: any) => hit._source);
+
+      // With collapse, hits.total counts raw (pre-collapse) docs; the collapsed
+      // result set is what we actually return, so report its size.
+      const total = isVinSearch ? data.length : result.hits.total.value || 0;
+      const totalPages = Math.ceil(total / limit) || 1;
 
       const response: AuctionSearchResult = {
         data,
@@ -147,6 +161,21 @@ export class AuctionSearchService {
     return parseInt(`${y}${m}${d}`, 10);
   }
 
+  /**
+   * Classify a free-text search box query so we match exactly:
+   * - all-digits → a lot number (unique → one result)
+   * - 17-char alphanumeric → a VIN (exact; collapsed to the latest lot)
+   * - anything else → free text (make/model/…)
+   */
+  private classifySearch(q?: string): { kind: 'lot' | 'vin' | 'text'; value: string } {
+    const v = (q ?? '').trim();
+    if (!v) return { kind: 'text', value: v };
+    // Copart lot numbers are 6+ digits; keep short numerics (e.g. a year) as text.
+    if (/^\d{6,}$/.test(v)) return { kind: 'lot', value: v };
+    if (/^[A-Za-z0-9]{17}$/.test(v)) return { kind: 'vin', value: v.toUpperCase() };
+    return { kind: 'text', value: v };
+  }
+
   private buildQuery(dto: SearchAuctionsDto, carfaxSourceIds?: string[], inspectableYardNames?: string[], titleOverrides?: TitleOverrides): any {
     const must: any[] = [];
     const filter: any[] = [];
@@ -172,27 +201,33 @@ export class AuctionSearchService {
 
     // Full text search
     if (dto.search) {
-      // sourceId is a keyword field — multi_match with fuzziness does not match it
-      // reliably, so we add a separate prefix clause in a bool should so that a
-      // bare lot-number query ("48161206") still surfaces that exact lot.
-      must.push({
-        bool: {
-          should: [
-            {
-              multi_match: {
-                query: dto.search,
-                fields: ['vin^3', 'make^2', 'model^2', 'sourceId^2', 'damageDescription', 'heading'],
-                type: 'best_fields',
-                fuzziness: 'AUTO',
+      const s = this.classifySearch(dto.search);
+      if (s.kind === 'lot') {
+        // A bare lot number is unique → exact match on the lot (sourceId keyword).
+        must.push({ term: { sourceId: s.value } });
+      } else if (s.kind === 'vin') {
+        // Exact VIN. Multiple lots can share a VIN (relisted); the search()
+        // method collapses these to the latest-published one.
+        must.push({ term: { 'vin.keyword': s.value } });
+      } else {
+        // Free text (make/model/etc.) — fuzzy multi_match + lot prefix fallback.
+        must.push({
+          bool: {
+            should: [
+              {
+                multi_match: {
+                  query: dto.search,
+                  fields: ['vin^3', 'make^2', 'model^2', 'sourceId^2', 'damageDescription', 'heading'],
+                  type: 'best_fields',
+                  fuzziness: 'AUTO',
+                },
               },
-            },
-            {
-              prefix: { sourceId: dto.search },
-            },
-          ],
-          minimum_should_match: 1,
-        },
-      });
+              { prefix: { sourceId: dto.search } },
+            ],
+            minimum_should_match: 1,
+          },
+        });
+      }
     }
 
     // ── Exact-match filters ────────────────────────────────────────────

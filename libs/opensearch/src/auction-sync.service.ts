@@ -254,6 +254,9 @@ export class AuctionSyncService {
       discardReason: listing.discardReason ?? null,
       discardedAt: listing.discardedAt?.toISOString() ?? null,
 
+      // Post-sale: true once the sale-results ingest reports a final price.
+      bidded: listing.bidded ?? false,
+
       // MarketCheck Specific (null for Copart)
       carfax1Owner: null,
       carfaxCleanTitle: null,

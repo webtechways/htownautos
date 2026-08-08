@@ -185,7 +185,9 @@ export class AuctionSearchService {
     // When the user does an EXPLICIT lookup (free-text search, VIN, lot/source/ids)
     // do NOT hide past-dated lots: many stay active on Copart ("On Minimum Bid" /
     // relisted) with a stale saleDate, and the user expects to find them by VIN/lot.
-    const explicitLookup = !!(dto.search || dto.vin || dto.sourceIds || dto.ids);
+    // `bidded` lots are past their sale date (already auctioned), so treat the
+    // filter as an explicit lookup — otherwise the default future-sale guard hides them.
+    const explicitLookup = !!(dto.search || dto.vin || dto.sourceIds || dto.ids || dto.bidded);
     if (!explicitLookup) {
       filter.push({
         bool: {
@@ -499,6 +501,11 @@ export class AuctionSearchService {
     // for the 583k legacy docs that predate this field)
     if (dto.discarded === true) {
       filter.push({ term: { discarded: true } });
+    }
+
+    // Only lots that already received a final price (post-sale ingest).
+    if (dto.bidded === true) {
+      filter.push({ term: { bidded: true } });
     }
 
     // Inspectable-yard filter — yard names resolved from Postgres before buildQuery is called

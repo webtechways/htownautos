@@ -91,6 +91,9 @@ export interface UnifiedAuction {
   discardReason?: string | null;
   discardedAt?: string | null;
 
+  // Post-sale: true once the sale-results ingest reports a final price.
+  bidded?: boolean;
+
   // === MARKETCHECK SPECIFIC FIELDS ===
 
   // Carfax

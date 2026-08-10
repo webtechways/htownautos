@@ -3006,6 +3006,50 @@ model Proxy {
   @@map("proxies")
 }
 
+// Auction calendar scraped from AutoBidMaster (data/v2/auction-calendar). One row
+// per (location, startedAt) occurrence across the 4 statuses × 2 groups. Fully
+// replaced on each refresh. `url` is the pre-built AutoBidMaster search link
+// (sale-location-id-<slug>/sale-date-<YYYYMMDD>, date in Central time). Global.
+model AuctionCalendarEntry {
+  id                  String   @id @default(uuid())
+  status              String // live | later | upcoming | ended
+  auctionGroup        String // usa | canada
+  locationSourceId    Int
+  catalogSourceId     Int?
+  locationName        String
+  locationSlug        String
+  countryCode         String?
+  region              String?
+  latitude            Decimal? @db.Decimal(10, 7)
+  longitude           Decimal? @db.Decimal(10, 7)
+  startedAt           DateTime // absolute instant (parsed from the -07:00 ISO)
+  saleDate            Int // YYYYMMDD in America/Chicago (Houston Central)
+  inventoryAuction    String?
+  totalAvailableItems Int      @default(0)
+  url                 String   @db.Text
+  raw                 Json?
+  fetchedAt           DateTime @default(now())
+
+  @@unique([locationSourceId, startedAt])
+  @@index([status])
+  @@index([saleDate])
+  @@index([auctionGroup])
+  @@map("auction_calendar_entries")
+}
+
+// Singleton control row for the auction-calendar scraper (refresh cadence).
+model AuctionCalendarConfig {
+  id            String    @id @default("singleton")
+  refreshHours  Int       @default(6)
+  lastFetchedAt DateTime?
+  lastError     String?
+  lastCount     Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("auction_calendar_config")
+}
+
 // One row per Copart lot whose gallery still needs to be cached to S3.
 // Fed by the new-lot enqueuer (data-sync) and the backfill seeder; drained by
 // the pausable image-cache crawler. The image-service consumer finalizes each

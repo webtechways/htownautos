@@ -74,9 +74,10 @@ export class ProxyService {
    */
   async fetchViaProxy(
     url: string,
-    opts?: { maxAttempts?: number },
+    opts?: { maxAttempts?: number; headers?: Record<string, string> },
   ): Promise<Response> {
     const maxAttempts = opts?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+    const headers = { ...DEFAULT_HEADERS, ...(opts?.headers ?? {}) };
     let lastStatus: number | undefined;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -93,13 +94,13 @@ export class ProxyService {
           });
           res = (await undiciFetch(url, {
             dispatcher: agent,
-            headers: DEFAULT_HEADERS,
+            headers,
             signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           })) as unknown as Response;
         } else {
           // No proxy configured (local/dev) → direct fetch.
           res = await fetch(url, {
-            headers: DEFAULT_HEADERS,
+            headers,
             signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           });
         }

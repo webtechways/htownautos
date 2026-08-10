@@ -3053,6 +3053,86 @@ model AuctionCalendarConfig {
   @@map("auction_calendar_config")
 }
 
+// Singleton control row for the headless live-sale monitor (auction-monitor app).
+// Replaces the manual Chrome extension: a Puppeteer browser opens each monitored
+// calendar entry's sale page a few minutes before it starts and forwards the
+// Socket.IO "sold" frames straight into auction_sale_results.
+model AuctionMonitorConfig {
+  id     String  @id @default("singleton")
+  paused Boolean @default(true) // master switch — starts OFF
+
+  // Scheduling
+  leadMinutes           Int @default(5) // open the page this many minutes before startedAt
+  maxConcurrentSessions Int @default(6)
+  idleStopMinutes       Int @default(25) // stop after this long with no frames
+  maxDurationMinutes    Int @default(300) // hard cap per session
+
+  // Frame filtering — mirrors the Chrome extension's options
+  onlySold     Boolean @default(true)
+  eventNames   String  @default("event") // comma-separated; empty = all
+  wsUrlPattern String  @default("broadcast\\.autobidmaster\\.com")
+  includeRaw   Boolean @default(false)
+
+  // Optional mirror to the legacy n8n webhook while migrating off the extension
+  forwardWebhookUrl String?
+
+  // Login state (ABM_USER / ABM_PASS)
+  loginOk     Boolean   @default(false)
+  lastLoginAt DateTime?
+  loginError  String?
+  // The API container has no direct channel to the browser worker, so the DB is
+  // the bus: the UI stamps this and the worker runs a login check on its next tick.
+  loginTestRequestedAt DateTime?
+
+  // Worker liveness, so the UI can tell "paused" from "the container is down".
+  workerHeartbeatAt DateTime?
+
+  lastError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("auction_monitor_config")
+}
+
+// One browser session per monitored auction (calendar entry). Holds live counters
+// so the UI can show what each page is capturing without touching the browser.
+model AuctionMonitorSession {
+  id              String  @id @default(uuid())
+  calendarEntryId String? // soft link — calendar refreshes replace entries
+  locationSourceId Int?
+  locationName    String
+  locationSlug    String
+  saleDate        Int
+  scheduledAt     DateTime // the entry's startedAt
+  url             String   @db.Text
+
+  // pending | starting | running | stopping | stopped | failed
+  // "stopping" is how the UI asks the worker to close a page (DB as control bus).
+  status String @default("pending")
+
+  startedAt   DateTime?
+  endedAt     DateTime?
+  lastEventAt DateTime?
+
+  framesSeen Int @default(0) // frames that passed the filters
+  eventsSold Int @default(0)
+  ingested   Int @default(0) // rows successfully written to auction_sale_results
+  errors     Int @default(0)
+
+  stopReason String? // idle | duration | manual | unmonitored | shutdown | error
+  error      String?
+  log        Json? // tail of recent log lines for the UI
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([saleDate])
+  @@index([scheduledAt])
+  @@index([calendarEntryId])
+  @@map("auction_monitor_sessions")
+}
+
 // One row per Copart lot whose gallery still needs to be cached to S3.
 // Fed by the new-lot enqueuer (data-sync) and the backfill seeder; drained by
 // the pausable image-cache crawler. The image-service consumer finalizes each

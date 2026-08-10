@@ -1,0 +1,65 @@
+# Headless live-sale monitor (Chromium). Deployed as its OWN Coolify app so the
+# browser's memory use and crashes stay away from the API container.
+#
+# ---- Build Stage ----
+FROM node:20-bookworm AS builder
+
+WORKDIR /app
+
+# Force development mode during build so devDependencies (nx, typescript, etc.) are installed
+ENV NODE_ENV=development
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY tsconfig.base.json tsconfig.json nx.json prisma.config.ts ./
+COPY apps ./apps
+COPY libs ./libs
+
+RUN npx prisma generate --schema=libs/prisma/prisma/schema.prisma
+
+RUN npx nx build auction-monitor
+
+# ---- Production Stage ----
+FROM node:20-bookworm-slim AS production
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+# Chromium from Debian instead of Puppeteer's bundled download: one apt package,
+# patched by the distro, and puppeteer-core never phones home.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      chromium \
+      fonts-liberation \
+      ca-certificates \
+      dumb-init \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+    PUPPETEER_SKIP_DOWNLOAD=true \
+    MONITOR_PROFILE_DIR=/data/abm-profile
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+COPY --from=builder /app/libs/prisma/prisma ./libs/prisma/prisma
+COPY prisma.config.ts ./
+RUN npx prisma generate --schema=libs/prisma/prisma/schema.prisma
+
+COPY --from=builder /app/dist/apps/auction-monitor ./dist/apps/auction-monitor
+
+# Resolve @htownautos/* to the compiled libs, same trick as the API image.
+RUN mkdir -p node_modules/@htownautos && \
+    for lib in $(ls dist/apps/auction-monitor/libs/ 2>/dev/null); do \
+      [ -d "dist/apps/auction-monitor/libs/$lib/src" ] && \
+        ln -sf /app/dist/apps/auction-monitor/libs/$lib/src node_modules/@htownautos/$lib; \
+    done && \
+    echo "Symlinks created:" && ls -la node_modules/@htownautos/
+
+# Chromium profile + cookies survive restarts (mount /data as a Coolify volume).
+RUN mkdir -p /data/abm-profile
+
+# dumb-init reaps the zombie processes Chromium leaves behind.
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "dist/apps/auction-monitor/apps/auction-monitor/src/main.js"]

@@ -25,6 +25,7 @@ export class AbmSessionService implements OnModuleDestroy {
   private readonly logger = new Logger(AbmSessionService.name);
   private browser: Browser | null = null;
   private launching: Promise<Browser> | null = null;
+  private userAgent: string | null = null;
   private loginChain: Promise<LoginResult> = Promise.resolve({ ok: false });
   private lastLoginOkAt = 0;
 
@@ -56,7 +57,11 @@ export class AbmSessionService implements OnModuleDestroy {
         executablePath,
         userDataDir: this.profileDir,
         protocolTimeout: 180_000,
+        // Drop the banner flag Chrome sets for automation; Cloudflare reads it.
+        ignoreDefaultArgs: ['--enable-automation'],
         args: [
+          '--disable-blink-features=AutomationControlled',
+          '--lang=en-US,en',
           '--no-sandbox',
           '--disable-setuid-sandbox',
           // /dev/shm is tiny in containers; without this Chromium crashes under load.
@@ -76,6 +81,7 @@ export class AbmSessionService implements OnModuleDestroy {
       browser.on('disconnected', () => {
         this.logger.warn('Chromium disconnected');
         this.browser = null;
+        this.userAgent = null;
         this.lastLoginOkAt = 0;
       });
       this.browser = browser;
@@ -89,11 +95,34 @@ export class AbmSessionService implements OnModuleDestroy {
     }
   }
 
+  /**
+   * The User-Agent Chromium reports, with the `HeadlessChrome` token swapped for
+   * `Chrome`. That single token is what Cloudflare blocks on: with it, every
+   * request to autobidmaster.com returns a 403 challenge page; without it, the
+   * exact same browser gets 200. Deriving it from the running binary keeps the
+   * version honest across Chromium upgrades.
+   */
+  private async realUserAgent(browser: Browser): Promise<string> {
+    if (process.env.MONITOR_USER_AGENT) return process.env.MONITOR_USER_AGENT;
+    if (this.userAgent) return this.userAgent;
+    const raw = await browser.userAgent();
+    this.userAgent = raw.replace(/HeadlessChrome/g, 'Chrome');
+    return this.userAgent;
+  }
+
   /** A page tuned for long-lived socket listening: no images, fonts or media. */
   async newPage(): Promise<Page> {
     const browser = await this.getBrowser();
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 900 });
+    await page.setUserAgent(await this.realUserAgent(browser));
+    await page.setExtraHTTPHeaders({ 'accept-language': 'en-US,en;q=0.9' });
+    // Cheap insurance on top of the UA: the obvious automation tells.
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+      (window as any).chrome = { runtime: {} };
+    });
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const type = req.resourceType();
@@ -181,8 +210,28 @@ export class AbmSessionService implements OnModuleDestroy {
   }
 
   private async goto(page: Page, url: string): Promise<void> {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+    const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+    await this.assertNotBlocked(page, res?.status() ?? 0);
     await this.dismissCookieBanner(page);
+  }
+
+  /**
+   * A bot challenge is not a login page: the URL keeps its original path, so
+   * "we were not redirected to /login" would read it as a healthy session. Check
+   * the response status and the challenge markers explicitly.
+   */
+  async assertNotBlocked(page: Page, status: number): Promise<void> {
+    const title = await page.title().catch(() => '');
+    const blocked =
+      /cloudflare|attention required|you have been blocked|just a moment/i.test(title);
+    if (blocked || status === 403 || status === 429) {
+      throw new Error(
+        `Blocked by AutoBidMaster's bot protection (HTTP ${status}${title ? `, "${title}"` : ''})`,
+      );
+    }
+    if (status >= 400) {
+      throw new Error(`AutoBidMaster returned HTTP ${status} for ${page.url()}`);
+    }
   }
 
   /**

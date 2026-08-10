@@ -72,10 +72,11 @@ export class SessionRunner {
 
     await this.attachSocketTap(this.page);
 
-    await this.page.goto(this.target.url, {
+    const res = await this.page.goto(this.target.url, {
       waitUntil: 'domcontentloaded',
       timeout: 120_000,
     });
+    await this.session.assertNotBlocked(this.page, res?.status() ?? 0);
 
     // A stale cookie lands us on the login form instead of the sale page.
     if (/\/login\b/i.test(this.page.url())) {
@@ -83,10 +84,11 @@ export class SessionRunner {
       this.session.invalidateLogin();
       const retry = await this.session.ensureLoggedIn(true);
       if (!retry.ok) throw new Error(`Re-login failed: ${retry.error}`);
-      await this.page.goto(this.target.url, {
+      const again = await this.page.goto(this.target.url, {
         waitUntil: 'domcontentloaded',
         timeout: 120_000,
       });
+      await this.session.assertNotBlocked(this.page, again?.status() ?? 0);
     }
 
     this.startedAt = new Date();

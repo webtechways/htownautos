@@ -33,6 +33,40 @@ const FRAMES = [
   '3',                                                         // pong — ignored
 ];
 
+/**
+ * Regression test for a real incident: Cloudflare answered the account page with
+ * a 403 challenge, and because the URL was not /login the worker reported the
+ * session as healthy. A challenge must be an error, not a happy path.
+ */
+async function blockDetectionChecks() {
+  const { AbmSessionService } = require(`${DIST}/abm-session.service`);
+  const svc = new AbmSessionService(new ScreenshotService());
+  const fakePage = (title) => ({
+    title: async () => title,
+    url: () => 'https://www.autobidmaster.com/en/myaccount/contact-information/',
+  });
+
+  const cases = [
+    ['cloudflare challenge title rejected', fakePage('Attention Required! | Cloudflare'), 403, true],
+    ['interstitial title rejected', fakePage('Just a moment...'), 200, true],
+    ['429 rejected', fakePage('Contact information'), 429, true],
+    ['500 rejected', fakePage('Contact information'), 500, true],
+    ['healthy account page accepted', fakePage('My Account - AutoBidMaster'), 200, false],
+  ];
+
+  const results = [];
+  for (const [name, page, status, shouldThrow] of cases) {
+    let threw = false;
+    try {
+      await svc.assertNotBlocked(page, status);
+    } catch {
+      threw = true;
+    }
+    results.push([name, threw, shouldThrow]);
+  }
+  return results;
+}
+
 async function main() {
   const received = [];
   const shots = [];
@@ -97,6 +131,8 @@ async function main() {
     ensureLoggedIn: async () => ({ ok: true }),
     invalidateLogin() {},
     newPage: async () => browser.newPage(),
+    // The real check is exercised separately in blockDetectionChecks().
+    assertNotBlocked: async () => undefined,
   };
 
   const sink = new SaleEventSinkService();
@@ -133,6 +169,7 @@ async function main() {
     ['capture labels', JSON.stringify(shots.map((s) => s.label)), JSON.stringify(['opened', 'manual'])],
     ['captures are jpeg', shots.every((s) => s.bytes[0] === 0xff && s.bytes[1] === 0xd8), true],
     ['captures carry the session id', shots.every((s) => s.sessionId === 'test-session'), true],
+    ...(await blockDetectionChecks()),
   ];
 
   let failed = 0;

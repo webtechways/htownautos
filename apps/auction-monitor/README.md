@@ -80,6 +80,20 @@ no-op rather than a duplicated row.
 Egress must be the host's normal IP: do **not** route this through the Webshare proxy pool —
 signing into the account from rotating datacenter IPs invites a block.
 
+### Cloudflare and the User-Agent (learned the hard way)
+
+AutoBidMaster sits behind Cloudflare, and the **only** signal that got the container blocked was
+the `HeadlessChrome` token Chromium puts in its User-Agent: every request answered `403 Attention
+Required`, while plain `curl` from the same host got `200`. `newPage()` therefore reports the
+running browser's UA with that token rewritten to `Chrome` (override with `MONITOR_USER_AGENT`),
+plus `--disable-blink-features=AutomationControlled`, no `--enable-automation`, and the usual
+`navigator.webdriver` patch.
+
+A challenge page keeps the requested URL, so "we were not redirected to /login" read as a healthy
+session and the worker reported `loginOk: true` while seeing nothing but a block page.
+`assertNotBlocked()` now fails on 403/429/4xx/5xx and on challenge titles; `verify-auction-monitor.js`
+covers it.
+
 This container must not run `prisma migrate deploy`; the API container already does.
 
 ## Local run

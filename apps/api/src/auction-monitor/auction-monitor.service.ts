@@ -1,9 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
+import { S3Service } from '@htownautos/common';
 import { UpdateMonitorConfigDto } from './dto/update-monitor-config.dto';
+import { UploadScreenshotDto } from './dto/upload-screenshot.dto';
 
 const CONFIG_ID = 'singleton';
+/** Keep only the most recent captures per session. */
+const SCREENSHOT_TAIL = 6;
 /** The worker beats every 30s; anything older than this means it is down. */
 const HEARTBEAT_STALE_MS = 3 * 60_000;
 const ACTIVE = ['pending', 'starting', 'running', 'stopping'];
@@ -15,7 +19,12 @@ const ACTIVE = ['pending', 'starting', 'running', 'stopping'];
  */
 @Injectable()
 export class AuctionMonitorService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AuctionMonitorService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly s3: S3Service,
+  ) {}
 
   async getConfig() {
     return this.prisma.auctionMonitorConfig.upsert({
@@ -147,6 +156,65 @@ export class AuctionMonitorService {
         status: 'pending',
       },
     });
+  }
+
+  /** Ask the worker for a fresh capture of a live page. */
+  async requestScreenshot(id: string) {
+    const row = await this.getSession(id);
+    if (!ACTIVE.includes(row.status)) {
+      throw new BadRequestException('Session is not running');
+    }
+    return this.prisma.auctionMonitorSession.update({
+      where: { id },
+      data: { screenshotRequestedAt: new Date() },
+      select: { id: true, screenshotRequestedAt: true },
+    });
+  }
+
+  /**
+   * Store a capture pushed by the worker. Login shots overwrite the single slot
+   * on the config; session shots append to a capped tail.
+   */
+  async storeScreenshot(dto: UploadScreenshotDto) {
+    const buffer = Buffer.from(dto.imageBase64, 'base64');
+    if (!buffer.length) throw new BadRequestException('Empty image');
+
+    const stamp = Date.now();
+    const safeLabel = dto.label.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+    const key =
+      dto.kind === 'login'
+        ? `monitor/login/${stamp}-${safeLabel}.jpg`
+        : `monitor/sessions/${dto.sessionId}/${stamp}-${safeLabel}.jpg`;
+
+    await this.s3.uploadBufferToKey(buffer, key, 'image/jpeg', 'public-read');
+    const url = this.s3.buildPublicUrl(key);
+
+    if (dto.kind === 'login') {
+      await this.prisma.auctionMonitorConfig.upsert({
+        where: { id: CONFIG_ID },
+        update: { loginScreenshotUrl: url },
+        create: { id: CONFIG_ID, loginScreenshotUrl: url },
+      });
+      return { url };
+    }
+
+    if (!dto.sessionId) throw new BadRequestException('sessionId is required for session shots');
+    const session = await this.prisma.auctionMonitorSession.findUnique({
+      where: { id: dto.sessionId },
+      select: { screenshots: true },
+    });
+    if (!session) throw new NotFoundException('Session not found');
+
+    const previous = Array.isArray(session.screenshots) ? (session.screenshots as any[]) : [];
+    const next = [...previous, { label: dto.label, url, at: new Date().toISOString() }].slice(
+      -SCREENSHOT_TAIL,
+    );
+    await this.prisma.auctionMonitorSession.update({
+      where: { id: dto.sessionId },
+      data: { screenshots: next, screenshotRequestedAt: null },
+    });
+    this.logger.log(`Stored monitor screenshot ${key}`);
+    return { url };
   }
 
   /** Stamp a login check; the worker runs it on its next tick. */

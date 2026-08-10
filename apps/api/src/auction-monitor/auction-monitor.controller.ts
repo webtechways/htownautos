@@ -55,6 +55,12 @@ export class AuctionMonitorController {
     return this.service.startEntry(calendarEntryId);
   }
 
+  @Post('sessions/:id/screenshot')
+  @ApiOperation({ summary: 'Ask the worker to capture the live page now' })
+  screenshot(@Param('id') id: string) {
+    return this.service.requestScreenshot(id);
+  }
+
   @Post('login/test')
   @ApiOperation({ summary: 'Queue an AutoBidMaster login check on the worker' })
   loginTest() {

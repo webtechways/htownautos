@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@htownautos/prisma';
 import { AbmSessionService } from './abm-session.service';
 import { SaleEventSinkService } from './sale-event-sink.service';
+import { ScreenshotService } from './screenshot.service';
 import { SessionRunner } from './session-runner';
 import type { FilterOptions } from './sio-decoder';
 
@@ -44,6 +45,7 @@ export class MonitorSchedulerService implements OnModuleInit, OnApplicationShutd
     private readonly prisma: PrismaService,
     private readonly session: AbmSessionService,
     private readonly sink: SaleEventSinkService,
+    private readonly screenshots: ScreenshotService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -73,6 +75,7 @@ export class MonitorSchedulerService implements OnModuleInit, OnApplicationShutd
       if (config.loginTestRequestedAt) await this.runLoginTest();
 
       await this.syncCounters();
+      await this.serveScreenshotRequests();
 
       if (config.paused) {
         await this.stopAll('paused');
@@ -187,6 +190,23 @@ export class MonitorSchedulerService implements OnModuleInit, OnApplicationShutd
         data: { status: 'stopped', stopReason: 'lost', endedAt: new Date() },
       });
       this.logger.warn(`Closed ${lost.length} orphaned session row(s)`);
+    }
+  }
+
+  /** "Capture now" from the UI: one fresh shot of a live page. */
+  private async serveScreenshotRequests(): Promise<void> {
+    if (!this.runners.size) return;
+    const requested = await this.prisma.auctionMonitorSession.findMany({
+      where: { id: { in: [...this.runners.keys()] }, screenshotRequestedAt: { not: null } },
+      select: { id: true },
+    });
+    for (const { id } of requested) {
+      await this.runners.get(id)?.capture('manual');
+      // The API clears the flag when the upload lands; clear it here too so a
+      // failed capture does not loop forever.
+      await this.prisma.auctionMonitorSession
+        .update({ where: { id }, data: { screenshotRequestedAt: null } })
+        .catch(() => undefined);
     }
   }
 
@@ -407,6 +427,7 @@ export class MonitorSchedulerService implements OnModuleInit, OnApplicationShutd
       { sessionId: row.id, url: row.url, locationName: row.locationName },
       this.session,
       this.sink,
+      this.screenshots,
       this.filtersFrom(config),
     );
 

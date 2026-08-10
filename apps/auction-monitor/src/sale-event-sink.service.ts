@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { postJson } from './api-client';
 import type { SaleEvent } from './sio-decoder';
 
 interface QueueItem {
@@ -79,23 +80,9 @@ export class SaleEventSinkService {
   }
 
   private async post(batch: QueueItem[]): Promise<void> {
-    const base = (process.env.API_BASE_URL || '').replace(/\/+$/, '');
-    const apiKey = process.env.AUCTION_INGEST_API_KEY;
-    if (!base || !apiKey) {
-      this.logger.error('API_BASE_URL / AUCTION_INGEST_API_KEY missing — dropping batch');
-      batch.forEach((i) => this.bump(this.failures, i.sessionId));
-      return;
-    }
-
     const payload = batch.map((i) => i.event);
     try {
-      const res = await fetch(`${base}/auction-sale-results/ingest`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+      await postJson('auction-sale-results/ingest', payload);
 
       for (const item of batch) this.bump(this.ingested, item.sessionId);
       this.logger.log(`Ingested ${batch.length} event(s)`);

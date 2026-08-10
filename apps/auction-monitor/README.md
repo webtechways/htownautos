@@ -42,9 +42,22 @@ action is a DB write the worker picks up within one tick (≤30s):
 | Stop a session | session row → `status = 'stopping'` |
 | Watch a sale now | new session row with `status = 'pending'` |
 | Test the login | `config.loginTestRequestedAt` |
+| Capture the live page | session row → `screenshotRequestedAt` |
 
 `config.workerHeartbeatAt` is stamped every tick; the UI shows "Worker offline" when it is
 older than 3 minutes.
+
+## Seeing what Chromium sees
+
+Headless containers are blind, so the worker takes JPEG captures and pushes them to
+`POST /auction-monitor/screenshot` (ingest-secret guarded). The **API** owns the S3 credentials
+and stores them — the worker never needs any. Captures happen on every login check (`logged-in`
+/ `login-failed` / `login-error` — this is how you spot a captcha), when a sale page is opened
+(`opened`), and on demand from the UI (`manual`). The login card shows the latest login shot;
+each session keeps a tail of the last 6.
+
+Locally, `MONITOR_HEADLESS=false` opens a real window instead — the login check runs even while
+the monitor is paused, so pressing "Test login" is enough to watch the whole flow.
 
 ## Environment
 

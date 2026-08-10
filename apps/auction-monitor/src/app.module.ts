@@ -5,6 +5,7 @@ import { PrismaModule } from '@htownautos/prisma';
 import { AbmSessionService } from './abm-session.service';
 import { MonitorSchedulerService } from './monitor-scheduler.service';
 import { SaleEventSinkService } from './sale-event-sink.service';
+import { ScreenshotService } from './screenshot.service';
 
 @Module({
   imports: [
@@ -12,6 +13,11 @@ import { SaleEventSinkService } from './sale-event-sink.service';
     ScheduleModule.forRoot(),
     PrismaModule,
   ],
-  providers: [AbmSessionService, SaleEventSinkService, MonitorSchedulerService],
+  providers: [
+    AbmSessionService,
+    SaleEventSinkService,
+    ScreenshotService,
+    MonitorSchedulerService,
+  ],
 })
 export class AppModule {}

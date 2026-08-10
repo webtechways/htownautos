@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import type { Browser, Page } from 'puppeteer-core';
 import puppeteer from 'puppeteer-core';
+import { ScreenshotService } from './screenshot.service';
 
 const CONTACT_URL = 'https://www.autobidmaster.com/en/myaccount/contact-information/';
 const LOGIN_URL = 'https://www.autobidmaster.com/en/login/';
@@ -29,6 +30,8 @@ export class AbmSessionService implements OnModuleDestroy {
 
   /** Re-verify the session at most this often (ms) unless forced. */
   private readonly LOGIN_TTL_MS = 30 * 60 * 1000;
+
+  constructor(private readonly screenshots: ScreenshotService) {}
 
   private get profileDir(): string {
     return process.env.MONITOR_PROFILE_DIR || '/data/abm-profile';
@@ -138,6 +141,7 @@ export class AbmSessionService implements OnModuleDestroy {
       if (!this.isLoginPage(page.url())) {
         this.lastLoginOkAt = Date.now();
         this.logger.log('AutoBidMaster session already active');
+        if (force) await this.screenshots.capture(page, 'login', 'session-active');
         return { ok: true, finalUrl: page.url() };
       }
 
@@ -148,6 +152,9 @@ export class AbmSessionService implements OnModuleDestroy {
       // 3. Verify by loading the account page again.
       await this.goto(page, CONTACT_URL);
       if (this.isLoginPage(page.url())) {
+        // The screenshot is the whole point here: a captcha or a changed form is
+        // invisible in a log line.
+        await this.screenshots.capture(page, 'login', 'login-failed');
         return {
           ok: false,
           error: 'Login did not stick (wrong credentials, captcha or 2FA)',
@@ -157,10 +164,12 @@ export class AbmSessionService implements OnModuleDestroy {
 
       this.lastLoginOkAt = Date.now();
       this.logger.log('Logged in to AutoBidMaster');
+      await this.screenshots.capture(page, 'login', 'logged-in');
       return { ok: true, finalUrl: page.url() };
     } catch (err: any) {
       this.lastLoginOkAt = 0;
       this.logger.error(`Login check failed: ${err.message}`);
+      if (page) await this.screenshots.capture(page, 'login', 'login-error');
       return { ok: false, error: err.message };
     } finally {
       await page?.close().catch(() => undefined);

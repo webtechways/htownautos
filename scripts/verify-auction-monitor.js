@@ -14,6 +14,7 @@ const { WebSocketServer } = require(`${ROOT}/node_modules/ws`);
 const DIST = `${ROOT}/dist/apps/auction-monitor/apps/auction-monitor/src`;
 const { SessionRunner } = require(`${DIST}/session-runner`);
 const { SaleEventSinkService } = require(`${DIST}/sale-event-sink.service`);
+const { ScreenshotService } = require(`${DIST}/screenshot.service`);
 const puppeteer = require(`${ROOT}/node_modules/puppeteer-core`);
 
 const CHROME =
@@ -34,14 +35,28 @@ const FRAMES = [
 
 async function main() {
   const received = [];
+  const shots = [];
 
-  // 1. Fake ingest API (stands in for /auction-sale-results/ingest).
+  // 1. Fake API: the sale-results ingest plus the screenshot upload. Paths are
+  //    asserted with the api/v1 prefix the real API mounts everything under.
   const ingest = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       if (req.headers['x-api-key'] !== 'test-key') {
         res.writeHead(401).end('bad key');
+        return;
+      }
+      if (req.url === '/api/v1/auction-monitor/screenshot') {
+        const shot = JSON.parse(body);
+        shots.push({ ...shot, bytes: Buffer.from(shot.imageBase64, 'base64') });
+        res
+          .writeHead(200, { 'Content-Type': 'application/json' })
+          .end('{"url":"https://cdn.test/shot.jpg"}');
+        return;
+      }
+      if (req.url !== '/api/v1/auction-sale-results/ingest') {
+        res.writeHead(404).end('wrong path: ' + req.url);
         return;
       }
       received.push(...JSON.parse(body));
@@ -85,15 +100,18 @@ async function main() {
   };
 
   const sink = new SaleEventSinkService();
+  const screenshots = new ScreenshotService();
   const runner = new SessionRunner(
     { sessionId: 'test-session', url, locationName: 'TEST - Lab' },
     session,
     sink,
+    screenshots,
     { onlySold: true, eventNames: 'event', wsUrlPattern: '', includeRaw: false },
   );
 
   await runner.start();
   await new Promise((r) => setTimeout(r, 3_000));
+  await runner.capture('manual');
   await runner.stop();
   await browser.close();
   await new Promise((r) => setTimeout(r, 500));
@@ -111,6 +129,10 @@ async function main() {
     ['counters reported to scheduler', sink.takeCounters('test-session').ingested, 2],
     ['sold flag preserved', received.every((e) => e.sold === true), true],
     ['page url attached', received.every((e) => e.pageUrl === url), true],
+    ['screenshots uploaded', shots.length, 2],
+    ['capture labels', JSON.stringify(shots.map((s) => s.label)), JSON.stringify(['opened', 'manual'])],
+    ['captures are jpeg', shots.every((s) => s.bytes[0] === 0xff && s.bytes[1] === 0xd8), true],
+    ['captures carry the session id', shots.every((s) => s.sessionId === 'test-session'), true],
   ];
 
   let failed = 0;

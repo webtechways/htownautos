@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import type { CDPSession, Page } from 'puppeteer-core';
 import type { AbmSessionService } from './abm-session.service';
 import type { SaleEventSinkService } from './sale-event-sink.service';
+import type { ScreenshotService } from './screenshot.service';
 import { dedupeKey, frameToSaleEvent, type FilterOptions } from './sio-decoder';
 
 export interface RunnerTarget {
@@ -35,6 +36,7 @@ export class SessionRunner {
     readonly target: RunnerTarget,
     private readonly session: AbmSessionService,
     private readonly sink: SaleEventSinkService,
+    private readonly screenshots: ScreenshotService,
     private readonly filters: FilterOptions,
   ) {
     this.logger = new Logger(`Runner:${target.locationName}`);
@@ -89,6 +91,21 @@ export class SessionRunner {
 
     this.startedAt = new Date();
     this.note(`watching ${this.target.url}`);
+
+    // Proof of what the page actually looked like when we parked on it.
+    await this.capture('opened');
+  }
+
+  /** Capture the live page. Safe to call any time; never throws. */
+  async capture(label: string): Promise<void> {
+    if (!this.page || this.page.isClosed()) return;
+    const url = await this.screenshots.capture(
+      this.page,
+      'session',
+      label,
+      this.target.sessionId,
+    );
+    if (url) this.note(`screenshot: ${label}`);
   }
 
   private async attachSocketTap(page: Page): Promise<void> {

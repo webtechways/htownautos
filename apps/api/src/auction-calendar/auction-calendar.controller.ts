@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ClerkJwtGuard } from '@htownautos/auth';
 import { AuctionCalendarService } from './auction-calendar.service';
@@ -41,5 +41,11 @@ export class AuctionCalendarController {
   @ApiOperation({ summary: 'Fetch the calendar from AutoBidMaster now' })
   refresh() {
     return this.service.fetchAndStore();
+  }
+
+  @Patch(':id/monitor')
+  @ApiOperation({ summary: 'Toggle the monitor flag on a calendar entry' })
+  setMonitor(@Param('id') id: string, @Body() body: { monitor: boolean }) {
+    return this.service.setMonitor(id, !!body.monitor);
   }
 }

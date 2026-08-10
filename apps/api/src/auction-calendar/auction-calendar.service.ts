@@ -89,6 +89,16 @@ export class AuctionCalendarService implements OnModuleInit {
       const root = Array.isArray(json) ? json[0] : json;
       const auctions = root?.auctions ?? {};
 
+      // Preserve the staff "monitor" toggle across the full-replace, keyed by
+      // (location, startedAt).
+      const monitoredRows = await this.prisma.auctionCalendarEntry.findMany({
+        where: { monitor: true },
+        select: { locationSourceId: true, startedAt: true },
+      });
+      const monitored = new Set(
+        monitoredRows.map((m) => `${m.locationSourceId}|${m.startedAt.toISOString()}`),
+      );
+
       const now = new Date();
       const rows: Prisma.AuctionCalendarEntryCreateManyInput[] = [];
       const seen = new Set<string>();
@@ -128,6 +138,7 @@ export class AuctionCalendarService implements OnModuleInit {
               inventoryAuction: a.inventoryAuction ?? null,
               totalAvailableItems: a.totalAvailableItems ?? 0,
               url: this.buildUrl(slug, saleDate),
+              monitor: monitored.has(key),
               raw: a as unknown as Prisma.InputJsonValue,
               fetchedAt: now,
             });
@@ -227,10 +238,20 @@ export class AuctionCalendarService implements OnModuleInit {
           saleDate: true,
           totalAvailableItems: true,
           url: true,
+          monitor: true,
         },
       }),
       this.prisma.auctionCalendarEntry.count({ where }),
     ]);
     return { data: rows, total, page: p, limit: l };
+  }
+
+  /** Toggle the staff "monitor" flag on one entry. */
+  async setMonitor(id: string, monitor: boolean) {
+    return this.prisma.auctionCalendarEntry.update({
+      where: { id },
+      data: { monitor },
+      select: { id: true, monitor: true },
+    });
   }
 }

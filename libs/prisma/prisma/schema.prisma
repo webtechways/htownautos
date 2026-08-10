@@ -3027,6 +3027,8 @@ model AuctionCalendarEntry {
   inventoryAuction    String?
   totalAvailableItems Int      @default(0)
   url                 String   @db.Text
+  // Staff toggle — preserved across calendar refreshes (by location+startedAt).
+  monitor             Boolean  @default(false)
   raw                 Json?
   fetchedAt           DateTime @default(now())
 
@@ -3034,6 +3036,7 @@ model AuctionCalendarEntry {
   @@index([status])
   @@index([saleDate])
   @@index([auctionGroup])
+  @@index([monitor])
   @@map("auction_calendar_entries")
 }
 

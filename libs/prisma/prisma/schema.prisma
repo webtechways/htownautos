@@ -3173,6 +3173,14 @@ model ImageScrapeConfig {
   concurrentLots     Int      @default(1) // lots processed at once by the consumer (RabbitMQ prefetch)
   proxyResyncHours   Int      @default(168) // auto re-sync Webshare proxies every N hours (0 = off)
   proxyLastSyncAt    DateTime? // last time the proxy inventory was synced from Webshare
+
+  // --- Retention: delete cached galleries N days after the auction ---
+  // 0 = keep forever (the historical behaviour). Lots anyone showed interest in
+  // (favourite, bid, group, review, AI analysis) are never deleted.
+  retentionDays        Int       @default(0)
+  retentionLastRunAt   DateTime?
+  retentionDeletedLots Int       @default(0) // cumulative, for the UI
+  retentionLastError   String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

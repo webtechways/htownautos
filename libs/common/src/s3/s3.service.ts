@@ -3,6 +3,7 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
   CreateMultipartUploadCommand,
@@ -95,6 +96,48 @@ export class S3Service {
     } while (token);
 
     return { bytes, objects };
+  }
+
+  /**
+   * Delete every object under a key prefix, 1000 at a time. Returns how many
+   * objects were removed. Used by gallery retention — the prefix is always
+   * `gallery/<lot>/`, so a caller can never wipe a whole folder by accident with
+   * an empty prefix (guarded below).
+   */
+  async deletePrefix(prefix: string): Promise<number> {
+    if (!prefix || prefix.trim().length < 2) {
+      throw new Error('deletePrefix requires a non-trivial prefix');
+    }
+
+    let deleted = 0;
+    let token: string | undefined;
+
+    do {
+      const listed = await this.s3Client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: token,
+          MaxKeys: 1000,
+        }),
+      );
+      const keys = (listed.Contents ?? [])
+        .map((o) => o.Key)
+        .filter((k): k is string => !!k);
+
+      if (keys.length) {
+        await this.s3Client.send(
+          new DeleteObjectsCommand({
+            Bucket: this.bucket,
+            Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
+          }),
+        );
+        deleted += keys.length;
+      }
+      token = listed.IsTruncated ? listed.NextContinuationToken : undefined;
+    } while (token);
+
+    return deleted;
   }
 
   /** Generate an S3 key: {folder}/{year}/{uuid}/original.{ext} */

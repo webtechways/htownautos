@@ -17,8 +17,13 @@ const DEFAULT_CONFIG = {
   maxAttempts: 5,
   perSequenceDelayMs: 0,
   concurrency: 4,
+  concurrentLots: 1,
   proxyResyncHours: 168,
   proxyLastSyncAt: null as Date | null,
+  retentionDays: 0,
+  retentionLastRunAt: null as Date | null,
+  retentionDeletedLots: 0,
+  retentionLastError: null as string | null,
 };
 
 export interface Paginated<T> {
@@ -81,6 +86,10 @@ export class ImageCacheService {
       this.getConfig(),
     ]);
 
+    // Preview for the retention control: how many galleries are past the cutoff
+    // today. Staff can see the blast radius before switching it on.
+    const retentionEligible = await this.countRetentionEligible(config.retentionDays);
+
     const counts = { pending: 0, processing: 0, done: 0, failed: 0 } as Record<string, number>;
     for (const g of grouped) counts[g.status] = g._count._all;
 
@@ -99,8 +108,33 @@ export class ImageCacheService {
       storageBytes: this.storageBytes,
       storageObjects: this.storageObjects,
       storageComputedAt: this.storageComputedAt,
+      retentionEligible,
       config,
     };
+  }
+
+  /**
+   * Cached galleries whose sale is older than the retention window. Upper bound:
+   * the worker additionally spares lots someone favourited, bid on, grouped,
+   * reviewed or analysed, so it will delete this many or fewer.
+   */
+  private async countRetentionEligible(days: number): Promise<number> {
+    if (!days || days <= 0) return 0;
+    const d = new Date(Date.now() - days * 86_400_000);
+    const cutoffDate =
+      d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+    // Mirrors ImageRetentionService.eligibleWhere(): sale long past, or the lot
+    // dropped out of the Copart feed that long ago (some go stale with a future
+    // or missing saleDate).
+    return this.prisma.auctionListing.count({
+      where: {
+        galleryCache: { not: null },
+        OR: [
+          { saleDate: { not: null, lt: cutoffDate } },
+          { isStale: true, updatedAt: { lt: d } },
+        ],
+      },
+    });
   }
 
   /** Kick off a storage recompute if stale and not already running (non-blocking). */

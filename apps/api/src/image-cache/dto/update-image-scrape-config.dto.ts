@@ -42,4 +42,11 @@ export class UpdateImageScrapeConfigDto {
   @Min(0)
   @Max(8760)
   proxyResyncHours?: number;
+
+  /** Delete cached galleries this many days after the sale. 0 = keep forever. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3650)
+  retentionDays?: number;
 }

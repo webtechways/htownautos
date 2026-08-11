@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { RabbitMQService } from '@htownautos/rabbitmq';
 import { PrismaService } from '@htownautos/prisma';
 import { Prisma } from '@prisma/client';
@@ -13,10 +13,14 @@ import type { GalleryCacheMessage } from '@htownautos/common';
 // Fallback config if the singleton control row is missing.
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_CONCURRENCY = 4;
+const DEFAULT_CONCURRENT_LOTS = 1;
+/** How often the live prefetch is re-read from the control row. */
+const PREFETCH_POLL_MS = 60_000;
 
 @Injectable()
-export class GalleryCacheService implements OnModuleInit {
+export class GalleryCacheService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(GalleryCacheService.name);
+  private prefetchTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly rabbitMQ: RabbitMQService,
@@ -26,10 +30,25 @@ export class GalleryCacheService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    await this.rabbitMQ.consume(GALLERY_CACHE_QUEUE, (msg) =>
-      this.handleMessage(msg as unknown as GalleryCacheMessage),
+    const { concurrentLots } = await this.getConfig();
+    await this.rabbitMQ.consume(
+      GALLERY_CACHE_QUEUE,
+      (msg) => this.handleMessage(msg as unknown as GalleryCacheMessage),
+      { prefetch: concurrentLots },
     );
-    this.logger.log(`Subscribed to ${GALLERY_CACHE_QUEUE} queue`);
+    this.logger.log(`Subscribed to ${GALLERY_CACHE_QUEUE} queue (${concurrentLots} lot(s) at once)`);
+
+    // Let staff retune throughput from the UI without a redeploy.
+    this.prefetchTimer = setInterval(() => {
+      void this.getConfig()
+        .then((cfg) => this.rabbitMQ.setPrefetch(GALLERY_CACHE_QUEUE, cfg.concurrentLots))
+        .catch(() => undefined);
+    }, PREFETCH_POLL_MS);
+    this.prefetchTimer.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.prefetchTimer) clearInterval(this.prefetchTimer);
   }
 
   private async handleMessage(msg: GalleryCacheMessage): Promise<void> {
@@ -40,6 +59,19 @@ export class GalleryCacheService implements OnModuleInit {
       if (lotNumber) {
         await this.finalizeJob(lotNumber, 'failed', [], 'No images to cache');
       }
+      return;
+    }
+
+    // Idempotency guard. Duplicate messages for the same lot are normal (a
+    // requeued job republishes), and re-downloading a gallery we already have
+    // costs a full round of proxy traffic and S3 writes for nothing.
+    const existing = await this.prisma.auctionListing.findUnique({
+      where: { lotNumber: BigInt(lotNumber) },
+      select: { galleryCache: true },
+    });
+    if (existing?.galleryCache) {
+      await this.finalizeJob(lotNumber, 'done', [], null);
+      this.logger.log(`[GalleryCache] Lot ${lotNumber} already cached — skipping`);
       return;
     }
 
@@ -185,6 +217,7 @@ export class GalleryCacheService implements OnModuleInit {
   private async getConfig(): Promise<{
     maxAttempts: number;
     concurrency: number;
+    concurrentLots: number;
     perSequenceDelayMs: number;
   }> {
     try {
@@ -194,12 +227,14 @@ export class GalleryCacheService implements OnModuleInit {
       return {
         maxAttempts: cfg?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
         concurrency: cfg?.concurrency ?? DEFAULT_CONCURRENCY,
+        concurrentLots: cfg?.concurrentLots ?? DEFAULT_CONCURRENT_LOTS,
         perSequenceDelayMs: cfg?.perSequenceDelayMs ?? 0,
       };
     } catch {
       return {
         maxAttempts: DEFAULT_MAX_ATTEMPTS,
         concurrency: DEFAULT_CONCURRENCY,
+        concurrentLots: DEFAULT_CONCURRENT_LOTS,
         perSequenceDelayMs: 0,
       };
     }

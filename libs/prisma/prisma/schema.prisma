@@ -3170,6 +3170,7 @@ model ImageScrapeConfig {
   maxAttempts        Int      @default(5) // proxy retries per image before giving up
   perSequenceDelayMs Int      @default(0) // optional pause between sequences in the consumer
   concurrency        Int      @default(4) // bounded parallel image up/downloads per lot
+  concurrentLots     Int      @default(1) // lots processed at once by the consumer (RabbitMQ prefetch)
   proxyResyncHours   Int      @default(168) // auto re-sync Webshare proxies every N hours (0 = off)
   proxyLastSyncAt    DateTime? // last time the proxy inventory was synced from Webshare
   createdAt          DateTime @default(now())

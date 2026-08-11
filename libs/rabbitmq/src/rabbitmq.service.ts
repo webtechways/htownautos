@@ -12,8 +12,17 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
   // Remember active consumers so they can be re-attached after a reconnect.
   private readonly consumers = new Map<
     string,
-    (msg: Record<string, any>) => Promise<void>
+    {
+      handler: (msg: Record<string, any>) => Promise<void>;
+      prefetch: number;
+    }
   >();
+  /**
+   * One channel per consumed queue. prefetch() is a channel-level setting, so a
+   * shared channel would force every consumer to the same concurrency — raising
+   * it for image caching would silently raise it for the sync trigger too.
+   */
+  private readonly consumerChannels = new Map<string, any>();
 
   private static readonly RECONNECT_DELAY_MS = 5000;
 
@@ -63,8 +72,9 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
         this.logger.log('RabbitMQ connected');
 
         // Re-attach consumers that were registered before a reconnect.
-        for (const [queue, handler] of this.consumers) {
-          await this.registerConsumer(queue, handler);
+        this.consumerChannels.clear();
+        for (const [queue, entry] of this.consumers) {
+          await this.registerConsumer(queue, entry.handler, entry.prefetch);
         }
       } catch (err) {
         this.logger.warn(`RabbitMQ not available: ${err.message}`);
@@ -106,9 +116,19 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async consume(queue: string, handler: (msg: Record<string, any>) => Promise<void>): Promise<void> {
+  /**
+   * `prefetch` is how many messages this consumer processes at once (amqplib
+   * invokes the callback per delivery without waiting for the previous one, so
+   * it is the real concurrency knob). Defaults to 1 — strictly serial.
+   */
+  async consume(
+    queue: string,
+    handler: (msg: Record<string, any>) => Promise<void>,
+    options: { prefetch?: number } = {},
+  ): Promise<void> {
+    const prefetch = Math.max(1, Math.floor(options.prefetch ?? 1));
     // Remember the handler so it survives reconnects.
-    this.consumers.set(queue, handler);
+    this.consumers.set(queue, { handler, prefetch });
 
     if (!this.channel) await this.connect();
     if (!this.channel) {
@@ -116,28 +136,70 @@ export class RabbitMQService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    await this.registerConsumer(queue, handler);
+    await this.registerConsumer(queue, handler, prefetch);
+  }
+
+  /**
+   * Change a live consumer's concurrency without a restart, so the setting can
+   * be tuned from the UI. No-op when the value is unchanged.
+   */
+  async setPrefetch(queue: string, prefetch: number): Promise<boolean> {
+    const value = Math.max(1, Math.floor(prefetch));
+    const entry = this.consumers.get(queue);
+    const channel = this.consumerChannels.get(queue);
+    if (!entry || !channel) return false;
+    if (entry.prefetch === value) return false;
+
+    try {
+      await channel.prefetch(value);
+      entry.prefetch = value;
+      this.logger.log(`[RabbitMQ] ${queue} prefetch set to ${value}`);
+      return true;
+    } catch (err) {
+      this.logger.warn(`[RabbitMQ] Could not set prefetch on ${queue}: ${err.message}`);
+      return false;
+    }
+  }
+
+  /** Messages waiting in the queue — used by the crawler for flow control. */
+  async queueDepth(queue: string): Promise<number | null> {
+    if (!this.channel) await this.connect();
+    if (!this.channel) return null;
+    try {
+      const info = await this.channel.assertQueue(queue, { durable: true });
+      return info?.messageCount ?? null;
+    } catch (err) {
+      this.logger.warn(`[RabbitMQ] Could not read depth of ${queue}: ${err.message}`);
+      return null;
+    }
   }
 
   private async registerConsumer(
     queue: string,
     handler: (msg: Record<string, any>) => Promise<void>,
+    prefetch: number,
   ): Promise<void> {
     try {
-      await this.channel.assertQueue(queue, { durable: true });
-      this.channel.prefetch(1);
-      this.channel.consume(queue, async (msg: any) => {
+      const channel = await this.connection.createChannel();
+      channel.on('error', (err: Error) =>
+        this.logger.warn(`[RabbitMQ] Channel error on ${queue}: ${err.message}`),
+      );
+      this.consumerChannels.set(queue, channel);
+
+      await channel.assertQueue(queue, { durable: true });
+      await channel.prefetch(prefetch);
+      channel.consume(queue, async (msg: any) => {
         if (!msg) return;
         try {
           const content = JSON.parse(msg.content.toString());
           await handler(content);
-          this.channel.ack(msg);
+          channel.ack(msg);
         } catch (err) {
           this.logger.error(`[RabbitMQ] Error processing message from ${queue}: ${err.message}`);
-          this.channel.nack(msg, false, false);
+          channel.nack(msg, false, false);
         }
       });
-      this.logger.log(`[RabbitMQ] Consuming queue: ${queue}`);
+      this.logger.log(`[RabbitMQ] Consuming queue: ${queue} (prefetch=${prefetch})`);
     } catch (err) {
       this.logger.error(`[RabbitMQ] Failed to start consuming ${queue}: ${err.message}`);
     }

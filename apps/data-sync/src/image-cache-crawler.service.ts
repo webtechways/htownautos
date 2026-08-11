@@ -24,6 +24,15 @@ const SEED_BATCH = 500;
 const STALE_PROCESSING_MIN = 15;
 
 /**
+ * Never let more than this many minutes of work sit in RabbitMQ. Without this
+ * cap, dispatching faster than the consumer drains built a queue deeper than
+ * STALE_PROCESSING_MIN of work; the orphan reaper then flipped still-queued jobs
+ * back to `pending`, the crawler republished them, and each pass multiplied the
+ * duplicates (observed: 73k messages for 1.6k lots, one lot dispatched 113 times).
+ */
+const MAX_QUEUE_MINUTES = 3;
+
+/**
  * Drains the ImageCacheJob queue at a controlled, pausable rate so Copart is hit
  * gently. Also seeds the queue from the backlog of un-cached lots, prioritized by
  * soonest auction date. Runs in data-sync (has Schedule + RabbitMQ + Prisma).
@@ -59,9 +68,18 @@ export class ImageCacheCrawlerService {
       const lotsPerTick = config?.lotsPerTick ?? DEFAULT_LOTS_PER_TICK;
       const maxAttempts = config?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
 
-      await this.requeueOrphans();
+      // Flow control first: how much room is there in the broker right now?
+      const budget = await this.dispatchBudget(lotsPerTick);
+
+      await this.requeueOrphans(budget.depth);
       await this.topUpQueue();
-      await this.dispatch(lotsPerTick, maxAttempts);
+      if (budget.slots > 0) {
+        await this.dispatch(budget.slots, maxAttempts);
+      } else {
+        this.logger.log(
+          `[ImageCacheCrawler] Queue is ${budget.depth} deep (cap ${budget.cap}) — skipping dispatch`,
+        );
+      }
     } catch (err) {
       this.logger.error(`[ImageCacheCrawler] Tick failed: ${(err as Error).message}`);
     } finally {
@@ -69,8 +87,31 @@ export class ImageCacheCrawlerService {
     }
   }
 
-  /** Requeue `processing` jobs abandoned by a dead consumer/worker. */
-  private async requeueOrphans(): Promise<void> {
+  /**
+   * How many lots may be published this tick. Keeps the broker holding at most
+   * MAX_QUEUE_MINUTES of work so a queued job is never mistaken for an orphan.
+   */
+  private async dispatchBudget(lotsPerTick: number): Promise<{
+    slots: number;
+    depth: number;
+    cap: number;
+  }> {
+    const cap = Math.max(lotsPerTick, lotsPerTick * MAX_QUEUE_MINUTES);
+    const depth = await this.rabbitMQ.queueDepth(GALLERY_CACHE_QUEUE);
+    // Unknown depth (broker down) → fall back to the configured rate; publish
+    // will fail and re-mark the jobs pending anyway.
+    if (depth === null) return { slots: lotsPerTick, depth: -1, cap };
+    return { slots: Math.max(0, Math.min(lotsPerTick, cap - depth)), depth, cap };
+  }
+
+  /**
+   * Requeue `processing` jobs abandoned by a dead consumer/worker.
+   *
+   * Skipped while the broker still holds a real backlog: those jobs are queued,
+   * not orphaned, and requeueing them is what created the duplicate storm.
+   */
+  private async requeueOrphans(queueDepth: number): Promise<void> {
+    if (queueDepth > 0) return;
     const cutoff = new Date(Date.now() - STALE_PROCESSING_MIN * 60_000);
     const res = await this.prisma.imageCacheJob.updateMany({
       where: { status: 'processing', lastAttemptAt: { lt: cutoff } },

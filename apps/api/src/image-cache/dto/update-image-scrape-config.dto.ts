@@ -30,6 +30,13 @@ export class UpdateImageScrapeConfigDto {
   @Max(32)
   concurrency?: number;
 
+  /** Lots the consumer processes at once (RabbitMQ prefetch). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(16)
+  concurrentLots?: number;
+
   @IsOptional()
   @IsInt()
   @Min(0)

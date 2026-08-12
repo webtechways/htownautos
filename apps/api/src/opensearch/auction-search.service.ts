@@ -32,6 +32,51 @@ interface GalleryCacheData {
   images: { sequence: number; thumbnail: string; fullSize: string }[];
 }
 
+/**
+ * Facets the sidebar offers as multi-select. Each one's aggregation is computed
+ * with its own filter removed so the remaining options stay visible and
+ * selectable (see buildQuery's `omitFacet`).
+ */
+type FacetKey =
+  | 'source'
+  | 'make'
+  | 'model'
+  | 'trim'
+  | 'bodyType'
+  | 'yardName'
+  | 'sellerName'
+  | 'sellerCategory'
+  | 'drivetrain'
+  | 'color'
+  | 'cylinders'
+  | 'locationState'
+  | 'damageDescription'
+  | 'saleLight'
+  | 'transmission'
+  | 'fuelType'
+  | 'title';
+
+/** aggregation name → the facet whose filter it must ignore. */
+const AGG_FACETS: Record<string, FacetKey> = {
+  sources: 'source',
+  makes: 'make',
+  models: 'model',
+  trims: 'trim',
+  bodyTypes: 'bodyType',
+  yards: 'yardName',
+  sellers: 'sellerName',
+  sellerCategories: 'sellerCategory',
+  drivetrains: 'drivetrain',
+  colors: 'color',
+  cylinders: 'cylinders',
+  states: 'locationState',
+  damageTypes: 'damageDescription',
+  saleLights: 'saleLight',
+  transmissions: 'transmission',
+  fuelTypes: 'fuelType',
+  titleTypes: 'title',
+};
+
 @Injectable()
 export class AuctionSearchService {
   private readonly logger = new Logger(AuctionSearchService.name);
@@ -94,7 +139,9 @@ export class AuctionSearchService {
     const sort = this.buildSort(sortBy, sortOrder);
 
     // Build aggregations if requested
-    const aggs = dto.includeAggregations ? this.buildAggregations() : undefined;
+    const aggs = dto.includeAggregations
+      ? this.buildAggregations(dto, carfaxSourceIds, inspectableYardNames, titleOverrides)
+      : undefined;
 
     const searchBody: any = {
       from,
@@ -176,9 +223,23 @@ export class AuctionSearchService {
     return { kind: 'text', value: v };
   }
 
-  private buildQuery(dto: SearchAuctionsDto, carfaxSourceIds?: string[], inspectableYardNames?: string[], titleOverrides?: TitleOverrides): any {
+  /**
+   * `omitFacet` drops one facet's own clause from the query. Faceted search needs
+   * this: with the make filter applied, a `makes` aggregation computed over the
+   * filtered result set can only ever return the makes already selected, so the
+   * other options vanish from the sidebar and multi-select becomes impossible.
+   * Every other filter still applies, which keeps the counts honest.
+   */
+  private buildQuery(
+    dto: SearchAuctionsDto,
+    carfaxSourceIds?: string[],
+    inspectableYardNames?: string[],
+    titleOverrides?: TitleOverrides,
+    omitFacet?: FacetKey,
+  ): any {
     const must: any[] = [];
     const filter: any[] = [];
+    const keep = (facet: FacetKey) => omitFacet !== facet;
 
     // Exclude already-auctioned items from the DEFAULT browse view only
     // (keep listings with no saleDate, saleDate 0, or saleDate >= today).
@@ -241,7 +302,7 @@ export class AuctionSearchService {
     // No .toLowerCase() on any of these; pass the user's selection through.
 
     // Source filter (text+keyword, e.g. "copart")
-    if (dto.source && dto.source.length > 0) {
+    if (keep('source') && dto.source && dto.source.length > 0) {
       filter.push({ terms: { 'source.keyword': dto.source } });
     }
 
@@ -274,32 +335,32 @@ export class AuctionSearchService {
 
     // Make filter — canonical (values come from the canonical facet; normalize
     // for safety so old/raw inputs still match).
-    if (dto.make && dto.make.length > 0) {
+    if (keep('make') && dto.make && dto.make.length > 0) {
       filter.push({ terms: { 'makeCanonical.keyword': canonTerms(dto.make) } });
     }
 
     // Model filter — canonical
-    if (dto.model && dto.model.length > 0) {
+    if (keep('model') && dto.model && dto.model.length > 0) {
       filter.push({ terms: { 'modelCanonical.keyword': canonTerms(dto.model) } });
     }
 
     // Body type filter
-    if (dto.bodyType && dto.bodyType.length > 0) {
+    if (keep('bodyType') && dto.bodyType && dto.bodyType.length > 0) {
       filter.push({ terms: { 'bodyType.keyword': dto.bodyType } });
     }
 
     // Trim filter — canonical
-    if (dto.trim && dto.trim.length > 0) {
+    if (keep('trim') && dto.trim && dto.trim.length > 0) {
       filter.push({ terms: { 'trimCanonical.keyword': canonTerms(dto.trim) } });
     }
 
     // Yard name filter
-    if (dto.yardName && dto.yardName.length > 0) {
+    if (keep('yardName') && dto.yardName && dto.yardName.length > 0) {
       filter.push({ terms: { 'yardName.keyword': dto.yardName } });
     }
 
     // Seller name filter
-    if (dto.sellerName && dto.sellerName.length > 0) {
+    if (keep('sellerName') && dto.sellerName && dto.sellerName.length > 0) {
       filter.push({ terms: { 'sellerName.keyword': dto.sellerName } });
     }
 
@@ -309,32 +370,32 @@ export class AuctionSearchService {
     }
 
     // Transmission filter
-    if (dto.transmission) {
+    if (keep('transmission') && dto.transmission) {
       filter.push({ term: { 'transmission.keyword': dto.transmission } });
     }
 
     // Fuel type filter
-    if (dto.fuelType) {
+    if (keep('fuelType') && dto.fuelType) {
       filter.push({ term: { 'fuelType.keyword': dto.fuelType } });
     }
 
     // Drivetrain filter (multi)
-    if (dto.drivetrain && dto.drivetrain.length > 0) {
+    if (keep('drivetrain') && dto.drivetrain && dto.drivetrain.length > 0) {
       filter.push({ terms: { 'drivetrain.keyword': dto.drivetrain } });
     }
 
     // Color filter (multi) — canonical
-    if (dto.color && dto.color.length > 0) {
+    if (keep('color') && dto.color && dto.color.length > 0) {
       filter.push({ terms: { 'colorCanonical.keyword': canonTerms(dto.color) } });
     }
 
     // Cylinders filter (multi)
-    if (dto.cylinders && dto.cylinders.length > 0) {
+    if (keep('cylinders') && dto.cylinders && dto.cylinders.length > 0) {
       filter.push({ terms: { 'cylinders.keyword': dto.cylinders } });
     }
 
     // Source / seller category filter (multi) — derived field indexed at sync time
-    if (dto.sellerCategory && dto.sellerCategory.length > 0) {
+    if (keep('sellerCategory') && dto.sellerCategory && dto.sellerCategory.length > 0) {
       filter.push({ terms: { 'sellerCategory.keyword': dto.sellerCategory } });
     }
 
@@ -359,7 +420,7 @@ export class AuctionSearchService {
     }
 
     // Location state filter
-    if (dto.locationState && dto.locationState.length > 0) {
+    if (keep('locationState') && dto.locationState && dto.locationState.length > 0) {
       filter.push({ terms: { 'locationState.keyword': dto.locationState } });
     }
 
@@ -379,7 +440,7 @@ export class AuctionSearchService {
     // === COPART SPECIFIC FILTERS ===
 
     // Damage description filter
-    if (dto.damageDescription && dto.damageDescription.length > 0) {
+    if (keep('damageDescription') && dto.damageDescription && dto.damageDescription.length > 0) {
       filter.push({
         terms: { 'damageDescription.keyword': dto.damageDescription },
       });
@@ -391,7 +452,7 @@ export class AuctionSearchService {
     }
 
     // Sale title type filter (raw codes)
-    if (dto.saleTitleType && dto.saleTitleType.length > 0) {
+    if (keep('title') && dto.saleTitleType && dto.saleTitleType.length > 0) {
       filter.push({
         terms: { 'saleTitleType.keyword': dto.saleTitleType },
       });
@@ -402,7 +463,7 @@ export class AuctionSearchService {
     // "unknown" → any doc whose code is NOT in the known set (incl. missing).
     // The prod index stores codes UPPERCASE (dynamic mapping, case-sensitive)
     // while a fresh index lowercases them (normalizer); match both cases.
-    if (dto.titleCategory && dto.titleCategory.length > 0) {
+    if (keep('title') && dto.titleCategory && dto.titleCategory.length > 0) {
       const bothCases = (arr: string[]) =>
         Array.from(new Set(arr.flatMap((c) => [c.toLowerCase(), c.toUpperCase()])));
       const cats = dto.titleCategory;
@@ -447,7 +508,7 @@ export class AuctionSearchService {
     }
 
     // Sale light filter
-    if (dto.saleLight && dto.saleLight.length > 0) {
+    if (keep('saleLight') && dto.saleLight && dto.saleLight.length > 0) {
       filter.push({ terms: { 'saleLight.keyword': dto.saleLight } });
     }
 
@@ -546,7 +607,70 @@ export class AuctionSearchService {
     return fieldMap[sortBy] || 'createdAt';
   }
 
-  private buildAggregations(): any {
+  /**
+   * Wraps any facet the user is currently filtering on in a `filter` aggregation
+   * that re-applies every OTHER filter. Untouched facets stay as plain aggs under
+   * the main query, so the extra work is proportional to the filters in use —
+   * usually one or two, not seventeen.
+   */
+  private buildAggregations(
+    dto: SearchAuctionsDto,
+    carfaxSourceIds?: string[],
+    inspectableYardNames?: string[],
+    titleOverrides?: TitleOverrides,
+  ): any {
+    const base = this.baseAggregations();
+    const out: any = {};
+
+    for (const [aggName, definition] of Object.entries(base)) {
+      const facet = AGG_FACETS[aggName];
+      if (!facet || !this.facetIsActive(dto, facet)) {
+        out[aggName] = definition;
+        continue;
+      }
+      // `global` first: aggregations are scoped to the main query, and a plain
+      // `filter` sub-agg can only narrow that scope — never widen it back to the
+      // options the user has not picked yet. Verified against the production
+      // index: without `global` the makes facet still returned only TOYOTA.
+      out[aggName] = {
+        global: {},
+        aggs: {
+          scoped: {
+            filter: this.buildQuery(
+              dto,
+              carfaxSourceIds,
+              inspectableYardNames,
+              titleOverrides,
+              facet,
+            ),
+            aggs: { unfiltered: definition },
+          },
+        },
+      };
+    }
+
+    return out;
+  }
+
+  /** True when the user has an active selection on this facet. */
+  private facetIsActive(dto: SearchAuctionsDto, facet: FacetKey): boolean {
+    switch (facet) {
+      case 'title':
+        return (
+          (dto.saleTitleType?.length ?? 0) > 0 || (dto.titleCategory?.length ?? 0) > 0
+        );
+      case 'transmission':
+        return !!dto.transmission;
+      case 'fuelType':
+        return !!dto.fuelType;
+      default: {
+        const value = (dto as any)[facet];
+        return Array.isArray(value) ? value.length > 0 : !!value;
+      }
+    }
+  }
+
+  private baseAggregations(): any {
     // The production index was first created by OpenSearch's dynamic
     // mapping, which produces every string field as `text` with a
     // `.keyword` subfield. Aggregations / sorts must hit the keyword
@@ -621,6 +745,11 @@ export class AuctionSearchService {
   }
 
   private parseAggregations(aggs: any, titleOverrides?: TitleOverrides): AuctionAggregations {
+    // A facet the user is filtering on comes back wrapped in a `filter` agg (see
+    // buildAggregations), so its buckets sit one level deeper.
+    const bucketsOf = (agg: any): any[] =>
+      agg?.buckets ?? agg?.scoped?.unfiltered?.buckets ?? [];
+
     const parseBuckets = (buckets: any[]): Array<{ key: any; count: number }> => {
       return (buckets || []).map((bucket) => ({
         key: bucket.key,
@@ -629,7 +758,7 @@ export class AuctionSearchService {
     };
 
     // Roll raw title-type buckets up into the primary categories (incl. unknown).
-    const titleTypeBuckets = parseBuckets(aggs.titleTypes?.buckets);
+    const titleTypeBuckets = parseBuckets(bucketsOf(aggs.titleTypes));
     const categoryCounts: Record<TitleCategory, number> = {
       clean: 0,
       nonrepairable: 0,
@@ -648,14 +777,12 @@ export class AuctionSearchService {
     // dropping numeric-only keys and any key that is really a Sale Status — this
     // preserves every legit value (Run & Drive Verified, DEFAULT, Vehicle
     // Starts, …) without a brittle whitelist. See [[copart-csv-parser-bug]].
-    const saleStatuses = parseBuckets(aggs.saleStatuses?.buckets);
+    const saleStatuses = parseBuckets(bucketsOf(aggs.saleStatuses));
     const saleStatusKeys = new Set(
       saleStatuses.map((b) => String(b.key).trim().toLowerCase()),
     );
     const isNumericLike = (s: string) => /^-?\d+(?:\.\d+)?$/.test(s);
-    const runsDrivesOptions = parseBuckets(
-      aggs.runsDrivesOptions?.buckets,
-    ).filter((b) => {
+    const runsDrivesOptions = parseBuckets(bucketsOf(aggs.runsDrivesOptions)).filter((b) => {
       const key = String(b.key).trim();
       if (!key) return false;
       if (isNumericLike(key)) return false;
@@ -664,28 +791,28 @@ export class AuctionSearchService {
     });
 
     return {
-      sources: parseBuckets(aggs.sources?.buckets),
-      makes: parseBuckets(aggs.makes?.buckets),
-      models: parseBuckets(aggs.models?.buckets),
-      trims: parseBuckets(aggs.trims?.buckets),
-      years: parseBuckets(aggs.years?.buckets),
-      states: parseBuckets(aggs.states?.buckets),
-      bodyTypes: parseBuckets(aggs.bodyTypes?.buckets),
-      transmissions: parseBuckets(aggs.transmissions?.buckets),
-      fuelTypes: parseBuckets(aggs.fuelTypes?.buckets),
-      damageTypes: parseBuckets(aggs.damageTypes?.buckets),
+      sources: parseBuckets(bucketsOf(aggs.sources)),
+      makes: parseBuckets(bucketsOf(aggs.makes)),
+      models: parseBuckets(bucketsOf(aggs.models)),
+      trims: parseBuckets(bucketsOf(aggs.trims)),
+      years: parseBuckets(bucketsOf(aggs.years)),
+      states: parseBuckets(bucketsOf(aggs.states)),
+      bodyTypes: parseBuckets(bucketsOf(aggs.bodyTypes)),
+      transmissions: parseBuckets(bucketsOf(aggs.transmissions)),
+      fuelTypes: parseBuckets(bucketsOf(aggs.fuelTypes)),
+      damageTypes: parseBuckets(bucketsOf(aggs.damageTypes)),
       saleStatuses,
       titleTypes: titleTypeBuckets,
       titleCategories,
-      colors: parseBuckets(aggs.colors?.buckets),
-      cylinders: parseBuckets(aggs.cylinders?.buckets),
-      drivetrains: parseBuckets(aggs.drivetrains?.buckets),
-      sellerCategories: parseBuckets(aggs.sellerCategories?.buckets),
-      yards: parseBuckets(aggs.yards?.buckets),
-      sellers: parseBuckets(aggs.sellers?.buckets),
-      lotCondCodes: parseBuckets(aggs.lotCondCodes?.buckets),
+      colors: parseBuckets(bucketsOf(aggs.colors)),
+      cylinders: parseBuckets(bucketsOf(aggs.cylinders)),
+      drivetrains: parseBuckets(bucketsOf(aggs.drivetrains)),
+      sellerCategories: parseBuckets(bucketsOf(aggs.sellerCategories)),
+      yards: parseBuckets(bucketsOf(aggs.yards)),
+      sellers: parseBuckets(bucketsOf(aggs.sellers)),
+      lotCondCodes: parseBuckets(bucketsOf(aggs.lotCondCodes)),
       runsDrivesOptions,
-      saleLights: parseBuckets(aggs.saleLights?.buckets),
+      saleLights: parseBuckets(bucketsOf(aggs.saleLights)),
     };
   }
 
@@ -701,7 +828,11 @@ export class AuctionSearchService {
     const searchBody: any = {
       size: 0,
       query,
-      aggs: this.buildAggregations(),
+      // Same rule as the main search: a facet the user is filtering on must not
+      // filter its own option list, or it collapses to the current selection.
+      aggs: dto
+        ? this.buildAggregations(dto, undefined, undefined, titleOverrides)
+        : this.baseAggregations(),
     };
 
     try {

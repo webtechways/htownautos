@@ -200,12 +200,22 @@ export class AuctionSearchService {
     }
   }
 
+  /**
+   * "Today" as the YYYYMMDD integer the index stores, in **Houston Central** —
+   * the timezone the auction business (and every sale date) runs on.
+   *
+   * The container's clock is UTC, so a plain `new Date()` rolls over at 19:00
+   * Central and the browse view starts hiding the current day's lots five hours
+   * early — which also made an explicit "sale date = today" filter return zero.
+   */
   private getTodayAsInt(): number {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return parseInt(`${y}${m}${d}`, 10);
+    const s = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Chicago',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    return parseInt(s.replace(/-/g, ''), 10);
   }
 
   /**
@@ -246,7 +256,17 @@ export class AuctionSearchService {
     // When the user does an EXPLICIT lookup (free-text search, VIN, lot/source/ids)
     // do NOT hide past-dated lots: many stay active on Copart ("On Minimum Bid" /
     // relisted) with a stale saleDate, and the user expects to find them by VIN/lot.
-    const explicitLookup = !!(dto.search || dto.vin || dto.sourceIds || dto.ids);
+    // An explicit sale-date range IS the user's intent about which days to see —
+    // silently AND-ing "…and only from today onwards" on top of it made every
+    // past-date range come back empty.
+    const explicitLookup = !!(
+      dto.search ||
+      dto.vin ||
+      dto.sourceIds ||
+      dto.ids ||
+      dto.saleDateFrom ||
+      dto.saleDateTo
+    );
     if (!explicitLookup) {
       filter.push({
         bool: {

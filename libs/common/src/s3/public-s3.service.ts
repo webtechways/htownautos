@@ -18,8 +18,8 @@ import { S3Service } from './s3.service';
 export class PublicS3Service extends S3Service {
   protected readonly logger = new Logger(PublicS3Service.name);
 
-  constructor() {
-    super({
+  protected resolveProfile() {
+    return {
       endpoint: process.env.PUBLIC_S3_ENDPOINT || process.env.AWS_S3_ENDPOINT,
       bucket:
         process.env.PUBLIC_S3_BUCKET ||
@@ -31,6 +31,6 @@ export class PublicS3Service extends S3Service {
       secretAccessKey:
         process.env.PUBLIC_S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || '',
       cdnBaseUrl: process.env.PUBLIC_CDN_BASE_URL || process.env.CDN_BASE_URL,
-    });
+    };
   }
 }

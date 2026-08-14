@@ -60,6 +60,9 @@ export { TenantInterceptor } from './interceptors/tenant.interceptor';
 
 // S3 Service (shared across all apps)
 export { S3Service } from './s3/s3.service';
+export type { S3Profile } from './s3/s3.service';
+// Public bucket (gallery images). Separate bucket because B2 has no per-object ACL.
+export { PublicS3Service } from './s3/public-s3.service';
 export type { UploadResult, PresignResult, HeadObjectResult } from './s3/s3.service';
 
 // Proxy Service

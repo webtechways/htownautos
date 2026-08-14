@@ -26,6 +26,22 @@ export class AuctionMonitorService {
     private readonly s3: S3Service,
   ) {}
 
+  /**
+   * Las capturas viven en el bucket PRIVADO, así que lo almacenado es la clave y
+   * hay que firmarla para mostrarla. Los valores antiguos son URLs públicas
+   * completas: se devuelven tal cual para no romper lo ya guardado.
+   */
+  private async signIfKey(value: string | null): Promise<string | null> {
+    if (!value) return null;
+    if (/^https?:\/\//i.test(value)) return value;
+    try {
+      return await this.s3.getSignedUrl(value, 3600);
+    } catch (err: any) {
+      this.logger.warn(`No se pudo firmar la captura ${value}: ${err.message}`);
+      return null;
+    }
+  }
+
   async getConfig() {
     return this.prisma.auctionMonitorConfig.upsert({
       where: { id: CONFIG_ID },
@@ -77,8 +93,10 @@ export class AuctionMonitorService {
     const heartbeat = config.workerHeartbeatAt;
     const workerAlive = !!heartbeat && Date.now() - heartbeat.getTime() < HEARTBEAT_STALE_MS;
 
+    const loginScreenshotUrl = await this.signIfKey(config.loginScreenshotUrl);
+
     return {
-      config,
+      config: { ...config, loginScreenshotUrl },
       workerAlive,
       active,
       today,
@@ -112,7 +130,12 @@ export class AuctionMonitorService {
   async getSession(id: string) {
     const row = await this.prisma.auctionMonitorSession.findUnique({ where: { id } });
     if (!row) throw new NotFoundException('Session not found');
-    return row;
+
+    const shots = Array.isArray(row.screenshots) ? (row.screenshots as any[]) : [];
+    const screenshots = await Promise.all(
+      shots.map(async (s) => ({ ...s, url: await this.signIfKey(s?.url ?? null) })),
+    );
+    return { ...row, screenshots };
   }
 
   /** Ask the worker to close a page. It flips the row to `stopped` when done. */
@@ -186,8 +209,11 @@ export class AuctionMonitorService {
         ? `monitor/login/${stamp}-${safeLabel}.jpg`
         : `monitor/sessions/${dto.sessionId}/${stamp}-${safeLabel}.jpg`;
 
-    await this.s3.uploadBufferToKey(buffer, key, 'image/jpeg', 'public-read');
-    const url = this.s3.buildPublicUrl(key);
+    // Sin ACL pública: estas capturas muestran la cuenta de AutoBidMaster (nombre,
+    // saldo, datos de contacto) y viven en el bucket PRIVADO. Se guarda la clave y
+    // se firma al leer.
+    await this.s3.uploadBufferToKey(buffer, key, 'image/jpeg');
+    const url = key;
 
     if (dto.kind === 'login') {
       await this.prisma.auctionMonitorConfig.upsert({

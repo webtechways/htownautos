@@ -36,35 +36,64 @@ export interface HeadObjectResult {
   contentType: string;
 }
 
+/**
+ * One storage backend. The default profile is the PRIVATE bucket (documents,
+ * recordings, buyer IDs); {@link PublicS3Service} overrides it with the public
+ * one that serves gallery images through the CDN. They are separate buckets
+ * because Backblaze B2 — unlike Spaces — has no per-object ACL: visibility is a
+ * property of the bucket, so mixing both in one would publish everything.
+ */
+export interface S3Profile {
+  endpoint?: string;
+  bucket: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  cdnBaseUrl?: string | null;
+}
+
 @Injectable()
 export class S3Service {
-  private readonly logger = new Logger(S3Service.name);
+  protected readonly logger = new Logger(S3Service.name);
   private readonly s3Client: S3Client;
   private readonly bucket: string;
   private readonly region: string;
+  private readonly endpoint: string | null;
   private readonly cdnBaseUrl: string | null;
 
-  constructor() {
-    this.region = process.env.AWS_REGION || 'us-east-1';
-    this.bucket = process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_PUBLIC || '';
-    this.cdnBaseUrl = process.env.CDN_BASE_URL?.replace(/\/+$/, '') || null;
+  constructor(profile?: S3Profile) {
+    const cfg: S3Profile = profile ?? {
+      endpoint: process.env.AWS_S3_ENDPOINT,
+      bucket: process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_PUBLIC || '',
+      region: process.env.AWS_REGION || 'us-east-1',
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+      cdnBaseUrl: process.env.CDN_BASE_URL,
+    };
 
-    const endpoint = process.env.AWS_S3_ENDPOINT;
+    this.region = cfg.region;
+    this.bucket = cfg.bucket;
+    this.endpoint = cfg.endpoint?.replace(/\/+$/, '') || null;
+    this.cdnBaseUrl = cfg.cdnBaseUrl?.replace(/\/+$/, '') || null;
 
     this.s3Client = new S3Client({
       region: this.region,
       credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+        accessKeyId: cfg.accessKeyId,
+        secretAccessKey: cfg.secretAccessKey,
       },
-      ...(endpoint && { endpoint, forcePathStyle: false }),
+      ...(this.endpoint && { endpoint: this.endpoint, forcePathStyle: false }),
     });
   }
 
-  /** Build public URL — uses CDN if configured, otherwise standard S3 */
+  /** Build public URL — CDN if configured, else the provider's own host. */
   buildPublicUrl(key: string): string {
     if (this.cdnBaseUrl) {
       return `${this.cdnBaseUrl}/${key}`;
+    }
+    // Any S3-compatible provider (Spaces, B2, R2…) reached by its endpoint.
+    if (this.endpoint) {
+      return `${this.endpoint}/${this.bucket}/${key}`;
     }
     return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
   }

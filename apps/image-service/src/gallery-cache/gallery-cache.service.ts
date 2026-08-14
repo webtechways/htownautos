@@ -3,7 +3,7 @@ import { RabbitMQService } from '@htownautos/rabbitmq';
 import { PrismaService } from '@htownautos/prisma';
 import { Prisma } from '@prisma/client';
 import {
-  S3Service,
+  PublicS3Service,
   ProxyService,
   mapWithConcurrency,
   GALLERY_CACHE_QUEUE,
@@ -25,7 +25,7 @@ export class GalleryCacheService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly rabbitMQ: RabbitMQService,
     private readonly prisma: PrismaService,
-    private readonly s3: S3Service,
+    private readonly s3: PublicS3Service,
     private readonly proxyService: ProxyService,
   ) {}
 

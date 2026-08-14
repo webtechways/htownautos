@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
-import { S3Service } from '@htownautos/common';
+import { PublicS3Service } from '@htownautos/common';
 
 const CONFIG_ID = 'singleton';
 /** Lots examined per run — bounds the S3 calls a single tick can make. */
@@ -28,7 +28,7 @@ export class ImageRetentionService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly s3: S3Service,
+    private readonly s3: PublicS3Service,
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR)

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
-import { S3Service } from '@htownautos/common';
+import { PublicS3Service } from '@htownautos/common';
 import { ProxySyncService } from '../proxy-sync/proxy-sync.service';
 import { UpdateImageScrapeConfigDto } from './dto/update-image-scrape-config.dto';
 
@@ -57,7 +57,9 @@ export class ImageCacheService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly proxySync: ProxySyncService,
-    private readonly s3: S3Service,
+    // Las galerías viven en el bucket PÚBLICO; el perfil por defecto es el
+    // privado y ahí no existe el prefijo gallery/ (el tile marcaba 0 GB).
+    private readonly s3: PublicS3Service,
   ) {}
 
   /** Manually pull the current Webshare proxy list and refresh the inventory. */

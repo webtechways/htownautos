@@ -3181,6 +3181,12 @@ model ImageScrapeConfig {
   retentionLastRunAt   DateTime?
   retentionDeletedLots Int       @default(0) // cumulative, for the UI
   retentionLastError   String?
+
+  // Último cálculo del tamaño de gallery/ (2M+ objetos: el listado tarda minutos).
+  // Se persiste para que el tile no muestre "…" tras cada reinicio del contenedor.
+  storageBytes      BigInt?
+  storageObjects    Int?
+  storageComputedAt DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

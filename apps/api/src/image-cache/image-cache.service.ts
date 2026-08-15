@@ -7,7 +7,8 @@ import { UpdateImageScrapeConfigDto } from './dto/update-image-scrape-config.dto
 
 const CONFIG_ID = 'singleton';
 // Re-list the gallery/ prefix at most this often (storage changes slowly).
-const STORAGE_TTL_MS = 60 * 60_000;
+// Recorrer gallery/ son >2.000 llamadas de listado; el tamaño cambia despacio.
+const STORAGE_TTL_MS = 6 * 60 * 60_000;
 const GALLERY_PREFIX = 'gallery/';
 
 const DEFAULT_CONFIG = {
@@ -24,6 +25,9 @@ const DEFAULT_CONFIG = {
   retentionLastRunAt: null as Date | null,
   retentionDeletedLots: 0,
   retentionLastError: null as string | null,
+  storageBytes: null as bigint | null,
+  storageObjects: null as number | null,
+  storageComputedAt: null as Date | null,
 };
 
 export interface Paginated<T> {
@@ -99,6 +103,14 @@ export class ImageCacheService {
     const perTick = config.lotsPerTick || 1;
     const etaMinutes = Math.ceil(counts.pending / perTick);
 
+    // El proceso puede haber reiniciado: parte del último valor guardado para no
+    // mostrar un hueco mientras se recalcula (el listado tarda minutos).
+    if (!this.storageComputedAt && config.storageComputedAt) {
+      this.storageBytes = Number(config.storageBytes ?? 0);
+      this.storageObjects = config.storageObjects ?? 0;
+      this.storageComputedAt = config.storageComputedAt;
+    }
+
     // Refresh the S3 storage total in the background (throttled); never blocks.
     this.maybeRefreshStorage();
 
@@ -150,13 +162,24 @@ export class ImageCacheService {
     this.storageComputing = true;
     this.s3
       .sumPrefixSize(GALLERY_PREFIX)
-      .then(({ bytes, objects }) => {
+      .then(async ({ bytes, objects }) => {
         this.storageBytes = bytes;
         this.storageObjects = objects;
         this.storageComputedAt = new Date();
         this.logger.log(
           `[Storage] gallery/ = ${(bytes / 1e9).toFixed(2)} GB across ${objects} objects`,
         );
+        // Guardarlo para que sobreviva al siguiente despliegue.
+        await this.prisma.imageScrapeConfig
+          .update({
+            where: { id: CONFIG_ID },
+            data: {
+              storageBytes: BigInt(bytes),
+              storageObjects: objects,
+              storageComputedAt: this.storageComputedAt,
+            },
+          })
+          .catch(() => undefined);
       })
       .catch((err) => this.logger.warn(`[Storage] compute failed: ${err.message}`))
       .finally(() => {

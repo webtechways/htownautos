@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@htownautos/prisma';
-import { ProxyService } from '@htownautos/common';
+import { ProxyService, AgentAssignmentService } from '@htownautos/common';
 import { AuctionCalendarService } from './auction-calendar.service';
 import { AuctionCalendarController } from './auction-calendar.controller';
 
@@ -9,6 +9,6 @@ import { AuctionCalendarController } from './auction-calendar.controller';
 @Module({
   imports: [PrismaModule],
   controllers: [AuctionCalendarController],
-  providers: [AuctionCalendarService, ProxyService],
+  providers: [AuctionCalendarService, ProxyService, AgentAssignmentService],
 })
 export class AuctionCalendarModule {}

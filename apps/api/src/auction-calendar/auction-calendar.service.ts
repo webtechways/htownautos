@@ -89,14 +89,25 @@ export class AuctionCalendarService implements OnModuleInit {
       const root = Array.isArray(json) ? json[0] : json;
       const auctions = root?.auctions ?? {};
 
-      // Preserve the staff "monitor" toggle across the full-replace, keyed by
-      // (location, startedAt).
-      const monitoredRows = await this.prisma.auctionCalendarEntry.findMany({
-        where: { monitor: true },
-        select: { locationSourceId: true, startedAt: true },
+      // Preserve the staff "monitor" toggle AND the assigned agent across the
+      // full-replace, keyed by (location, startedAt). Without this every refresh
+      // (every few hours) would wipe both.
+      const previous = await this.prisma.auctionCalendarEntry.findMany({
+        where: { OR: [{ monitor: true }, { scraperAgentId: { not: null } }] },
+        select: { locationSourceId: true, startedAt: true, monitor: true, scraperAgentId: true },
       });
       const monitored = new Set(
-        monitoredRows.map((m) => `${m.locationSourceId}|${m.startedAt.toISOString()}`),
+        previous
+          .filter((m) => m.monitor)
+          .map((m) => `${m.locationSourceId}|${m.startedAt.toISOString()}`),
+      );
+      const assignedAgent = new Map(
+        previous
+          .filter((m) => m.scraperAgentId)
+          .map((m) => [
+            `${m.locationSourceId}|${m.startedAt.toISOString()}`,
+            m.scraperAgentId as string,
+          ]),
       );
 
       const now = new Date();
@@ -139,6 +150,7 @@ export class AuctionCalendarService implements OnModuleInit {
               totalAvailableItems: a.totalAvailableItems ?? 0,
               url: this.buildUrl(slug, saleDate),
               monitor: monitored.has(key),
+              scraperAgentId: assignedAgent.get(key) ?? null,
               raw: a as unknown as Prisma.InputJsonValue,
               fetchedAt: now,
             });
@@ -239,6 +251,10 @@ export class AuctionCalendarService implements OnModuleInit {
           totalAvailableItems: true,
           url: true,
           monitor: true,
+          scraperAgentId: true,
+          scraperAgent: {
+            select: { id: true, firstName: true, lastName: true, email: true, auction: true },
+          },
         },
       }),
       this.prisma.auctionCalendarEntry.count({ where }),

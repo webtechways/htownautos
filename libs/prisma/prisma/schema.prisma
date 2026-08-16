@@ -3029,6 +3029,10 @@ model AuctionCalendarEntry {
   url                 String   @db.Text
   // Staff toggle — preserved across calendar refreshes (by location+startedAt).
   monitor             Boolean  @default(false)
+  // Agente asignado para operar esta subasta. Se preserva igual que `monitor`
+  // porque cada refresco del calendario borra y recrea todas las filas.
+  scraperAgentId      String?
+  scraperAgent        ScraperAgent? @relation(fields: [scraperAgentId], references: [id], onDelete: SetNull)
   raw                 Json?
   fetchedAt           DateTime @default(now())
 
@@ -3037,6 +3041,7 @@ model AuctionCalendarEntry {
   @@index([saleDate])
   @@index([auctionGroup])
   @@index([monitor])
+  @@index([scraperAgentId])
   @@map("auction_calendar_entries")
 }
 
@@ -3065,6 +3070,8 @@ model ScraperAgent {
   password  String
   active    Boolean @default(true)
   notes     String?
+
+  calendarEntries AuctionCalendarEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

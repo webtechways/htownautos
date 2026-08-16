@@ -64,6 +64,7 @@ import { ImageCacheModule } from './image-cache/image-cache.module';
 import { NewLotsStatsModule } from './new-lots-stats/new-lots-stats.module';
 import { AuctionCalendarModule } from './auction-calendar/auction-calendar.module';
 import { AuctionMonitorModule } from './auction-monitor/auction-monitor.module';
+import { ScraperAgentsModule } from './scraper-agents/scraper-agents.module';
 import { ListingGroupsModule } from './listing-groups/listing-groups.module';
 import { ListingReviewsModule } from './listing-reviews/listing-reviews.module';
 import { RebuildModule } from './rebuild/rebuild.module';
@@ -164,6 +165,7 @@ import { SyncWatchdogModule } from './sync-watchdog/sync-watchdog.module';
     NewLotsStatsModule,
     AuctionCalendarModule,
     AuctionMonitorModule,
+    ScraperAgentsModule,
     ListingGroupsModule,
     ListingReviewsModule,
     RebuildModule,

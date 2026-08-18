@@ -3067,6 +3067,7 @@ model ScraperAgent {
   lastName  String
   email     String? // se rellena después de registrar la cuenta
   auction   String  @default("copart") // copart | iaai | autobidmaster
+  country   String  @default("US") // país de registro de la cuenta
   password  String
   active    Boolean @default(true)
   notes     String?
@@ -3078,6 +3079,7 @@ model ScraperAgent {
 
   @@unique([auction, email])
   @@index([auction])
+  @@index([country])
   @@index([active])
   @@map("scraper_agents")
 }

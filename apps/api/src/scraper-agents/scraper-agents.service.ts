@@ -22,12 +22,19 @@ export class ScraperAgentsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(params: { auction?: string; search?: string; page?: number; limit?: number }) {
+  async list(params: {
+    auction?: string;
+    country?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
     const p = Math.max(1, Math.floor(Number(params.page) || 1));
     const l = Math.min(200, Math.max(1, Math.floor(Number(params.limit) || 50)));
 
     const where: Prisma.ScraperAgentWhereInput = {
       ...(params.auction ? { auction: params.auction } : {}),
+      ...(params.country ? { country: params.country } : {}),
       ...(params.search
         ? {
             OR: [
@@ -59,6 +66,7 @@ export class ScraperAgentsService {
           lastName: dto.lastName.trim(),
           email: dto.email?.trim() || null,
           auction: dto.auction ?? 'copart',
+          country: dto.country ?? 'US',
           password: dto.password || generateAgentPassword(),
           active: dto.active ?? true,
           notes: dto.notes ?? null,
@@ -79,6 +87,7 @@ export class ScraperAgentsService {
           ...(dto.lastName !== undefined ? { lastName: dto.lastName.trim() } : {}),
           ...(dto.email !== undefined ? { email: dto.email?.trim() || null } : {}),
           ...(dto.auction !== undefined ? { auction: dto.auction } : {}),
+          ...(dto.country !== undefined ? { country: dto.country } : {}),
           ...(dto.password !== undefined ? { password: dto.password } : {}),
           ...(dto.active !== undefined ? { active: dto.active } : {}),
           ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
@@ -111,9 +120,11 @@ export class ScraperAgentsService {
    */
   async generate(dto: GenerateScraperAgentsDto) {
     const auction = dto.auction ?? 'copart';
+    const country = dto.country ?? 'US';
     const rows: Prisma.ScraperAgentCreateManyInput[] = Array.from({ length: dto.count }, () => ({
       ...generateAgentName(),
       auction,
+      country,
       password: generateAgentPassword(),
       email: null,
     }));

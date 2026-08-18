@@ -14,6 +14,8 @@ import {
 } from 'class-validator';
 
 export const AUCTIONS = ['copart', 'iaai', 'autobidmaster'] as const;
+/** Países donde operan los portales. Se guarda el código ISO de 2 letras. */
+export const COUNTRIES = ['US', 'CA', 'MX', 'ES', 'DE', 'GB', 'AE', 'BR'] as const;
 
 export class CreateScraperAgentDto {
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(60)
@@ -30,6 +32,10 @@ export class CreateScraperAgentDto {
   @ApiPropertyOptional({ enum: AUCTIONS, default: 'copart' })
   @IsOptional() @IsIn(AUCTIONS as unknown as string[])
   auction?: string;
+
+  @ApiPropertyOptional({ enum: COUNTRIES, default: 'US' })
+  @IsOptional() @IsIn(COUNTRIES as unknown as string[])
+  country?: string;
 
   /** Si no se envía, el servidor genera una que cumple los criterios del portal. */
   @ApiPropertyOptional()
@@ -59,4 +65,8 @@ export class GenerateScraperAgentsDto {
   @ApiPropertyOptional({ enum: AUCTIONS, default: 'copart' })
   @IsOptional() @IsIn(AUCTIONS as unknown as string[])
   auction?: string;
+
+  @ApiPropertyOptional({ enum: COUNTRIES, default: 'US' })
+  @IsOptional() @IsIn(COUNTRIES as unknown as string[])
+  country?: string;
 }

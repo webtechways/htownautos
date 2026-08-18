@@ -30,11 +30,12 @@ export class ScraperAgentsController {
   @ApiOperation({ summary: 'Listar agentes (filtro por portal y búsqueda)' })
   list(
     @Query('auction') auction?: string,
+    @Query('country') country?: string,
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.service.list({ auction, search, page: Number(page), limit: Number(limit) });
+    return this.service.list({ auction, country, search, page: Number(page), limit: Number(limit) });
   }
 
   @Post()

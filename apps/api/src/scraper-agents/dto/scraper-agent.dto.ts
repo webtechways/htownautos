@@ -6,6 +6,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -14,8 +15,13 @@ import {
 } from 'class-validator';
 
 export const AUCTIONS = ['copart', 'iaai', 'autobidmaster'] as const;
-/** Países donde operan los portales. Se guarda el código ISO de 2 letras. */
-export const COUNTRIES = ['US', 'CA', 'MX', 'ES', 'DE', 'GB', 'AE', 'BR'] as const;
+/**
+ * Se acepta cualquier código ISO 3166-1 alpha-2. La lista completa con nombres
+ * vive en el frontend (`src/lib/countries.ts`), que los resuelve con
+ * Intl.DisplayNames; aquí solo se valida la forma para no mantener 249 entradas
+ * duplicadas en dos repositorios.
+ */
+const ISO_COUNTRY = /^[A-Z]{2}$/;
 
 export class CreateScraperAgentDto {
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(60)
@@ -33,8 +39,8 @@ export class CreateScraperAgentDto {
   @IsOptional() @IsIn(AUCTIONS as unknown as string[])
   auction?: string;
 
-  @ApiPropertyOptional({ enum: COUNTRIES, default: 'US' })
-  @IsOptional() @IsIn(COUNTRIES as unknown as string[])
+  @ApiPropertyOptional({ example: 'US', description: 'Código ISO 3166-1 alpha-2' })
+  @IsOptional() @Matches(ISO_COUNTRY, { message: 'country debe ser un código ISO de 2 letras' })
   country?: string;
 
   /** Si no se envía, el servidor genera una que cumple los criterios del portal. */
@@ -66,7 +72,7 @@ export class GenerateScraperAgentsDto {
   @IsOptional() @IsIn(AUCTIONS as unknown as string[])
   auction?: string;
 
-  @ApiPropertyOptional({ enum: COUNTRIES, default: 'US' })
-  @IsOptional() @IsIn(COUNTRIES as unknown as string[])
+  @ApiPropertyOptional({ example: 'US', description: 'Código ISO 3166-1 alpha-2' })
+  @IsOptional() @Matches(ISO_COUNTRY, { message: 'country debe ser un código ISO de 2 letras' })
   country?: string;
 }

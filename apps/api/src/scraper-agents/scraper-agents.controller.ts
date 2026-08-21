@@ -17,6 +17,7 @@ import {
   GenerateScraperAgentsDto,
   UpdateScraperAgentDto,
 } from './dto/scraper-agent.dto';
+import { BulkActiveDto, BulkDeleteDto, ReassignEntryDto } from './dto/bulk.dto';
 
 /** Auction Data → Scraper Agents. Global, solo staff. */
 @ApiTags('Scraper agents')
@@ -62,9 +63,42 @@ export class ScraperAgentsController {
     return this.service.regeneratePassword(id);
   }
 
+  @Get(':id/entries')
+  @ApiOperation({ summary: 'Subastas futuras asignadas a este agente' })
+  entries(@Param('id') id: string) {
+    return this.service.assignedEntries(id);
+  }
+
+  @Patch('bulk/active')
+  @ApiOperation({ summary: 'Activar o desactivar varios agentes' })
+  bulkActive(@Body() dto: BulkActiveDto) {
+    return this.service.bulkSetActive(dto.ids, dto.active);
+  }
+
+  @Post('bulk/delete')
+  @ApiOperation({
+    summary: 'Eliminar varios agentes traspasando sus subastas',
+    description:
+      'strategy: transfer (a toAgentId) · random (reparte entre los activos) · ' +
+      'release (las suelta para el job de mañana). Solo antes de las 8:00 de Houston.',
+  })
+  bulkDelete(@Body() dto: BulkDeleteDto) {
+    return this.service.bulkRemove(dto.ids, dto.strategy, dto.toAgentId);
+  }
+
+  @Post('entries/:entryId/reassign')
+  @ApiOperation({ summary: 'Mover una subasta a otro agente (antes de las 8:00)' })
+  reassignEntry(@Param('entryId') entryId: string, @Body() dto: ReassignEntryDto) {
+    return this.service.reassignEntry(entryId, dto.toAgentId);
+  }
+
   @Delete(':id')
-  @ApiOperation({ summary: 'Eliminar un agente' })
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  @ApiOperation({ summary: 'Eliminar un agente traspasando sus subastas' })
+  remove(
+    @Param('id') id: string,
+    @Query('strategy') strategy?: 'transfer' | 'random' | 'release',
+    @Query('toAgentId') toAgentId?: string,
+  ) {
+    return this.service.remove(id, strategy ?? 'random', toAgentId);
   }
 }

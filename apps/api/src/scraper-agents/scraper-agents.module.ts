@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@htownautos/prisma';
+import { AgentAssignmentService } from '@htownautos/common';
 import { ScraperAgentsService } from './scraper-agents.service';
 import { ScraperAgentsController } from './scraper-agents.controller';
 
@@ -8,6 +9,6 @@ import { ScraperAgentsController } from './scraper-agents.controller';
 @Module({
   imports: [PrismaModule],
   controllers: [ScraperAgentsController],
-  providers: [ScraperAgentsService],
+  providers: [ScraperAgentsService, AgentAssignmentService],
 })
 export class ScraperAgentsModule {}

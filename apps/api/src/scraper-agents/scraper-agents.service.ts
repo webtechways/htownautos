@@ -7,7 +7,12 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
-import { AgentAssignmentService, LOCK_HOUR, isBeforeDailyLock } from '@htownautos/common';
+import {
+  AgentAssignmentService,
+  LOCK_FROM_HOUR,
+  LOCK_TO_HOUR,
+  isAssignmentEditable,
+} from '@htownautos/common';
 import {
   CreateScraperAgentDto,
   GenerateScraperAgentsDto,
@@ -33,14 +38,14 @@ export class ScraperAgentsService {
   ) {}
 
   /**
-   * El reparto del día se cierra a las 8:00 de Houston: a partir de ahí los
-   * agentes ya están trabajando con su lista y moverla debajo sería un lío.
+   * De 8:00 a 23:00 (Houston) los agentes están trabajando su lista: no se
+   * borran agentes ni se mueven subastas de mano.
    */
-  private assertBeforeLock() {
-    if (!isBeforeDailyLock()) {
+  private assertEditable() {
+    if (!isAssignmentEditable()) {
       throw new BadRequestException(
-        `El reparto del día está cerrado (después de las ${LOCK_HOUR}:00 de Houston). ` +
-          'Inténtalo mañana antes de esa hora.',
+        `Assignments are locked between ${LOCK_FROM_HOUR}:00 and ${LOCK_TO_HOUR}:00 Houston time. ` +
+          'Try again outside that window.',
       );
     }
   }
@@ -93,7 +98,7 @@ export class ScraperAgentsService {
     const load = new Map(grouped.map((g) => [g.scraperAgentId, g._count._all]));
     const data = rows.map((r) => ({ ...r, assignedCount: load.get(r.id) ?? 0 }));
 
-    return { data, total, page: p, limit: l, locked: !isBeforeDailyLock() };
+    return { data, total, page: p, limit: l, locked: !isAssignmentEditable() };
   }
 
   async create(dto: CreateScraperAgentDto) {
@@ -141,7 +146,7 @@ export class ScraperAgentsService {
    * la FK las dejaría en NULL en silencio y el trabajo del día se perdería.
    */
   async remove(id: string, strategy: 'transfer' | 'random' | 'release' = 'random', toAgentId?: string) {
-    this.assertBeforeLock();
+    this.assertEditable();
     await this.getOrThrow(id);
 
     let moved = 0;
@@ -169,7 +174,7 @@ export class ScraperAgentsService {
 
   /** Borra varios agentes aplicando la misma estrategia de traspaso a todos. */
   async bulkRemove(ids: string[], strategy: 'transfer' | 'random' | 'release', toAgentId?: string) {
-    this.assertBeforeLock();
+    this.assertEditable();
     if (strategy === 'transfer') {
       if (!toAgentId) throw new BadRequestException('Falta el agente destino');
       if (ids.includes(toAgentId)) {
@@ -213,12 +218,12 @@ export class ScraperAgentsService {
         url: true,
       },
     });
-    return { data, total: data.length, locked: !isBeforeDailyLock() };
+    return { data, total: data.length, locked: !isAssignmentEditable() };
   }
 
   /** Mueve una subasta concreta a otro agente (solo antes del cierre). */
   async reassignEntry(entryId: string, toAgentId: string) {
-    this.assertBeforeLock();
+    this.assertEditable();
     await this.getOrThrow(toAgentId);
     const entry = await this.prisma.auctionCalendarEntry.findUnique({ where: { id: entryId } });
     if (!entry) throw new NotFoundException('Subasta no encontrada');

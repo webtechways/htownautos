@@ -6,11 +6,9 @@ import { randomInt } from 'node:crypto';
 /** Cuántas entradas se reparten como máximo en una pasada. */
 const BATCH = 5000;
 
-/**
- * Hora (Houston) a partir de la cual el reparto del día queda cerrado: no se
- * puede borrar agentes ni mover subastas de mano.
- */
-export const LOCK_HOUR = 8;
+/** Ventana de trabajo en Houston: dentro de ella el reparto está congelado. */
+export const LOCK_FROM_HOUR = 8;
+export const LOCK_TO_HOUR = 23;
 
 export interface AssignmentResult {
   assigned: number;
@@ -38,17 +36,22 @@ export function houstonHour(now = new Date()): number {
   );
 }
 
-/** Antes de las 8:00 de Houston se puede tocar el reparto del día. */
-export function isBeforeDailyLock(now = new Date()): boolean {
-  return houstonHour(now) < LOCK_HOUR;
+/**
+ * De 23:00 a 8:00 (hora de Houston) se puede tocar el reparto: borrar agentes y
+ * mover subastas de mano. Entre las 8:00 y las 23:00 los agentes están
+ * trabajando su lista y cambiarla por debajo es peor que esperar.
+ */
+export function isAssignmentEditable(now = new Date()): boolean {
+  const h = houstonHour(now);
+  return h >= LOCK_TO_HOUR || h < LOCK_FROM_HOUR;
 }
 
 /**
  * Reparte las subastas del calendario entre los agentes activos.
  *
  * Corre cada día a las 6:00 **hora de Houston** — el host va en UTC, así que sin
- * fijar la zona el job saltaría a la 1:00 local. A las 8:00 el reparto queda
- * cerrado (ver {@link isBeforeDailyLock}), dejando dos horas para ajustarlo.
+ * fijar la zona el job saltaría a la 1:00 local. De 8:00 a 23:00 el reparto
+ * queda congelado (ver {@link isAssignmentEditable}).
  *
  * Solo entran subastas con inventario: una subasta con 0 items no da trabajo y
  * repartirla solo desequilibra la carga real.
@@ -63,7 +66,7 @@ export class AgentAssignmentService {
   @Cron('0 6 * * *', { timeZone: 'America/Chicago' })
   async dailyAssign(): Promise<void> {
     try {
-      const res = await this.assignPending();
+      const res = await this.runAssignment();
       if (res.skipped) {
         this.logger.warn(`[AgentAssignment] Sin repartir: ${res.skipped}`);
       } else if (res.assigned > 0) {
@@ -74,6 +77,40 @@ export class AgentAssignmentService {
     } catch (err: any) {
       this.logger.error(`[AgentAssignment] Falló: ${err.message}`);
     }
+  }
+
+  /**
+   * Suelta lo que ya no aplica y reparte lo próximo. Es lo que ejecutan tanto el
+   * cron de las 6:00 como el botón de la UI.
+   */
+  async runAssignment(): Promise<AssignmentResult & { released: number }> {
+    const released = await this.releaseStale();
+    const res = await this.assignPending();
+    return { ...res, released };
+  }
+
+  /**
+   * Desasocia lo que ya no tiene sentido tener asignado: subastas que ya se
+   * celebraron y subastas sin inventario. Si no, la carga de cada agente se
+   * infla con trabajo inexistente y el reparto deja de ser proporcional de
+   * verdad.
+   */
+  async releaseStale(): Promise<number> {
+    const res = await this.prisma.auctionCalendarEntry.updateMany({
+      where: {
+        scraperAgentId: { not: null },
+        OR: [
+          { startedAt: { lt: new Date() } },
+          { status: 'ended' },
+          { totalAvailableItems: { lte: 0 } },
+        ],
+      },
+      data: { scraperAgentId: null },
+    });
+    if (res.count > 0) {
+      this.logger.log(`[AgentAssignment] ${res.count} subasta(s) liberadas (pasadas o sin items)`);
+    }
+    return res.count;
   }
 
   /**

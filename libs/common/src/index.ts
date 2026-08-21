@@ -66,7 +66,12 @@ export { PublicS3Service } from './s3/public-s3.service';
 // Reparte las subastas del calendario entre agentes (cron en data-sync, botón en la api).
 export { AgentAssignmentService } from './auction/agent-assignment.service';
 export type { AssignmentResult } from './auction/agent-assignment.service';
-export { isBeforeDailyLock, houstonHour, LOCK_HOUR } from './auction/agent-assignment.service';
+export {
+  isAssignmentEditable,
+  houstonHour,
+  LOCK_FROM_HOUR,
+  LOCK_TO_HOUR,
+} from './auction/agent-assignment.service';
 export type { UploadResult, PresignResult, HeadObjectResult } from './s3/s3.service';
 
 // Proxy Service

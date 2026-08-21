@@ -51,11 +51,12 @@ export class AuctionCalendarController {
   @ApiOperation({
     summary: 'Repartir ahora las subastas sin agente entre los agentes activos',
     description:
-      'Lo mismo que hace el job diario de las 6:00 (hora de Houston). Es idempotente: ' +
-      'solo toca las entradas futuras que aún no tienen agente.',
+      'Lo mismo que hace el job diario de las 6:00 (hora de Houston): primero suelta ' +
+      'las subastas ya celebradas o sin inventario, y luego reparte las próximas que ' +
+      'no tengan agente. Es idempotente.',
   })
   assignAgents() {
-    return this.assignment.assignPending();
+    return this.assignment.runAssignment();
   }
 
   @Patch(':id/monitor')

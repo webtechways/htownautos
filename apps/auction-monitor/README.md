@@ -1,5 +1,11 @@
 # Auction Monitor
 
+> **Superseded (2026-08-24).** The live sales are now covered by VMs running Chrome + Automa,
+> which pull their share of the day from `POST /api/v1/scraper/poll` — see
+> `apps/api/src/scraper-workers/README.md`. This worker stays in the tree but must be left
+> paused (`auction_monitor_config.paused = true`), or it opens the same sales in parallel with
+> the fleet. Everything below still describes how it works if it is ever switched back on.
+
 Server-side replacement for the `chromescraperextension` Chrome extension. Instead of a
 person keeping a tab open on every live sale, a headless Chromium opens each auction flagged
 in **Settings → Auction Calendar** a few minutes before it starts, reads its Socket.IO frames,

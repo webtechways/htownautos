@@ -3033,6 +3033,11 @@ model AuctionCalendarEntry {
   // porque cada refresco del calendario borra y recrea todas las filas.
   scraperAgentId      String?
   scraperAgent        ScraperAgent? @relation(fields: [scraperAgentId], references: [id], onDelete: SetNull)
+  // VM que se llevó esta subasta hoy. Lo estampa el poll de /scraper/poll y es
+  // exclusivo: mientras esté puesto, ninguna otra VM la recibe. Se preserva en
+  // el refresco igual que los dos campos de arriba.
+  scraperWorkerId     String?
+  scraperWorker       ScraperWorker? @relation(fields: [scraperWorkerId], references: [id], onDelete: SetNull)
   raw                 Json?
   fetchedAt           DateTime @default(now())
 
@@ -3042,6 +3047,8 @@ model AuctionCalendarEntry {
   @@index([auctionGroup])
   @@index([monitor])
   @@index([scraperAgentId])
+  // El poll filtra por (día, VM) y busca candidatos por (día, sin VM).
+  @@index([saleDate, scraperWorkerId])
   @@map("auction_calendar_entries")
 }
 
@@ -3073,6 +3080,7 @@ model ScraperAgent {
   notes     String?
 
   calendarEntries AuctionCalendarEntry[]
+  worker          ScraperWorker?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3082,6 +3090,40 @@ model ScraperAgent {
   @@index([country])
   @@index([active])
   @@map("scraper_agents")
+}
+
+// Una VM con Chrome + Automa. La fila se crea sola en el primer poll: dar de
+// alta una máquina es arrancar el workflow con un `worker` nuevo, nada más.
+//
+// El cupo diario (`maxAuctions`) son pestañas abiertas a la vez, no un ritmo:
+// la VM se lleva esas subastas para todo el día.
+model ScraperWorker {
+  id    String  @id // slug fijo en el workflow de Automa, p.ej. "vm-01"
+  label String?
+
+  // La cuenta que se le entrega en la respuesta del poll. @unique porque la
+  // misma cuenta entrando desde dos IPs a la vez es justo lo que dispara los
+  // bloqueos del portal.
+  scraperAgentId String?       @unique
+  scraperAgent   ScraperAgent? @relation(fields: [scraperAgentId], references: [id], onDelete: SetNull)
+
+  enabled     Boolean @default(true)
+  maxAuctions Int     @default(5)
+
+  // El propio poll hace de heartbeat: no hay un endpoint aparte que la VM tenga
+  // que acordarse de llamar.
+  lastSeenAt  DateTime?
+  lastClaimAt DateTime?
+  lastIp      String?
+  notes       String?
+
+  entries AuctionCalendarEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([enabled])
+  @@map("scraper_workers")
 }
 
 // Singleton control row for the headless live-sale monitor (auction-monitor app).

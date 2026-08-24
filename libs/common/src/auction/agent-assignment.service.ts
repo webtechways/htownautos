@@ -25,6 +25,24 @@ function shuffle<T>(items: T[]): T[] {
   return items;
 }
 
+/**
+ * El día de hoy en Houston como `YYYYMMDD`, que es el formato de `saleDate`.
+ *
+ * El contenedor va en UTC, así que un `new Date()` pelado cambia de día a las
+ * 19:00 Central: la búsqueda llegó a esconder los lotes del día en curso cinco
+ * horas antes de tiempo. Todo lo que compare contra `saleDate` debe pasar por
+ * aquí.
+ */
+export function houstonSaleDate(now = new Date()): number {
+  const s = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  return parseInt(s.replace(/-/g, ''), 10);
+}
+
 /** La hora actual en Houston, que es la que manda para el corte diario. */
 export function houstonHour(now = new Date()): number {
   return Number(
@@ -94,18 +112,21 @@ export class AgentAssignmentService {
    * celebraron y subastas sin inventario. Si no, la carga de cada agente se
    * infla con trabajo inexistente y el reparto deja de ser proporcional de
    * verdad.
+   *
+   * Suelta a la vez la VM que la tuviera: es lo que hace que cada mañana el
+   * cupo diario de cada máquina empiece limpio.
    */
   async releaseStale(): Promise<number> {
     const res = await this.prisma.auctionCalendarEntry.updateMany({
       where: {
-        scraperAgentId: { not: null },
         OR: [
           { startedAt: { lt: new Date() } },
           { status: 'ended' },
           { totalAvailableItems: { lte: 0 } },
         ],
+        AND: [{ OR: [{ scraperAgentId: { not: null } }, { scraperWorkerId: { not: null } }] }],
       },
-      data: { scraperAgentId: null },
+      data: { scraperAgentId: null, scraperWorkerId: null },
     });
     if (res.count > 0) {
       this.logger.log(`[AgentAssignment] ${res.count} subasta(s) liberadas (pasadas o sin items)`);

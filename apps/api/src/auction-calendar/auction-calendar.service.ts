@@ -89,25 +89,37 @@ export class AuctionCalendarService implements OnModuleInit {
       const root = Array.isArray(json) ? json[0] : json;
       const auctions = root?.auctions ?? {};
 
-      // Preserve the staff "monitor" toggle AND the assigned agent across the
-      // full-replace, keyed by (location, startedAt). Without this every refresh
-      // (every few hours) would wipe both.
+      // Preserve the staff "monitor" toggle, the assigned agent AND the VM that
+      // claimed the sale, keyed by (location, startedAt). Without this every
+      // refresh (every few hours) would wipe all three — and losing the VM is
+      // the worst of the three: the machine would keep its five tabs open while
+      // the API hands the same sales to somebody else.
       const previous = await this.prisma.auctionCalendarEntry.findMany({
-        where: { OR: [{ monitor: true }, { scraperAgentId: { not: null } }] },
-        select: { locationSourceId: true, startedAt: true, monitor: true, scraperAgentId: true },
+        where: {
+          OR: [
+            { monitor: true },
+            { scraperAgentId: { not: null } },
+            { scraperWorkerId: { not: null } },
+          ],
+        },
+        select: {
+          locationSourceId: true,
+          startedAt: true,
+          monitor: true,
+          scraperAgentId: true,
+          scraperWorkerId: true,
+        },
       });
-      const monitored = new Set(
-        previous
-          .filter((m) => m.monitor)
-          .map((m) => `${m.locationSourceId}|${m.startedAt.toISOString()}`),
-      );
+      const keyOf = (m: { locationSourceId: number; startedAt: Date }) =>
+        `${m.locationSourceId}|${m.startedAt.toISOString()}`;
+      const monitored = new Set(previous.filter((m) => m.monitor).map(keyOf));
       const assignedAgent = new Map(
+        previous.filter((m) => m.scraperAgentId).map((m) => [keyOf(m), m.scraperAgentId as string]),
+      );
+      const claimedBy = new Map(
         previous
-          .filter((m) => m.scraperAgentId)
-          .map((m) => [
-            `${m.locationSourceId}|${m.startedAt.toISOString()}`,
-            m.scraperAgentId as string,
-          ]),
+          .filter((m) => m.scraperWorkerId)
+          .map((m) => [keyOf(m), m.scraperWorkerId as string]),
       );
 
       const now = new Date();
@@ -151,6 +163,7 @@ export class AuctionCalendarService implements OnModuleInit {
               url: this.buildUrl(slug, saleDate),
               monitor: monitored.has(key),
               scraperAgentId: assignedAgent.get(key) ?? null,
+              scraperWorkerId: claimedBy.get(key) ?? null,
               raw: a as unknown as Prisma.InputJsonValue,
               fetchedAt: now,
             });
@@ -255,6 +268,8 @@ export class AuctionCalendarService implements OnModuleInit {
           scraperAgent: {
             select: { id: true, firstName: true, lastName: true, email: true, auction: true },
           },
+          scraperWorkerId: true,
+          scraperWorker: { select: { id: true, label: true } },
         },
       }),
       this.prisma.auctionCalendarEntry.count({ where }),

@@ -69,6 +69,7 @@ export type { AssignmentResult } from './auction/agent-assignment.service';
 export {
   isAssignmentEditable,
   houstonHour,
+  houstonSaleDate,
   LOCK_FROM_HOUR,
   LOCK_TO_HOUR,
 } from './auction/agent-assignment.service';

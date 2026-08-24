@@ -3,7 +3,7 @@ import { OpenSearchService, AUCTION_INDEX_NAME, AuctionSyncService } from '@htow
 import type { UnifiedAuction, AuctionAggregations, AuctionSearchResult } from '@htownautos/opensearch';
 import { PrismaService } from '@htownautos/prisma';
 import { RabbitMQService } from '@htownautos/rabbitmq';
-import { CopartImagesService, GALLERY_CACHE_QUEUE, codesForTitleCategories, deriveTitleCategory, allKnownCodes, geocodeZip, boundingBox, normalizeToken } from '@htownautos/common';
+import { CopartImagesService, GALLERY_CACHE_QUEUE, codesForTitleCategories, deriveTitleCategory, allKnownCodes, geocodeZip, boundingBox, normalizeToken, houstonSaleDate } from '@htownautos/common';
 import type { TitleCategory, TitleOverrides, GalleryImage, GalleryResponse, GalleryCacheMessage } from '@htownautos/common';
 import { TitleMappingService } from '../title-mapping/title-mapping.service';
 import { AuctionAnalysisType, Prisma } from '@prisma/client';
@@ -209,13 +209,7 @@ export class AuctionSearchService {
    * early — which also made an explicit "sale date = today" filter return zero.
    */
   private getTodayAsInt(): number {
-    const s = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Chicago',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date());
-    return parseInt(s.replace(/-/g, ''), 10);
+    return houstonSaleDate();
   }
 
   /**

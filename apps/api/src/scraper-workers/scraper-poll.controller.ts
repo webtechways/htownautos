@@ -1,15 +1,20 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
+import { Public } from '@htownautos/auth';
 import { AuctionIngestGuard } from '../auction-sale-results/auction-ingest.guard';
 import { ScraperWorkersService } from './scraper-workers.service';
 import { PollDto } from './dto/poll.dto';
 
 /**
  * Lo único que llaman las VM. Va en un controlador aparte del de la UI porque
- * el ClerkJwtGuard de aquél es de clase: colgarlo del mismo controlador dejaría
- * a Automa fuera aunque traiga la clave correcta (mismo motivo por el que
- * existe auction-monitor-ingest.controller.ts).
+ * autentica con la clave compartida y no con un JWT de Clerk.
+ *
+ * `@Public()` no es opcional: ClerkJwtGuard está registrado como APP_GUARD
+ * global en AuthModule, así que corre en toda ruta y el @UseGuards de aquí no
+ * lo desplaza. Sin el decorador, Automa recibe «No token provided» aunque
+ * mande la clave correcta.
  */
 @Controller('scraper')
+@Public()
 @UseGuards(AuctionIngestGuard)
 export class ScraperPollController {
   constructor(private readonly workers: ScraperWorkersService) {}

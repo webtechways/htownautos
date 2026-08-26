@@ -60,6 +60,7 @@ export class ScraperWorkersService {
   // ── Lo que llaman las VM ──────────────────────────────────────────────────
   async poll(dto: PollDto, ip?: string): Promise<PollResponse> {
     const saleDate = houstonSaleDate();
+    const cfg = await this.config();
     const { workerId, agentId } = await this.resolveWorker(dto.worker.trim());
 
     // Alta implícita: dar de alta una VM es arrancarla con un identificador
@@ -78,6 +79,9 @@ export class ScraperWorkersService {
         lastSeenAt: new Date(),
         lastIp: ip ?? null,
         scraperAgentId: agentId ?? null,
+        // Solo al nacer la fila: cambiar el cupo de una VM que ya existe se
+        // hace en su columna Tabs, no moviendo la politica global por debajo.
+        maxAuctions: cfg.defaultMaxAuctions,
       },
       include: { scraperAgent: { select: { email: true, password: true, active: true } } },
     });
@@ -91,7 +95,6 @@ export class ScraperWorkersService {
       return { worker: workerId, paused: true, account, saleDate, count: 0, auctions: [] };
     }
 
-    const cfg = await this.config();
     let mine = await this.claim(workerId, worker.maxAuctions, saleDate, cfg.saleDurationHours);
 
     // Nada que dar todavía: el calendario puede no haberse refrescado aún, o

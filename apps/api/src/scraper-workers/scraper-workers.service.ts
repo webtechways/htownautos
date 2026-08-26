@@ -48,17 +48,28 @@ export class ScraperWorkersService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // ── Lo que llama Automa ───────────────────────────────────────────────────
+  // ── Lo que llaman las VM ──────────────────────────────────────────────────
   async poll(dto: PollDto, ip?: string): Promise<PollResponse> {
-    const workerId = dto.worker.trim();
     const saleDate = houstonSaleDate();
+    const { workerId, agentId } = await this.resolveWorker(dto.worker.trim());
 
-    // Alta implícita: dar de alta una VM es arrancar el workflow con un
-    // `worker` nuevo. Nadie tiene que crear nada por la UI antes.
+    // Alta implícita: dar de alta una VM es arrancarla con un identificador
+    // nuevo. Nadie tiene que crear nada por la UI antes.
     const worker = await this.prisma.scraperWorker.upsert({
       where: { id: workerId },
-      update: { lastSeenAt: new Date(), lastIp: ip ?? undefined },
-      create: { id: workerId, lastSeenAt: new Date(), lastIp: ip ?? null },
+      update: {
+        lastSeenAt: new Date(),
+        lastIp: ip ?? undefined,
+        // Identificarse por email vale también para reparar el vínculo si
+        // alguien lo desasignó a mano.
+        scraperAgentId: agentId ?? undefined,
+      },
+      create: {
+        id: workerId,
+        lastSeenAt: new Date(),
+        lastIp: ip ?? null,
+        scraperAgentId: agentId ?? null,
+      },
       include: { scraperAgent: { select: { email: true, password: true, active: true } } },
     });
 
@@ -105,6 +116,41 @@ export class ScraperWorkersService {
         items: e.totalAvailableItems,
       })),
     };
+  }
+
+  /**
+   * Traduce lo que manda la VM a una fila de worker.
+   *
+   * Se admiten dos formas y la de email es la buena: la máquina dice con qué
+   * cuenta trabaja y el vínculo VM↔agente se hace solo, sin que nadie tenga
+   * que emparejarlos por la UI. Un slug suelto (`vm-01`) se sigue aceptando
+   * para no romper lo que ya está corriendo.
+   *
+   * Si ese agente ya tenía una fila —creada antes con un slug— se reutiliza
+   * en vez de crear una segunda: si no, la misma cuenta acabaría con dos
+   * workers y cada uno pidiendo su propio cupo.
+   */
+  private async resolveWorker(
+    input: string,
+  ): Promise<{ workerId: string; agentId: string | null }> {
+    if (!input.includes('@')) return { workerId: input, agentId: null };
+
+    const email = input.toLowerCase();
+    const agent = await this.prisma.scraperAgent.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (!agent) {
+      throw new NotFoundException(
+        `No hay ningún agente con el email ${email}. Créalo en Auction Data → Scraper Agents.`,
+      );
+    }
+
+    const existing = await this.prisma.scraperWorker.findUnique({
+      where: { scraperAgentId: agent.id },
+      select: { id: true },
+    });
+    return { workerId: existing?.id ?? email, agentId: agent.id };
   }
 
   /**

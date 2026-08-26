@@ -21,6 +21,7 @@ export interface PollResponse {
   auctions: {
     id: string;
     url: string;
+    urlNoScheme: string;
     locationName: string;
     locationSlug: string;
     saleDate: number;
@@ -92,6 +93,11 @@ export class ScraperWorkersService {
       auctions: mine.map((e) => ({
         id: e.id,
         url: e.url,
+        // El bloque New Tab de Automa lleva el esquema en un desplegable
+        // aparte, así que su campo de texto espera la URL SIN "https://".
+        // Pegar la url completa ahí produce "https://https://…" y Chrome la
+        // rechaza sin decir por qué.
+        urlNoScheme: e.url.replace(/^https?:\/\//, ''),
         locationName: e.locationName,
         locationSlug: e.locationSlug,
         saleDate: e.saleDate,

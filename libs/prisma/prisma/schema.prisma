@@ -3092,6 +3092,29 @@ model ScraperAgent {
   @@map("scraper_agents")
 }
 
+// Ajustes del reparto entre VMs. Fila unica: son politica global, no de una
+// maquina concreta.
+model ScraperConfig {
+  id String @id @default("singleton")
+
+  /// Cuanto dura una venta. De aqui salen dos cosas: hasta cuando tiene sentido
+  /// entrar a una subasta ya empezada, y cuando se le libera el hueco a la VM
+  /// que la tenia.
+  saleDurationHours Int @default(6)
+
+  /// Sin poll durante este rato, la VM se da por muerta y se sueltan sus
+  /// subastas aun no empezadas.
+  deadWorkerMinutes Int @default(15)
+
+  /// Cupo por defecto al darse de alta una VM nueva.
+  defaultMaxAuctions Int @default(5)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("scraper_config")
+}
+
 // Una VM con Chrome + Automa. La fila se crea sola en el primer poll: dar de
 // alta una máquina es arrancar el workflow con un `worker` nuevo, nada más.
 //

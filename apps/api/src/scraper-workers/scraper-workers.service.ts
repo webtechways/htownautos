@@ -4,13 +4,13 @@ import { PrismaService } from '@htownautos/prisma';
 import { houstonSaleDate } from '@htownautos/common';
 import { PollDto } from './dto/poll.dto';
 import { UpdateScraperWorkerDto } from './dto/scraper-worker.dto';
+import { UpdateScraperConfigDto } from './dto/scraper-config.dto';
 
 /** Cuánto retiene la API el poll esperando a que aparezca trabajo. */
 const LONG_POLL_MS = 20_000;
 const LONG_POLL_STEP_MS = 2_000;
 
-/** Sin noticias durante este rato, la VM se da por muerta y suelta lo suyo. */
-export const DEAD_AFTER_MINUTES = 15;
+const CONFIG_ID = 'singleton';
 
 export interface PollResponse {
   worker: string;
@@ -48,6 +48,15 @@ export class ScraperWorkersService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Los ajustes del reparto. Fila unica, creada por la migracion. */
+  private config() {
+    return this.prisma.scraperConfig.upsert({
+      where: { id: CONFIG_ID },
+      update: {},
+      create: { id: CONFIG_ID },
+    });
+  }
+
   // ── Lo que llaman las VM ──────────────────────────────────────────────────
   async poll(dto: PollDto, ip?: string): Promise<PollResponse> {
     const saleDate = houstonSaleDate();
@@ -82,7 +91,8 @@ export class ScraperWorkersService {
       return { worker: workerId, paused: true, account, saleDate, count: 0, auctions: [] };
     }
 
-    let mine = await this.claim(workerId, worker.maxAuctions, saleDate);
+    const cfg = await this.config();
+    let mine = await this.claim(workerId, worker.maxAuctions, saleDate, cfg.saleDurationHours);
 
     // Nada que dar todavía: el calendario puede no haberse refrescado aún, o
     // las otras VM haber cogido todo. Retener en vez de devolver vacío evita
@@ -91,7 +101,7 @@ export class ScraperWorkersService {
       const deadline = Date.now() + LONG_POLL_MS;
       while (mine.length === 0 && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, LONG_POLL_STEP_MS));
-        mine = await this.claim(workerId, worker.maxAuctions, saleDate);
+        mine = await this.claim(workerId, worker.maxAuctions, saleDate, cfg.saleDurationHours);
       }
     }
 
@@ -161,10 +171,20 @@ export class ScraperWorkersService {
    * pueden llevarse la misma ni pidiendo a la vez. Después se relee por
    * `scraperWorkerId`, que es la única fuente de verdad de qué ganó de verdad.
    */
-  private async claim(workerId: string, maxAuctions: number, saleDate: number) {
+  private async claim(
+    workerId: string,
+    maxAuctions: number,
+    saleDate: number,
+    saleHours: number,
+  ) {
     const mine = await this.mineToday(workerId, saleDate);
-    const missing = maxAuctions - mine.length;
-    if (missing <= 0) return mine.slice(0, maxAuctions);
+
+    // El cupo son pestanas abiertas a la vez, no subastas al dia: las que ya
+    // terminaron no ocupan ninguna. Sin esto una VM se quedaba con sus cinco
+    // primeras todo el dia aunque llevaran horas cerradas.
+    const live = mine.filter((e) => !this.hasEnded(e.startedAt, saleHours));
+    const missing = maxAuctions - live.length;
+    if (missing <= 0) return live.slice(0, maxAuctions);
 
     const worker = await this.prisma.scraperWorker.findUnique({
       where: { id: workerId },
@@ -176,11 +196,10 @@ export class ScraperWorkersService {
       scraperWorkerId: null,
       totalAvailableItems: { gt: 0 }, // sin inventario no hay nada que mirar
       status: { not: 'ended' },
-      // Se ordena por hora ascendente, así que sin este corte una VM que
-      // arranque a mediodía se llevaría las ventas de la mañana — las que ya
-      // terminaron. Media hora de margen: entrar más tarde es llegar cuando la
-      // mayoría de los lotes ya se vendieron.
-      startedAt: { gt: new Date(Date.now() - 30 * 60_000) },
+      // Solo lo que sigue vendiendo. Una venta dura horas, asi que entrar a una
+      // ya empezada aun pilla buena parte de los lotes; lo que no tiene sentido
+      // es abrir una que ya cerro.
+      startedAt: { gt: new Date(Date.now() - saleHours * 3_600_000) },
     } as const;
 
     // Primero lo que el reparto de las 6am ya había puesto a nombre de su
@@ -206,7 +225,7 @@ export class ScraperWorkersService {
         : [];
 
     const candidates = [...preferred, ...rest].map((c) => c.id);
-    if (candidates.length === 0) return mine;
+    if (candidates.length === 0) return live;
 
     await this.prisma.auctionCalendarEntry.updateMany({
       where: { id: { in: candidates }, scraperWorkerId: null },
@@ -220,7 +239,38 @@ export class ScraperWorkersService {
     // Puede haber ganado menos de los que pidió si otra VM le adelantó; esta
     // relectura es la que dice la verdad.
     const after = await this.mineToday(workerId, saleDate);
-    return after.slice(0, maxAuctions);
+    return after.filter((e) => !this.hasEnded(e.startedAt, saleHours)).slice(0, maxAuctions);
+  }
+
+  /** Una venta se da por cerrada `saleHours` despues de su hora de inicio. */
+  private hasEnded(startedAt: Date, saleHours: number): boolean {
+    return startedAt.getTime() + saleHours * 3_600_000 < Date.now();
+  }
+
+  /**
+   * Suelta las subastas que ya terminaron, para que el hueco de esa VM se
+   * rellene en el siguiente poll.
+   *
+   * Soltarlas es seguro por como funciona el reclamo: una venta cerrada queda
+   * fuera del filtro por hora, asi que vuelve al bote y ahi se queda. Nadie
+   * puede llevarsela.
+   */
+  @Cron('*/10 * * * *')
+  async releaseFinished(): Promise<number> {
+    const cfg = await this.config();
+    const cutoff = new Date(Date.now() - cfg.saleDurationHours * 3_600_000);
+    const res = await this.prisma.auctionCalendarEntry.updateMany({
+      where: {
+        scraperWorkerId: { not: null },
+        saleDate: houstonSaleDate(),
+        startedAt: { lt: cutoff },
+      },
+      data: { scraperWorkerId: null },
+    });
+    if (res.count > 0) {
+      this.logger.log(`[ScraperWorkers] ${res.count} subasta(s) terminadas liberadas`);
+    }
+    return res.count;
   }
 
   private mineToday(workerId: string, saleDate: number) {
@@ -247,7 +297,8 @@ export class ScraperWorkersService {
    */
   @Cron('*/5 * * * *')
   async sweepDeadWorkers(): Promise<number> {
-    const cutoff = new Date(Date.now() - DEAD_AFTER_MINUTES * 60_000);
+    const cfg = await this.config();
+    const cutoff = new Date(Date.now() - cfg.deadWorkerMinutes * 60_000);
     const dead = await this.prisma.scraperWorker.findMany({
       where: { OR: [{ lastSeenAt: { lt: cutoff } }, { lastSeenAt: null }] },
       select: { id: true },
@@ -273,6 +324,7 @@ export class ScraperWorkersService {
   // ── Lo que usa la UI ──────────────────────────────────────────────────────
   async list() {
     const saleDate = houstonSaleDate();
+    const cfg = await this.config();
     const [workers, today, covered] = await Promise.all([
       this.prisma.scraperWorker.findMany({
         orderBy: { id: 'asc' },
@@ -295,7 +347,7 @@ export class ScraperWorkersService {
     ]);
 
     const byWorker = new Map(covered.map((c) => [c.scraperWorkerId as string, c._count._all]));
-    const cutoff = Date.now() - DEAD_AFTER_MINUTES * 60_000;
+    const cutoff = Date.now() - cfg.deadWorkerMinutes * 60_000;
 
     return {
       data: workers.map((w) => ({
@@ -303,6 +355,7 @@ export class ScraperWorkersService {
         assignedToday: byWorker.get(w.id) ?? 0,
         online: !!w.lastSeenAt && w.lastSeenAt.getTime() > cutoff,
       })),
+      config: cfg,
       today: {
         saleDate,
         total: today,
@@ -312,6 +365,18 @@ export class ScraperWorkersService {
           .reduce((a, w) => a + w.maxAuctions, 0),
       },
     };
+  }
+
+  getConfig() {
+    return this.config();
+  }
+
+  async updateConfig(dto: UpdateScraperConfigDto) {
+    return this.prisma.scraperConfig.upsert({
+      where: { id: CONFIG_ID },
+      update: dto,
+      create: { id: CONFIG_ID, ...dto },
+    });
   }
 
   async entries(workerId: string) {

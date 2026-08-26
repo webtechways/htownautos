@@ -270,6 +270,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.scraperWorker;
   }
 
+  get scraperConfig() {
+    return this.prisma.scraperConfig;
+  }
+
   get auctionMonitorConfig() {
     return this.prisma.auctionMonitorConfig;
   }

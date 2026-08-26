@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@n
 import { ClerkJwtGuard } from '@htownautos/auth';
 import { ScraperWorkersService } from './scraper-workers.service';
 import { UpdateScraperWorkerDto } from './dto/scraper-worker.dto';
+import { UpdateScraperConfigDto } from './dto/scraper-config.dto';
 
 /** Auction Data → Scraper Workers. */
 @Controller('scraper-workers')
@@ -12,6 +13,16 @@ export class ScraperWorkersController {
   @Get()
   list() {
     return this.workers.list();
+  }
+
+  @Get('config')
+  getConfig() {
+    return this.workers.getConfig();
+  }
+
+  @Patch('config')
+  updateConfig(@Body() dto: UpdateScraperConfigDto) {
+    return this.workers.updateConfig(dto);
   }
 
   @Get(':id/entries')

@@ -19,6 +19,6 @@ export class UpdateScraperConfigDto {
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(20)
+  @Max(200)
   defaultMaxAuctions?: number;
 }

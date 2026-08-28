@@ -15,12 +15,14 @@ export class UpdateScraperWorkerDto {
   @IsBoolean()
   enabled?: boolean;
 
-  // Son pestañas de Chrome abiertas a la vez en una misma máquina: pasar de
-  // ~20 es pedirle a la VM que se quede sin memoria a media mañana.
+  // Son pestañas de Chrome abiertas a la vez en una misma máquina. El techo
+  // real es la RAM de esa VM, no un número que decida yo: con 49 pestañas de
+  // AutoBidMaster hablamos de varios GB. El tope alto existe solo para que un
+  // dedazo no pida 5000.
   @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(20)
+  @Max(200)
   maxAuctions?: number;
 
   @IsOptional()

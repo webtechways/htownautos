@@ -1901,6 +1901,12 @@ model AuctionSellerClassification {
   sellerKey    String   @id // lowercased + trimmed sellerName (stable key)
   sellerName   String // display casing as seen on lots
   category     String // Insurance | Rental | Repo | Other (override)
+  /// low | medium | high. Sustituye al booleano `trusted`, que metia en el
+  /// mismo saco a una aseguradora y a un desguace por no ser ninguno "de fiar".
+  /// Lo desconocido cae en `high` a proposito.
+  riskLevel    String   @default("high")
+  /// Derivado de riskLevel (low => true). Se conserva para no romper el
+  /// matching de compradores mientras migra al filtro por riesgo.
   trusted      Boolean  @default(false)
   reviewed     Boolean  @default(false) // false = auto-seeded by sync, needs staff review
   assignedById String? // Clerk user id of the staff member who classified it
@@ -1909,6 +1915,7 @@ model AuctionSellerClassification {
 
   @@index([reviewed])
   @@index([trusted])
+  @@index([riskLevel])
   @@map("auction_seller_classifications")
 }
 

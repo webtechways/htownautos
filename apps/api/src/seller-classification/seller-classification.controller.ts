@@ -32,11 +32,25 @@ export class SellerClassificationController {
   list(
     @Query('search') search?: string,
     @Query('onlyUnreviewed') onlyUnreviewed?: string,
+    @Query('risk') risk?: string,
   ) {
     return this.service.aggregate({
       search,
       onlyUnreviewed: onlyUnreviewed === 'true',
+      // `risk=low,medium` — multiseleccion desde la tabla.
+      risk: risk ? risk.split(',').map((r) => r.trim()).filter(Boolean) : undefined,
     });
+  }
+
+  @Post('preclassify')
+  @ApiOperation({
+    summary: 'Propose a risk level by name for every seller nobody has reviewed',
+    description:
+      'Deja las filas en reviewed=false a proposito: es una propuesta del ' +
+      'clasificador, no una decision del equipo. Lo ya revisado no se toca.',
+  })
+  preclassify() {
+    return this.service.preclassifyAll();
   }
 
   @Get('unreviewed-count')
@@ -46,7 +60,7 @@ export class SellerClassificationController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Classify (trust + category) a seller' })
+  @ApiOperation({ summary: 'Classify a seller (category + risk level)' })
   classify(
     @Body() dto: ClassifySellerDto,
     @CurrentUser('sub') userId: string,
@@ -54,7 +68,7 @@ export class SellerClassificationController {
     return this.service.setClassification(
       dto.sellerName,
       dto.category,
-      dto.trusted,
+      dto.riskLevel,
       userId ?? null,
     );
   }

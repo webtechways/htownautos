@@ -1,5 +1,5 @@
-import { IsBoolean, IsIn, IsString, MaxLength, MinLength } from 'class-validator';
-import { SELLER_CATEGORIES } from '@htownautos/common';
+import { IsIn, IsString, MaxLength, MinLength } from 'class-validator';
+import { SELLER_CATEGORIES, SELLER_RISKS } from '@htownautos/common';
 
 export class ClassifySellerDto {
   @IsString()
@@ -10,6 +10,10 @@ export class ClassifySellerDto {
   @IsIn(SELLER_CATEGORIES as unknown as string[])
   category!: string;
 
-  @IsBoolean()
-  trusted!: boolean;
+  /**
+   * Sustituye al booleano `trusted`. Ese solo sabia decir "de fiar o no", que
+   * metia a una aseguradora y a un desguace en el mismo saco.
+   */
+  @IsIn(SELLER_RISKS as unknown as string[])
+  riskLevel!: string;
 }

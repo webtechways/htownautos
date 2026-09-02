@@ -45,6 +45,8 @@ export {
   parseEngineSizeL,
 } from './utils/auction-derive.utils';
 export type { SellerCategory } from './utils/auction-derive.utils';
+export { deriveSellerRisk, explainSellerRisk, SELLER_RISKS } from './utils/seller-risk.utils';
+export type { SellerRisk } from './utils/seller-risk.utils';
 export {
   CANONICAL_FIELDS,
   normalizeToken,

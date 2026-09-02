@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
+import { SELLER_RISKS } from '@htownautos/common';
 import { preferenceToWhere } from '@htownautos/auction-matching';
 import { CreateBuyerVehiclePreferenceDto } from './dto/create-buyer-vehicle-preference.dto';
 import { UpdateBuyerVehiclePreferenceDto } from './dto/update-buyer-vehicle-preference.dto';
@@ -168,7 +169,7 @@ export class BuyerVehiclePreferencesService {
     buyerId: string,
     tenantId: string,
     inspectableOnly = false,
-    trustedSeller = false,
+    riskLevels: string[] = [],
   ) {
     await this.ensureBuyer(buyerId, tenantId);
 
@@ -203,14 +204,25 @@ export class BuyerVehiclePreferencesService {
       andClauses.push({ yard: { is: { physicalInspectionAvailable: true } } });
     }
 
-    // Trusted-seller filter: only lots from sellers staff have marked trusted in
-    // Settings → Sellers (AuctionSellerClassification). Replaces the old fixed
-    // Insurance/Rental/Repo heuristic. An empty trusted list yields 0 matches,
-    // same as before when nothing qualified.
-    if (trustedSeller) {
-      const trustedNames =
-        await this.sellerClassification.getTrustedSellerNames();
-      andClauses.push({ sellerName: { in: trustedNames } });
+    // Filtro por riesgo del vendedor (Auction Data → Sellers). Sustituye al
+    // booleano "trusted", que solo sabia decir de fiar o no y metia a una
+    // aseguradora y a un desguace en el mismo saco.
+    //
+    // Ojo con `high`: es el valor por defecto de todo lo que nadie clasifico,
+    // asi que pedirlo por nombre listaria medio Copart. Se resuelve al reves —
+    // excluyendo lo que tiene un nivel mejor— y asi el desconocido entra sin
+    // tener que estar en ninguna lista.
+    if (riskLevels.length && riskLevels.length < 3) {
+      if (riskLevels.includes('high')) {
+        const mejores = SELLER_RISKS.filter(
+          (r) => r !== 'high' && !riskLevels.includes(r),
+        );
+        const excluidos = await this.sellerClassification.getSellerNamesByRisk(mejores);
+        if (excluidos.length) andClauses.push({ sellerName: { notIn: excluidos } });
+      } else {
+        const nombres = await this.sellerClassification.getSellerNamesByRisk(riskLevels);
+        andClauses.push({ sellerName: { in: nombres } });
+      }
     }
 
     // Load dismissed lots for this buyer and exclude them from results.

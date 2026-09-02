@@ -60,14 +60,17 @@ export class BuyerVehiclePreferencesController {
     @CurrentTenant() tenantId: string,
     @Param('buyerId', ParseUUIDPipe) buyerId: string,
     @Query('inspectableOnly') inspectableOnly?: string,
+    @Query('risk') risk?: string,
     @Query('trustedSeller') trustedSeller?: string,
   ) {
-    return this.service.matches(
-      buyerId,
-      tenantId,
-      inspectableOnly === 'true',
-      trustedSeller === 'true',
-    );
+    // `trustedSeller=true` se sigue aceptando y significa riesgo bajo: el
+    // portal antiguo lo manda asi y no merece romperlo por un rename.
+    const levels = risk
+      ? risk.split(',').map((r) => r.trim()).filter(Boolean)
+      : trustedSeller === 'true'
+        ? ['low']
+        : [];
+    return this.service.matches(buyerId, tenantId, inspectableOnly === 'true', levels);
   }
 
   @Post()

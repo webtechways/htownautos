@@ -65,32 +65,34 @@ export class StatsService {
 
   /** Facet counts in the same shape the auction sidebar consumes. */
   async getFilters(dto: QueryStatsDto) {
-    const where = await this.buildWhere(dto);
     const titleOverrides = await this.titleMapping.getOverrides();
+    // Un `where` por faceta, cada uno sin su propio filtro. Se construyen en
+    // paralelo porque buildWhere puede pedir los overrides de titulo.
+    const scoped = async (field: string) => this.facet(field, await this.buildWhere(dto, field));
 
     const [
       makes, models, trims, years, states, bodyTypes, transmissions, fuelTypes,
       damageTypes, titleTypes, colors, cylinders, drivetrains, sellerCategories,
       yards, sellers, runsDrivesOptions, soldBuckets,
     ] = await Promise.all([
-      this.facet('make', where),
-      this.facet('model', where),
-      this.facet('trim', where),
-      this.facet('year', where),
-      this.facet('locationState', where),
-      this.facet('bodyStyle', where),
-      this.facet('transmission', where),
-      this.facet('fuelType', where),
-      this.facet('damageDescription', where),
-      this.facet('saleTitleType', where),
-      this.facet('color', where),
-      this.facet('cylinders', where),
-      this.facet('drive', where),
-      this.facet('sellerCategory', where),
-      this.facet('yardName', where),
-      this.facet('sellerName', where),
-      this.facet('runsDrives', where),
-      this.facet('sold', where),
+      scoped('make'),
+      scoped('model'),
+      scoped('trim'),
+      scoped('year'),
+      scoped('locationState'),
+      scoped('bodyStyle'),
+      scoped('transmission'),
+      scoped('fuelType'),
+      scoped('damageDescription'),
+      scoped('saleTitleType'),
+      scoped('color'),
+      scoped('cylinders'),
+      scoped('drive'),
+      scoped('sellerCategory'),
+      scoped('yardName'),
+      scoped('sellerName'),
+      scoped('runsDrives'),
+      scoped('sold'),
     ]);
 
     // Derive title categories from raw saleTitleType buckets (same util as search)
@@ -125,7 +127,16 @@ export class StatsService {
 
   // ── helpers ──
 
-  private async buildWhere(dto: QueryStatsDto): Promise<Where> {
+  /**
+   * `omit` deja fuera el filtro de esa faceta.
+   *
+   * Es lo que permite multiseleccion: si el desplegable de marca se calcula con
+   * la marca ya filtrada, al elegir FORD desaparecen las demas y no hay forma de
+   * anadir una segunda. Cada faceta se cuenta ignorando su propia seleccion pero
+   * respetando las de las demas — y de ahi sale la cascada, porque modelo si
+   * respeta la marca.
+   */
+  private async buildWhere(dto: QueryStatsDto, omit?: string): Promise<Where> {
     const and: Where[] = [];
 
     if (dto.search) {
@@ -143,6 +154,7 @@ export class StatsService {
     }
 
     const inArr = (field: keyof Where, vals?: string[]) => {
+      if (field === omit) return;
       if (vals && vals.length) and.push({ [field]: { in: vals } } as Where);
     };
     inArr('make', dto.make);
@@ -159,19 +171,25 @@ export class StatsService {
     inArr('sellerName', dto.sellerName);
     inArr('sellerCategory', dto.sellerCategory);
 
-    if (dto.transmission) and.push({ transmission: { equals: dto.transmission, mode: 'insensitive' } });
-    if (dto.fuelType) and.push({ fuelType: { equals: dto.fuelType, mode: 'insensitive' } });
-    if (dto.runsDrives) and.push({ runsDrives: { equals: dto.runsDrives, mode: 'insensitive' } });
+    if (dto.transmission && omit !== 'transmission') {
+      and.push({ transmission: { equals: dto.transmission, mode: 'insensitive' } });
+    }
+    if (dto.fuelType && omit !== 'fuelType') {
+      and.push({ fuelType: { equals: dto.fuelType, mode: 'insensitive' } });
+    }
+    if (dto.runsDrives && omit !== 'runsDrives') {
+      and.push({ runsDrives: { equals: dto.runsDrives, mode: 'insensitive' } });
+    }
 
     // Status: reuse the sidebar Status block → sold boolean.
-    if (dto.saleStatus) {
+    if (dto.saleStatus && omit !== 'sold') {
       const v = dto.saleStatus.toLowerCase();
       if (v.startsWith('sold') && !v.includes('not')) and.push({ sold: true });
       else if (v.includes('not')) and.push({ sold: false });
     }
-    if (dto.sold !== undefined) and.push({ sold: dto.sold });
+    if (dto.sold !== undefined && omit !== 'sold') and.push({ sold: dto.sold });
 
-    if (dto.yearMin || dto.yearMax) {
+    if ((dto.yearMin || dto.yearMax) && omit !== 'year') {
       and.push({ year: { ...(dto.yearMin ? { gte: dto.yearMin } : {}), ...(dto.yearMax ? { lte: dto.yearMax } : {}) } });
     }
     if (dto.odometerMin || dto.odometerMax) {
@@ -185,7 +203,10 @@ export class StatsService {
     }
 
     // titleCategory → raw saleTitleType codes (base + learned overrides).
-    if (dto.titleCategory && dto.titleCategory.length) {
+    // El bloque "Vehicle Title Type" filtra por titleCategory pero sus cuentas
+    // salen de los buckets de saleTitleType, asi que omitir uno tiene que omitir
+    // el otro o la categoria elegida se comeria a las demas.
+    if (dto.titleCategory && dto.titleCategory.length && omit !== 'saleTitleType') {
       const titleOverrides = await this.titleMapping.getOverrides();
       const cats = dto.titleCategory;
       const known = cats.filter((c) => c !== 'unknown');

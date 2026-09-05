@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@htownautos/prisma';
 import {
@@ -64,6 +64,28 @@ export class StatsService {
   }
 
   /** Facet counts in the same shape the auction sidebar consumes. */
+  /**
+   * Un resultado de venta por numero de lote, para la vista individual.
+   *
+   * Se busca por `lot` y no por `id` porque es lo que aparece en la URL y en la
+   * tarjeta. Si hubiera mas de una fila para el mismo lote —el mismo coche
+   * subastado dos veces— se devuelve la venta mas reciente.
+   */
+  async findByLot(lot: string) {
+    let value: bigint;
+    try {
+      value = BigInt(lot);
+    } catch {
+      throw new NotFoundException(`Lot ${lot} is not a number`);
+    }
+    const row = await this.prisma.auctionSaleResult.findFirst({
+      where: { lot: value },
+      orderBy: [{ saleDate: 'desc' }, { createdAt: 'desc' }],
+    });
+    if (!row) throw new NotFoundException(`No sale result for lot ${lot}`);
+    return this.serialize(row);
+  }
+
   async getFilters(dto: QueryStatsDto) {
     const titleOverrides = await this.titleMapping.getOverrides();
     // Un `where` por faceta, cada uno sin su propio filtro. Se construyen en

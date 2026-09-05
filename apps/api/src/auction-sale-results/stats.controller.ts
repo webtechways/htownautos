@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from '@htownautos/auth';
 import { StatsService } from './stats.service';
@@ -21,6 +21,14 @@ export class StatsController {
   @ApiResponse({ status: 200, description: 'Paginated results + optional aggregations' })
   search(@Query() dto: QueryStatsDto) {
     return this.stats.search(dto);
+  }
+
+  @Get('lot/:lot')
+  @Public()
+  @ApiOperation({ summary: 'One stored sale result by lot number' })
+  @ApiResponse({ status: 200, description: 'The sale result, or 404' })
+  findByLot(@Param('lot') lot: string) {
+    return this.stats.findByLot(lot);
   }
 
   @Get('filters')

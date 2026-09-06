@@ -240,6 +240,43 @@ export class ImageCacheService {
     return { lotNumber: lotNumberStr, status: 'pending' };
   }
 
+  /**
+   * Devuelve a la cola los lotes fallidos: los indicados, o todos.
+   *
+   * `attempts` se pone a cero. El crawler deja de reintentar un lote a partir de
+   * cierto numero de intentos, asi que reencolarlo sin resetearlo lo dejaria
+   * fallando para siempre — que es justo lo contrario de lo que pide un boton
+   * de reintentar.
+   */
+  async retryFailed(lots?: string[]): Promise<{ requeued: number }> {
+    const where: Prisma.ImageCacheJobWhereInput = { status: 'failed' };
+    if (lots?.length) {
+      const ids: bigint[] = [];
+      for (const l of lots) {
+        try {
+          ids.push(BigInt(l));
+        } catch {
+          // Un lote que no es numero no existe: se ignora en vez de tumbar
+          // la peticion entera por una fila mal seleccionada.
+        }
+      }
+      if (!ids.length) return { requeued: 0 };
+      where.lotNumber = { in: ids };
+    }
+
+    const res = await this.prisma.imageCacheJob.updateMany({
+      where,
+      data: {
+        status: 'pending',
+        lastError: null,
+        attempts: 0,
+        failedSequences: Prisma.DbNull,
+      },
+    });
+    this.logger.log(`[ImageCache] ${res.count} lote(s) devueltos a la cola`);
+    return { requeued: res.count };
+  }
+
   /** Recently cached lots (source of truth = AuctionListing.galleryCachedAt). */
   async listCached(params: { page?: number; limit?: number }): Promise<Paginated<any>> {
     const { p, l, skip } = clampPage(params.page, params.limit);

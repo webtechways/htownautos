@@ -12,6 +12,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ClerkJwtGuard } from '@htownautos/auth';
 import { ImageCacheService } from './image-cache.service';
 import { UpdateImageScrapeConfigDto } from './dto/update-image-scrape-config.dto';
+import { RetryFailedDto } from './dto/retry-failed.dto';
 
 /**
  * Settings → Image Cache control plane. Global (auction data is shared), staff-only
@@ -57,6 +58,15 @@ export class ImageCacheController {
   @ApiOperation({ summary: 'Re-queue a failed lot' })
   retry(@Param('lot') lot: string) {
     return this.service.retryJob(lot);
+  }
+
+  @Post('jobs/retry')
+  @ApiOperation({
+    summary: 'Re-queue failed lots: the ones given, or every failed one',
+    description: 'Sin `lots` reencola todos los fallidos. Pone attempts a 0.',
+  })
+  retryMany(@Body() dto: RetryFailedDto) {
+    return this.service.retryFailed(dto.lots);
   }
 
   @Get('cached')
